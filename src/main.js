@@ -3,7 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const { spawn, spawnSync } = require('child_process');
-const { writeCompactDashboardAss, writeDetailedDashboardAss, writeTeslaMobileDashboardAss, writeMinimapAss } = require('./assGenerator');
+const { writeCompactDashboardAss, writeDetailedDashboardAss, writeTeslaMobileDashboardAss, writeTeslaScreenDashAss, writeMinimapAss } = require('./assGenerator');
 // Pure-JS PNG compositor used for blur masks. Replaces `sharp` so Linux (and other)
 // users don't need the native libvips binaries bundled.
 const { PNG } = require('pngjs');
@@ -265,6 +265,9 @@ async function performVideoExport(event, exportId, exportData, ffmpegPath) {
 
   // Minimap temp file path (set during pre-render)
   let minimapTempPath = null;
+  // Square minimap dimension in pixels — set during pre-render, used later for
+  // the screen-blend composite when Tesla Screen Dash is active.
+  let minimapPixelSize = 0;
 
   // Track blur zone failures
   let blurFailed = false;
@@ -586,6 +589,9 @@ async function performVideoExport(event, exportId, exportData, ffmpegPath) {
           // Update totalH to include both bars (affects encoder resolution checks)
           totalH = paddedH;
           assTempPath = await writeTeslaMobileDashboardAss(exportId, seiData, startTimeMs, endTimeMs, dashOpts);
+        } else if (dashboardStyle === 'tesla-screen-dash') {
+          // No canvas padding — overlay sits on the original frame
+          assTempPath = await writeTeslaScreenDashAss(exportId, seiData, startTimeMs, endTimeMs, dashOpts);
         } else {
           assTempPath = await writeCompactDashboardAss(exportId, seiData, startTimeMs, endTimeMs, dashOpts);
         }
@@ -622,6 +628,7 @@ async function performVideoExport(event, exportId, exportData, ffmpegPath) {
         try {
           const minimapDims = calculateMinimapSize(totalW, totalH, minimapSize);
           const minimapTargetSize = minimapDims.width; // Square minimap
+          minimapPixelSize = minimapTargetSize;
 
           sendMinimapProgress(0, 'Downloading map tiles...');
 
@@ -696,6 +703,21 @@ async function performVideoExport(event, exportId, exportData, ffmpegPath) {
             .replace(/\\/g, '/')
             .replace(/:/g, '\\:');
 
+          // For Tesla Screen Dash, feather only the left edge and the bottom
+          // edge of the minimap with thin gradient bands so they blend into
+          // the underlying clip. The bulk of the map (top + right + center)
+          // stays fully opaque. Two independent factors that multiply:
+          //   left_factor  = clip(X / (0.2*W), 0, 1)   — leftmost 20% fades
+          //   bottom_factor= clip((H-Y)/(0.2*H), 0, 1) — bottom 20% fades
+          //   alpha = alpha_in * left_factor * bottom_factor
+          // The top and right edges are unchanged (their factors stay at 1
+          // because X is large near the right edge and Y is small near the
+          // top). The bottom-left corner gets the strongest fade since both
+          // factors approach zero there, giving a soft round-corner shape.
+          const featherFilter = dashboardStyle === 'tesla-screen-dash'
+            ? `,format=rgba,geq=r='r(X\\,Y)':g='g(X\\,Y)':b='b(X\\,Y)':a='alpha(X\\,Y)*min(1\\,X/W*5)*min(1\\,(H-Y)/H*5)'`
+            : '';
+
           let minimapFfmpegArgs;
           if (mapBgPath) {
             // Use map image as background, loop it for video duration
@@ -705,7 +727,7 @@ async function performVideoExport(event, exportId, exportData, ffmpegPath) {
               '-loop', '1',
               '-i', mapBgPath,
               '-t', durationSec.toString(),
-              '-vf', `scale=${minimapTargetSize}:${minimapTargetSize},ass='${escapedAssPath}'`,
+              '-vf', `scale=${minimapTargetSize}:${minimapTargetSize},format=rgba,ass='${escapedAssPath}'${featherFilter}`,
               '-c:v', 'qtrle',
               '-pix_fmt', 'argb',
               '-r', '36',
@@ -717,7 +739,7 @@ async function performVideoExport(event, exportId, exportData, ffmpegPath) {
               '-y',
               '-f', 'lavfi',
               '-i', `color=c=black@0:s=${minimapTargetSize}x${minimapTargetSize}:d=${durationSec}:r=36,format=rgba`,
-              '-vf', `ass='${escapedAssPath}'`,
+              '-vf', `ass='${escapedAssPath}'${featherFilter}`,
               '-c:v', 'qtrle',
               '-pix_fmt', 'argb',
               '-r', '36',
@@ -761,6 +783,7 @@ async function performVideoExport(event, exportId, exportData, ffmpegPath) {
           const minimapDims = calculateMinimapSize(totalW, totalH, minimapSize);
           const minimapWidth = minimapDims.width;
           const minimapHeight = minimapDims.height;
+          minimapPixelSize = minimapWidth;
           console.log(`[MINIMAP] Leaflet mode - Dimensions: ${minimapWidth}x${minimapHeight}, position: ${minimapPosition}`);
 
           sendMinimapProgress(0, 'Pre-rendering minimap overlay (Leaflet)...');
@@ -1057,6 +1080,17 @@ async function performVideoExport(event, exportId, exportData, ffmpegPath) {
           .replace(/:/g, '\\:');
         filters.push(`${currentStreamTag}ass='${escapedAssPath}',ass='${escapedMinimapAssPath}'[out]`);
         console.log(`[ASS] Dashboard + ASS Minimap overlay`);
+      } else if (useLeafletMinimap && minimapInputIdx >= 0 && dashboardStyle === 'tesla-screen-dash') {
+        // Tesla Screen Dash: minimap flush against the corner (no gap), so
+        // the map butts right up to the edge of the frame the way the Tesla
+        // in-car display does.
+        const tsdPos = minimapPosition === 'top-left' ? '0:0'
+          : minimapPosition === 'bottom-left' ? '0:H-h'
+          : minimapPosition === 'bottom-right' ? 'W-w:H-h'
+          : 'W-w:0';
+        filters.push(`${currentStreamTag}ass='${escapedAssPath}'[with_dash]`);
+        filters.push(`[with_dash][${minimapInputIdx}:v]overlay=${tsdPos}:format=auto[out]`);
+        console.log(`[ASS+MINIMAP] Tesla Screen Dash flush-corner overlay`);
       } else if (useLeafletMinimap && minimapInputIdx >= 0) {
         // Dashboard ASS + Leaflet Minimap video overlay
         const mapPos = minimapPosExprs[minimapPosition] || minimapPosExprs['top-right'];

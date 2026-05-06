@@ -2542,9 +2542,270 @@ async function writeTeslaMobileDashboardAss(exportId, seiData, startTimeMs, endT
   return tempPath;
 }
 
+// ============================================
+// TESLA SCREEN DASH
+// In-car Tesla driving display look:
+//   Top-left HUD: PRND row, big speed number, MPH/KPH unit, "Self-Driving"/"Manual"
+//                 label, and a vertical regen/accel bar to the left of the speed.
+//   Top-center:   wall-clock readout (matches the clip's actual time-of-day).
+// Overlays the existing video frame; canvas is NOT padded. Designed to coexist
+// with the existing minimap pipeline so the user sees a "Tesla Dash" full HUD.
+// ============================================
+
+const SCREEN_DASH_REF_W = 1920;
+const SCREEN_DASH_REF_H = 1080;
+
+function generateTeslaScreenDashAssHeader(playResX, playResY) {
+  return `[Script Info]
+Title: Tesla Screen Dash
+ScriptType: v4.00+
+WrapStyle: 0
+ScaledBorderAndShadow: yes
+YCbCr Matrix: TV.709
+PlayResX: ${playResX}
+PlayResY: ${playResY}
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: ScreenDash,Arial,40,${COLORS.white},${COLORS.white},&H00000000,&H80000000,0,0,0,0,100,100,0,0,1,2,1,7,10,10,10,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+`;
+}
+
+function generateTeslaScreenDashEvents(seiData, startTimeMs, endTimeMs, options) {
+  const {
+    playResX = 1920,
+    playResY = 1080,
+    useMetric = false,
+    segments = [],
+    cumStarts = [],
+    language = 'en',
+    timeFormat = '12h'
+  } = options;
+
+  // Uniform scale so the HUD fits any mosaic resolution without distortion.
+  const scale = Math.min(playResX / SCREEN_DASH_REF_W, playResY / SCREEN_DASH_REF_H);
+  const sx = v => Math.round(v * scale);
+  const sf = v => Math.max(8, Math.round(v * scale));
+
+  const durationMs = endTimeMs - startTimeMs;
+  const totalFrames = Math.ceil((durationMs / 1000) * FPS);
+  const frameTimeMs = 1000 / FPS;
+
+  // EMA smoothing for the regen/accel bar (~250 ms time constant).
+  // A faster time constant lets autopilot's micro-throttle pulses leak through
+  // visually as flickers — 250 ms is slow enough to read as "real" power but
+  // still responsive enough to follow brake/regen transitions.
+  let smoothedY = 0;
+  const yFactor = 1 - Math.exp(-4 * (frameTimeMs / 1000));
+
+  const events = [];
+  let prevState = null;
+  let eventStartFrame = 0;
+
+  // Pre-compute fixed pixel positions once.
+  const hudX = sx(40);
+  const prndY = sx(60);
+  const prndFs = sf(48);
+  const prndGap = sx(48);
+  const speedY = sx(110);
+  const speedFs = sf(180);
+  const unitY = sx(310);
+  const unitFs = sf(48);
+  const apY = sx(370);
+  const apFs = sf(44);
+
+  const barX = sx(18);
+  const barW = sx(10);
+  const barTop = sx(140);
+  const barBottom = sx(330);
+  const barHeight = barBottom - barTop;
+  const barCenterY = Math.round((barTop + barBottom) / 2);
+
+  const clockY = sx(40);
+  const clockFs = sf(44);
+  const clockX = Math.round(playResX / 2);
+
+  for (let frame = 0; frame <= totalFrames; frame++) {
+    const currentTimeMs = startTimeMs + (frame * frameTimeMs);
+    const sei = findSeiAtTime(seiData, currentTimeMs);
+
+    // --- Telemetry ---
+    const mps = Math.abs(getSeiValue(sei, 'vehicleSpeedMps', 'vehicle_speed_mps') || 0);
+    const speed = useMetric ? Math.round(mps * MPS_TO_KMH) : Math.round(mps * MPS_TO_MPH);
+    const speedUnit = getSpeedUnit(useMetric, language);
+
+    const gear = getSeiValue(sei, 'gearState', 'gear_state');
+    const gearLetter = gear === 1 ? 'D' : gear === 2 ? 'R' : gear === 0 ? 'P' : gear === 3 ? 'N' : '--';
+
+    const apState = getSeiValue(sei, 'autopilotState', 'autopilot_state');
+    const apActive = apState === 1 || apState === 2;
+    const apText = getApText(apState, language);
+
+    const brakeActive = !!getSeiValue(sei, 'brakeApplied', 'brake_applied');
+    const rawAccelPos = getSeiValue(sei, 'acceleratorPedalPosition', 'accelerator_pedal_position') || 0;
+    const accelPedalFrac = rawAccelPos > 1 ? Math.min(1, rawAccelPos / 100) : Math.max(0, Math.min(1, rawAccelPos));
+    const pedalActive = accelPedalFrac > 0.05;
+
+    // Regen/accel bar driver. Empirically (Tesla SEI) `linear_acceleration_mps2_y`
+    // is POSITIVE during deceleration — sign-flipped so positive bar = accel,
+    // negative bar = regen, matching driver intuition.
+    const rawY = getSeiValue(sei, 'linearAccelerationMps2Y', 'linear_acceleration_mps2_y');
+    const lin_y_raw = Number.isFinite(rawY) ? rawY : 0;
+    const lin_y = -lin_y_raw;
+    smoothedY += (lin_y - smoothedY) * yFactor;
+    const clipped = Math.max(-4, Math.min(4, smoothedY));
+    // ±0.3 m/s² deadzone so coast/cruise reads as zero rather than wobbling.
+    const dz = Math.abs(clipped) < 0.3 ? 0 : clipped;
+    const signedFrac = dz / 4;
+
+    // Clock — second-resolution wall-clock from segment timestamps.
+    const actualTs = convertVideoTimeToTimestamp(currentTimeMs, segments, cumStarts);
+    const timeSec = Math.floor(actualTs / 1000);
+
+    // Bar fill direction is gated by pedals first (ground truth), then
+    // falls back to longitudinal accel for regen detection during coast.
+    let barMode;          // 'accel' | 'brake' | 'regen' | 'idle'
+    let barMagnitude = 0; // 0..1
+    if (brakeActive) {
+      barMode = 'brake';
+      barMagnitude = Math.max(Math.abs(signedFrac), 0.35);
+    } else if (pedalActive) {
+      barMode = 'accel';
+      barMagnitude = accelPedalFrac;
+    } else if (signedFrac < -0.05) {
+      barMode = 'regen';
+      barMagnitude = Math.min(1, Math.abs(signedFrac));
+    } else if (signedFrac > 0.05) {
+      barMode = 'accel';
+      barMagnitude = Math.min(1, signedFrac);
+    } else {
+      barMode = 'idle';
+    }
+    const barMagRounded = Math.round(barMagnitude * 20) / 20;
+
+    const currentState = JSON.stringify({
+      speed,
+      gearLetter,
+      apActive,
+      apText,
+      barMode,
+      barMag: barMagRounded,
+      timeSec
+    });
+
+    if (currentState !== prevState || frame === totalFrames) {
+      if (prevState !== null && eventStartFrame < frame) {
+        const startAssTime = formatAssTime((eventStartFrame * frameTimeMs));
+        const endAssTime = formatAssTime((frame * frameTimeMs));
+        const prev = JSON.parse(prevState);
+
+        // === HUD column (top-left) ===
+
+        // PRND row at top of column. Active gear is bold blue, inactive is dim gray.
+        const activeIdx = prev.gearLetter === 'P' ? 0
+          : prev.gearLetter === 'R' ? 1
+          : prev.gearLetter === 'N' ? 2
+          : prev.gearLetter === 'D' ? 3 : -1;
+        const prndChars = ['P', 'R', 'N', 'D'];
+        for (let i = 0; i < prndChars.length; i++) {
+          const cx = hudX + i * prndGap;
+          const isActive = i === activeIdx;
+          const color = isActive ? '&HFF4800&' : '&HFFFFFF&';
+          const bold = isActive ? '\\b1' : '';
+          events.push(dialogueLine(2, startAssTime, endAssTime, 'ScreenDash',
+            `{\\an7\\pos(${cx},${prndY})\\bord0\\shad0\\fs${prndFs}\\1c${color}${bold}}${prndChars[i]}`
+          ));
+        }
+
+        // Speed number — large bold white.
+        events.push(dialogueLine(2, startAssTime, endAssTime, 'ScreenDash',
+          `{\\an7\\pos(${hudX},${speedY})\\bord0\\shad0\\fs${speedFs}\\b1\\1c&HFFFFFF&}${prev.speed}`
+        ));
+
+        // Speed unit (MPH/KPH).
+        events.push(dialogueLine(2, startAssTime, endAssTime, 'ScreenDash',
+          `{\\an7\\pos(${hudX},${unitY})\\bord0\\shad0\\fs${unitFs}\\1c&HFFFFFF&}${speedUnit}`
+        ));
+
+        // Autopilot label — blue when Self-Driving/Autosteer, gray otherwise.
+        const apColor = prev.apActive ? '&HFF4800&' : '&H808080&';
+        events.push(dialogueLine(2, startAssTime, endAssTime, 'ScreenDash',
+          `{\\an7\\pos(${hudX},${apY})\\bord0\\shad0\\fs${apFs}\\1c${apColor}}${prev.apText}`
+        ));
+
+        // Regen/accel bar — gray background pill always present.
+        events.push(dialogueLine(1, startAssTime, endAssTime, 'ScreenDash',
+          `{\\an7\\pos(0,0)\\bord0\\shad0\\1c&H404040&\\1a&H40&\\p1}` +
+          `m ${barX} ${barTop} l ${barX + barW} ${barTop} l ${barX + barW} ${barBottom} l ${barX} ${barBottom}{\\p0}`
+        ));
+
+        if (prev.barMode === 'accel' && prev.barMag > 0) {
+          // Gas pedal or positive longitudinal accel: blue fill from center upward.
+          const fillTop = Math.round(barCenterY - (barHeight / 2) * prev.barMag);
+          events.push(dialogueLine(2, startAssTime, endAssTime, 'ScreenDash',
+            `{\\an7\\pos(0,0)\\bord0\\shad0\\1c&HFF4800&\\p1}` +
+            `m ${barX} ${fillTop} l ${barX + barW} ${fillTop} l ${barX + barW} ${barCenterY} l ${barX} ${barCenterY}{\\p0}`
+          ));
+        } else if (prev.barMode === 'regen' && prev.barMag > 0) {
+          // Coasting deceleration: green fill from center downward.
+          const fillBottom = Math.round(barCenterY + (barHeight / 2) * prev.barMag);
+          events.push(dialogueLine(2, startAssTime, endAssTime, 'ScreenDash',
+            `{\\an7\\pos(0,0)\\bord0\\shad0\\1c&H22C55E&\\p1}` +
+            `m ${barX} ${barCenterY} l ${barX + barW} ${barCenterY} l ${barX + barW} ${fillBottom} l ${barX} ${fillBottom}{\\p0}`
+          ));
+        } else if (prev.barMode === 'brake' && prev.barMag > 0) {
+          // Brake pedal: red fill from center downward (with floor for visibility).
+          const fillBottom = Math.round(barCenterY + (barHeight / 2) * prev.barMag);
+          events.push(dialogueLine(2, startAssTime, endAssTime, 'ScreenDash',
+            `{\\an7\\pos(0,0)\\bord0\\shad0\\1c&H0000FF&\\p1}` +
+            `m ${barX} ${barCenterY} l ${barX + barW} ${barCenterY} l ${barX + barW} ${fillBottom} l ${barX} ${fillBottom}{\\p0}`
+          ));
+        }
+
+        // === Clock (top-center) ===
+        // Centered above the canvas so it never collides with the minimap tile,
+        // which the auto-config pins to top-right. Outline keeps it legible on
+        // both bright sky and dark road backgrounds.
+        const eventStartTimeMs = startTimeMs + (eventStartFrame * frameTimeMs);
+        const evStartTs = convertVideoTimeToTimestamp(eventStartTimeMs, segments, cumStarts);
+        const clockStr = formatDisplayTime(evStartTs, timeFormat);
+        events.push(dialogueLine(2, startAssTime, endAssTime, 'ScreenDash',
+          `{\\an8\\pos(${clockX},${clockY})\\bord2\\shad0\\3c&H000000&\\fs${clockFs}\\b1\\1c&HFFFFFF&}${clockStr}`
+        ));
+      }
+
+      prevState = currentState;
+      eventStartFrame = frame;
+    }
+  }
+
+  return events.join('\n');
+}
+
+function generateTeslaScreenDashAss(seiData, startTimeMs, endTimeMs, options) {
+  const { playResX = 1920, playResY = 1080 } = options;
+  const header = generateTeslaScreenDashAssHeader(playResX, playResY);
+  const events = generateTeslaScreenDashEvents(seiData, startTimeMs, endTimeMs, options);
+  return header + events;
+}
+
+async function writeTeslaScreenDashAss(exportId, seiData, startTimeMs, endTimeMs, options) {
+  const assContent = generateTeslaScreenDashAss(seiData, startTimeMs, endTimeMs, options);
+  const tempPath = path.join(os.tmpdir(), `dashboard_tesla_screen_${exportId}_${Date.now()}.ass`);
+
+  await fs.promises.writeFile(tempPath, assContent, 'utf8');
+  console.log(`[ASS] Generated Tesla Screen Dash subtitle: ${tempPath}`);
+
+  return tempPath;
+}
+
 module.exports = {
   writeCompactDashboardAss,
   writeDetailedDashboardAss,
   writeTeslaMobileDashboardAss,
+  writeTeslaScreenDashAss,
   writeMinimapAss
 };
