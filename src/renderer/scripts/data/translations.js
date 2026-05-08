@@ -47,6 +47,7 @@ export const translations = {
                 playPause: "Play / Pause", skipForward: "Skip Forward", skipBackward: "Skip Backward", skipDuration: "Skip Duration",
                 toggleDashboard: "Toggle Dashboard", toggleMap: "Toggle Map", toggleMphKmh: "Toggle Units", toggleClipsPanel: "Toggle Clips Panel",
                 setExportMarkerIn: "Export Marker Start", setExportMarkerOut: "Export Marker End", nextClip: "Next Clip", prevClip: "Previous Clip",
+                speedUp: "Increase Speed", speedDown: "Decrease Speed", speedReset: "Reset Speed (1x)", speedMax: "Max Speed (4x)",
                 second: "second", seconds: "seconds",
                 updates: "Updates", disableAutoUpdate: "Disable Auto-Update", disableAutoUpdateDesc: "Don't check for updates on launch",
                 updateBranch: "Update Branch", updateBranchDesc: "Main for stable, Dev-SEI for beta",
