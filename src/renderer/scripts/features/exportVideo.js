@@ -293,7 +293,8 @@ const FEATURE_BADGE_KEYS = {
 
 /**
  * Update dashboard option rows based on selected style.
- * Tesla Mobile: full-width bar, only top/bottom position, no size selector.
+ * - Tesla Mobile: full-width bar, only top/bottom position, no size selector.
+ * - Tesla Screen Dash: in-car HUD with intrinsic positions, hide everything.
  */
 function updateDashboardStyleOptions(style) {
     const posRow = $('dashboardPositionRow');
@@ -304,10 +305,59 @@ function updateDashboardStyleOptions(style) {
         if (posRow) posRow.style.display = 'none';
         if (posTeslaRow) posTeslaRow.style.display = '';
         if (sizeRow) sizeRow.style.display = 'none';
+    } else if (style === 'tesla-screen-dash') {
+        if (posRow) posRow.style.display = 'none';
+        if (posTeslaRow) posTeslaRow.style.display = 'none';
+        if (sizeRow) sizeRow.style.display = 'none';
     } else {
         if (posRow) posRow.style.display = '';
         if (posTeslaRow) posTeslaRow.style.display = 'none';
         if (sizeRow) sizeRow.style.display = '';
+    }
+}
+
+/**
+ * Auto-configure the GPS minimap the first time the user picks Tesla Screen Dash.
+ * The Tesla Dash look needs the satellite tile + heading arrow in the top-right —
+ * we toggle on the existing minimap with a Tesla-style preset (dark, small,
+ * top-right). Runs ONCE; if the user later disables the minimap, we respect that.
+ */
+async function autoConfigureTeslaScreenDashMinimap() {
+    if (!window.electronAPI?.getSetting || !window.electronAPI?.setSetting) return;
+    try {
+        const alreadyConfigured = await window.electronAPI.getSetting('featureSeen_teslaScreenDash_autoConfigured');
+        if (alreadyConfigured) return;
+
+        const minimapToggle = $('includeMinimap');
+        const minimapPosition = $('minimapPosition');
+        const minimapSize = $('minimapSize');
+        const minimapDarkMode = $('minimapDarkMode');
+        const minimapRenderMode = $('minimapRenderMode');
+
+        if (minimapToggle && !minimapToggle.checked) {
+            minimapToggle.checked = true;
+            minimapToggle.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+        if (minimapPosition) {
+            minimapPosition.value = 'top-right';
+            minimapPosition.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+        if (minimapSize) {
+            minimapSize.value = 'small';
+            minimapSize.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+        if (minimapDarkMode && !minimapDarkMode.checked) {
+            minimapDarkMode.checked = true;
+            minimapDarkMode.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+        if (minimapRenderMode) {
+            minimapRenderMode.value = 'ass';
+            minimapRenderMode.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+
+        await window.electronAPI.setSetting('featureSeen_teslaScreenDash_autoConfigured', true);
+    } catch (err) {
+        console.warn('[teslaScreenDash] auto-config failed:', err);
     }
 }
 
@@ -347,6 +397,9 @@ export async function initFeatureBadges() {
                 dismissFeatureBadge('styleNewBadge');
                 dismissFeatureBadge('overlaysNewBadge');
                 updateDashboardStyleOptions(styleSelect.value);
+                if (styleSelect.value === 'tesla-screen-dash') {
+                    autoConfigureTeslaScreenDashMinimap();
+                }
             });
             // Apply initial state
             updateDashboardStyleOptions(styleSelect.value);
