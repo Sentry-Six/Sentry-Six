@@ -1609,6 +1609,35 @@ window._showWelcomeScreen = showWelcomeScreen;
 // Expose notify function globally for modules
 window.showNotification = notify;
 
+// Discrete playback-speed steps (must mirror #speedSelect <option> values in index.html).
+const SPEED_OPTIONS = [0.5, 1, 2, 3, 4];
+
+/**
+ * Apply a playback rate, sync the dropdown UI, and persist to localStorage.
+ * Used by both the speedSelect onchange handler and the speed keybinds.
+ */
+function setPlaybackSpeed(rate) {
+    const r = parseFloat(rate) || 1;
+    applyPlaybackRate(r);
+    if (speedSelect) speedSelect.value = String(r);
+    localStorage.setItem('playbackRate', String(r));
+}
+
+/**
+ * Step through SPEED_OPTIONS by `dir` (+1 = faster, -1 = slower). Clamps at ends.
+ */
+function bumpPlaybackSpeed(dir) {
+    const cur = state.ui.playbackRate || 1;
+    let i = SPEED_OPTIONS.indexOf(cur);
+    if (i === -1) {
+        // Current rate isn't an exact option (shouldn't normally happen) — snap to nearest
+        i = SPEED_OPTIONS.reduce((best, v, idx) =>
+            Math.abs(v - cur) < Math.abs(SPEED_OPTIONS[best] - cur) ? idx : best, 0);
+    }
+    const next = Math.max(0, Math.min(SPEED_OPTIONS.length - 1, i + dir));
+    if (SPEED_OPTIONS[next] !== cur) setPlaybackSpeed(SPEED_OPTIONS[next]);
+}
+
 // Initialize keybind actions
 initKeybindActions({
     playPause: () => {
@@ -1621,6 +1650,10 @@ initKeybindActions({
     skipBackward: () => {
         skipSeconds(-(window._skipDuration || 15));
     },
+    speedUp: () => bumpPlaybackSpeed(+1),
+    speedDown: () => bumpPlaybackSpeed(-1),
+    speedReset: () => setPlaybackSpeed(1),
+    speedMax: () => setPlaybackSpeed(SPEED_OPTIONS[SPEED_OPTIONS.length - 1]),
     toggleDash: () => {
         const dashboardToggle = $('dashboardToggle');
         if (dashboardToggle) {
