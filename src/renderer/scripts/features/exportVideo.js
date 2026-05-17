@@ -162,7 +162,16 @@ async function loadExportOverlaySettings() {
             if (element.type === 'checkbox') {
                 element.checked = value === true;
             } else if (element.tagName === 'SELECT') {
-                element.value = value;
+                // Dashboard "default" style is hidden behind a feature gate
+                // (no real ASS renderer yet — exports would look like Compact).
+                // Fall back to Compact so users who saved Default in an earlier
+                // build don't see a blank dropdown.
+                if (elementId === 'dashboardStyle' && value === 'default') {
+                    element.value = 'compact';
+                    try { await window.electronAPI.setSetting(settingKey, 'compact'); } catch {}
+                } else {
+                    element.value = value;
+                }
             }
         } catch (err) {
             console.warn(`Failed to load export setting ${settingKey}:`, err);
@@ -313,6 +322,38 @@ function updateDashboardStyleOptions(style) {
         if (posRow) posRow.style.display = '';
         if (posTeslaRow) posTeslaRow.style.display = 'none';
         if (sizeRow) sizeRow.style.display = '';
+    }
+
+    // Label/Value Size visibility — Only Detailed has both. Compact and
+    // Default lack a meaningful label/value distinction so only Value Size
+    // is exposed for them.
+    const labelRow = $('dashboardLabelScaleRow');
+    const valueRow = $('dashboardValueScaleRow');
+    if (labelRow) labelRow.style.display = (style === 'detailed') ? '' : 'none';
+    if (valueRow) valueRow.style.display = '';
+
+    // Default-style Value Size is JS-capped at 1.0 in the AE preview because
+    // the floating-widget panel can't grow past its tile fit, so options above
+    // Medium are no-ops. Hide them for Default and snap the current value
+    // down if needed so what's selected matches what's actually applied.
+    syncValueScaleOptionsForStyle('dashboardValueScale', style);
+}
+
+function syncValueScaleOptionsForStyle(selectId, style) {
+    const select = document.getElementById(selectId);
+    if (!select) return;
+    const maxScale = (style === 'default') ? 1 : Infinity;
+    for (const opt of select.options) {
+        const v = parseFloat(opt.value);
+        opt.hidden = Number.isFinite(v) && v > maxScale;
+    }
+    const cur = parseFloat(select.value);
+    if (Number.isFinite(cur) && cur > maxScale) {
+        select.value = String(maxScale);
+        if (window.electronAPI?.setSetting) {
+            window.electronAPI.setSetting('exportDashboardValueScale', maxScale)
+                .catch(err => console.warn('persist snapped value scale failed', err));
+        }
     }
 }
 
@@ -757,6 +798,26 @@ export function updateExportButtonState() {
     if (exportBtn) exportBtn.disabled = !hasCollection;
 }
 
+// Lock or unlock the simple export modal for AE-driven exports. Locks the
+// entire modal body (all sections) via `inert` + a dimmed class, and shows
+// a banner indicating the layout came from the Advanced Editor. Idempotent
+// and safe to call when the modal isn't visible.
+export function setSimpleModalAeMode(on) {
+    const modal = document.getElementById('exportModal');
+    const banner = document.getElementById('aeExportBanner');
+    const body = modal?.querySelector('.modal-body');
+    if (!modal || !body) return;
+    if (on) {
+        modal.classList.add('ae-export-mode');
+        body.inert = true;
+        banner?.classList.remove('hidden');
+    } else {
+        modal.classList.remove('ae-export-mode');
+        body.inert = false;
+        banner?.classList.add('hidden');
+    }
+}
+
 /**
  * Open the export modal
  */
@@ -1032,7 +1093,7 @@ function hideFloatingProgress() {
  * @param {string|Object} message - Either a plain string or { key: string, params?: Object }
  * @returns {string} The translated message
  */
-function translateMessage(message) {
+export function translateMessage(message) {
     if (!message) return '';
     if (typeof message === 'string') return message;
     if (typeof message === 'object' && message.key) {
@@ -1109,7 +1170,7 @@ async function captureVideoSnapshot(timeSec, videoElement) {
  * @param {HTMLElement} editorModal - The editor modal element
  * @param {number|null} editIndex - Index of existing zone to edit, or null for new zone
  */
-async function openBlurZoneEditorForCamera(snapshotCamera, editorModal, editIndex = null) {
+export async function openBlurZoneEditorForCamera(snapshotCamera, editorModal, editIndex = null) {
     const state = getState?.();
     const nativeVideo = getNativeVideo?.();
 
@@ -2416,7 +2477,7 @@ function updateMaxQualityForSharing(sharingEnabled) {
 /**
  * Show the export completion panel (replaces native confirm dialog)
  */
-function showExportCompletePanel(outputPath, message) {
+export function showExportCompletePanel(outputPath, message) {
     const completePanel = $('exportCompletePanel');
     const modalBody = completePanel?.closest('.modal-content')?.querySelector('.modal-body');
     const modalFooter = completePanel?.closest('.modal-content')?.querySelector('.modal-footer');
@@ -2430,6 +2491,10 @@ function showExportCompletePanel(outputPath, message) {
     const shareError = $('shareError');
 
     if (!completePanel) return;
+
+    // Re-enable the simple modal body if an AE-driven export had locked it.
+    // No-op for regular (simple-modal-driven) exports.
+    setSimpleModalAeMode(false);
 
     // Get file size for display
     const fileSizeText = message || 'Export completed successfully';

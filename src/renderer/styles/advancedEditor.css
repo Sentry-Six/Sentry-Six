@@ -1,0 +1,855 @@
+/* =================================================================
+ * Advanced Editor - dedicated stylesheet
+ * Scoped via .ae- prefix to avoid colliding with style.css.
+ * Uses the same CSS variables as the rest of the app for theme parity.
+ * ================================================================= */
+
+/* Modal shell — almost-fullscreen */
+.ae-modal .ae-modal-content {
+    width: 100%;
+    height: 100%;
+    max-width: min(1600px, calc(100vw - 60px));
+    max-height: calc(100vh - 60px);
+    display: flex;
+    flex-direction: column;
+    background: var(--modal-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 20px;
+    backdrop-filter: blur(20px) saturate(180%);
+    /* `overflow: visible` overrides .modal-content's `overflow: hidden`,
+       which was blocking <select> popups from rendering at viewport level. */
+    overflow: visible;
+}
+
+/* Override .modal-body's overflow-y:auto — the sidebar manages its own scroll
+   so selects render correctly. */
+.ae-modal .ae-body {
+    overflow: visible;
+}
+
+/* Header */
+.ae-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 22px;
+    background: var(--modal-header-bg);
+    border-bottom: 1px solid var(--border-subtle);
+}
+
+.ae-header h2 {
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--text-color);
+}
+
+.ae-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+/* Body: canvas/main + right sidebar */
+.ae-body {
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 380px;
+    gap: 16px;
+    padding: 16px 20px;
+}
+
+.ae-main {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    min-width: 0;
+    min-height: 0;
+}
+
+/* 16:9 preview canvas */
+.ae-canvas-wrap {
+    flex: 1;
+    min-height: 0;
+    background: rgba(0, 0, 0, 0.4);
+    border: 1px solid rgba(0, 212, 255, 0.15);
+    border-radius: 12px;
+    padding: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative; /* anchor for the floating Reset button */
+}
+
+/* Floating Reset button — top-right of canvas wrap, above any tiles. */
+.ae-reset-layout-btn {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    z-index: 50;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 10px;
+    background: rgba(20, 20, 20, 0.85);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    color: #fff;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+}
+.ae-reset-layout-btn:hover {
+    background: rgba(0, 72, 255, 0.6);
+    border-color: var(--dashboard-accent, #0048FF);
+}
+.ae-reset-layout-btn .material-symbols-outlined {
+    font-size: 14px;
+}
+
+.ae-canvas {
+    position: relative;
+    /* Fill the wrap area entirely — no aspect-ratio constraint, so there's
+       no gray dead space above/below the canvas. Tiles use normalized 0-1
+       coordinates that adapt to whatever shape the canvas ends up as, and
+       the export pipeline computes a bounding box around the visible tiles
+       so the actual output dimensions are driven by the layout, not the
+       canvas shape. */
+    width: 100%;
+    height: 100%;
+    background: #000;
+    border: 2px solid rgba(0, 212, 255, 0.25);
+    border-radius: 6px;
+    overflow: hidden;
+}
+
+/* Snap guides */
+.ae-snap-guide {
+    position: absolute;
+    background: var(--accent-color);
+    box-shadow: 0 0 6px var(--accent-glow);
+    pointer-events: none;
+    z-index: 999;
+}
+.ae-snap-guide.vertical { width: 1px; height: 100%; top: 0; }
+.ae-snap-guide.horizontal { width: 100%; height: 1px; left: 0; }
+.ae-snap-guide.hidden { display: none; }
+
+/* Mini timeline */
+.ae-timeline {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 14px;
+    background: var(--input-bg);
+    border: 1px solid var(--border-subtle);
+    border-radius: 12px;
+}
+
+.ae-play-btn {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: var(--accent-color);
+    color: var(--bg-color);
+    border: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s, box-shadow 0.15s;
+}
+.ae-play-btn:hover {
+    background: #1ae0ff;
+    box-shadow: 0 4px 16px var(--accent-glow);
+}
+.ae-play-btn .material-symbols-outlined { font-size: 20px; }
+
+.ae-scrubber {
+    flex: 1;
+    accent-color: var(--accent-color);
+    cursor: pointer;
+}
+
+.ae-time {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--text-secondary);
+    min-width: 56px;
+    text-align: center;
+}
+
+/* Sidebar */
+.ae-sidebar {
+    overflow-y: auto;
+    overflow-x: hidden;
+    scrollbar-width: thin;
+    scrollbar-color: var(--scrollbar-thumb, rgba(255, 255, 255, 0.2)) transparent;
+    padding-right: 4px;
+}
+
+.ae-sidebar::-webkit-scrollbar { width: 6px; }
+.ae-sidebar::-webkit-scrollbar-track { background: transparent; }
+.ae-sidebar::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 3px;
+}
+.ae-sidebar::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.25); }
+
+/* Sidebar uses the existing collapsible-section + toggle-row + option-card
+   patterns from style.css — only AE-specific tweaks below. */
+.ae-sidebar .collapsible-section {
+    margin-bottom: 10px;
+}
+
+/* In a 380px sidebar the option-grid auto-fit can overflow; force 2 columns
+   for the default grid. The 3-col camera grid (#aeCameraToggles) keeps the
+   inherited 3-column layout so it matches the simple modal. */
+.ae-sidebar .option-grid {
+    grid-template-columns: 1fr 1fr;
+}
+.ae-sidebar .option-grid.option-grid-3 {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 4px;
+}
+/* Tighter card padding so 3 camera cards fit in the sidebar without
+   truncating labels. */
+.ae-sidebar #aeCameraToggles .option-card {
+    padding: 8px 6px;
+}
+.ae-sidebar #aeCameraToggles .option-card-label {
+    font-size: 11px;
+    line-height: 1.15;
+}
+
+/* Cameras "option-card" entries are checkboxes (not radios) — same look,
+   but allow them to be hidden when the loaded clip lacks a camera. */
+.ae-sidebar .option-card.hidden { display: none; }
+
+/* Progress footer */
+.ae-progress-sticky {
+    padding: 10px 16px;
+    border-top: 1px solid var(--border-subtle);
+    background: var(--modal-header-bg);
+}
+
+.ae-progress-sticky.hidden { display: none; }
+
+/* Tile (camera or overlay) - skeleton; Phase 3+ adds runtime behaviour */
+.ae-tile {
+    position: absolute;
+    box-sizing: border-box;
+    background: rgba(0, 212, 255, 0.05);
+    border: 2px solid rgba(0, 212, 255, 0.4);
+    border-radius: 6px;
+    cursor: move;
+    user-select: none;
+    overflow: hidden;
+    transition: box-shadow 0.15s, border-color 0.15s;
+}
+
+.ae-tile:hover { border-color: var(--accent-color); }
+
+.ae-tile.selected {
+    border-color: var(--accent-color);
+    box-shadow: 0 0 0 2px rgba(0, 212, 255, 0.2);
+}
+
+.ae-tile.dragging {
+    z-index: 1000;
+    box-shadow: 0 4px 20px var(--accent-glow);
+}
+
+.ae-tile.snapping {
+    box-shadow: 0 0 0 2px var(--accent-color), 0 0 20px var(--accent-glow);
+}
+
+.ae-tile-label {
+    position: absolute;
+    top: 4px;
+    left: 4px;
+    padding: 2px 6px;
+    background: rgba(0, 0, 0, 0.7);
+    color: #fff;
+    font-size: 11px;
+    font-weight: 600;
+    border-radius: 3px;
+    pointer-events: none;
+    z-index: 6;
+}
+
+.ae-tile-video {
+    width: 100%;
+    height: 100%;
+    /* `cover` instead of `contain` so the camera fills the tile completely
+       with no letterbox bars. Combined with strict camera aspect locking
+       (canvasController.js) the crop is sub-pixel — same visual result as
+       `contain` would be with matched aspect, but with a hard "no black
+       bars" guarantee if floating-point drift ever sneaks in. */
+    object-fit: cover;
+    pointer-events: none;
+    background: #000;
+}
+
+.ae-tile-video.mirrored { transform: scaleX(-1); }
+
+.ae-overlay-content {
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+}
+
+/* Resize handles - 8 cardinal points, visible only on .selected */
+.ae-handle {
+    position: absolute;
+    width: 12px;
+    height: 12px;
+    background: var(--accent-color);
+    border: 2px solid var(--bg-color);
+    border-radius: 50%;
+    display: none;
+    z-index: 5;
+}
+
+.ae-tile.selected .ae-handle { display: block; }
+
+.ae-handle-nw { top: -7px;  left: -7px;  cursor: nwse-resize; }
+.ae-handle-n  { top: -7px;  left: calc(50% - 6px); cursor: ns-resize; }
+.ae-handle-ne { top: -7px;  right: -7px; cursor: nesw-resize; }
+.ae-handle-e  { top: calc(50% - 6px); right: -7px; cursor: ew-resize; }
+.ae-handle-se { bottom: -7px; right: -7px; cursor: nwse-resize; }
+.ae-handle-s  { bottom: -7px; left: calc(50% - 6px); cursor: ns-resize; }
+.ae-handle-sw { bottom: -7px; left: -7px; cursor: nesw-resize; }
+.ae-handle-w  { top: calc(50% - 6px); left: -7px; cursor: ew-resize; }
+
+/* Responsive: stack columns on narrower screens. */
+@media (max-width: 1200px) {
+    .ae-body {
+        grid-template-columns: 1fr;
+    }
+    .ae-sidebar {
+        max-height: 280px;
+    }
+}
+
+/* =================================================================
+ * Detailed Dashboard Preview (#dashboardVisDetailed template)
+ * Mirrors the visual produced by writeDetailedDashboardAss in
+ * src/assGenerator.js — vertical 10-row themed panel with a left-side
+ * grey label and centered value on every row. Cloned into AE tiles by
+ * overlayPreviews.makeDetailedDashboardPreview.
+ *
+ * Sizing is fluid via container-query units (cqi/cqh) plus clamps, and
+ * is additionally scaled by --dvd-label-scale / --dvd-value-scale which
+ * the sidebar "Label Size" and "Value Size" controls set on the tile
+ * root. Defaults to 1 (no scaling).
+ * ================================================================= */
+.dashboard-vis-detailed {
+    /* NOTE: --dvd-label-scale and --dvd-value-scale are inherited from the
+       parent .ae-tile (set in JS by applyDashboardScales). Don't declare
+       them locally — a local declaration would shadow the inherited value
+       and the sliders would have no effect. The `, 1` fallback on every
+       var() call below handles the standalone (outside-AE) case. */
+    background: rgba(40, 40, 40, 0.55);
+    border: 1px solid #404040;
+    border-radius: 8px;
+    color: #FFFFFF;
+    font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    backdrop-filter: blur(6px) saturate(120%);
+    container-type: size;
+}
+
+/* Each row: left-aligned grey label + centered value. Label sits in the
+   left gutter (absolute), value occupies the row center — matches the
+   ASS layout where labels are anchored to contentLeft with \an4. */
+.dashboard-vis-detailed .dvd-row {
+    flex: 1 1 0;
+    min-height: 0;
+    padding: 2% 4%;
+    border-bottom: 1px solid #404040;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    position: relative;
+    line-height: 1.1;
+}
+.dashboard-vis-detailed .dvd-row:last-child { border-bottom: none; }
+
+/* Row label — grey, uppercase, anchored top-left of its row. */
+.dashboard-vis-detailed .dvd-label {
+    position: absolute;
+    top: 8%;
+    left: 6%;
+    color: #909090;
+    font-size: calc(clamp(7px, 2.5cqi, 11px) * var(--dvd-label-scale, 1));
+    letter-spacing: 0.4px;
+    text-transform: uppercase;
+    pointer-events: none;
+}
+
+/* Header row's label sits inline (it's a sibling of the value, not absolute),
+   since the header keeps both elements on one centered baseline. */
+.dashboard-vis-detailed .dvd-row-header {
+    justify-content: space-between;
+    flex: 0.7 1 0;
+    padding: 3% 6%;
+}
+.dashboard-vis-detailed .dvd-row-header .dvd-label {
+    position: static;
+}
+.dashboard-vis-detailed .dvd-datetime {
+    color: #FFFFFF;
+    font-weight: 600;
+    font-size: calc(clamp(8px, 3cqi, 13px) * var(--dvd-value-scale, 1));
+    white-space: nowrap;
+}
+
+/* Speed row — large green number with grey unit */
+.dashboard-vis-detailed .dvd-row-speed { flex: 1.8 1 0; }
+.dashboard-vis-detailed .dvd-row-speed .dvd-value {
+    display: flex;
+    align-items: baseline;
+    gap: 0.3em;
+}
+.dashboard-vis-detailed .dvd-speed-value {
+    color: #00CC44;
+    font-weight: 700;
+    font-size: calc(clamp(20px, 14cqi, 56px) * var(--dvd-value-scale, 1));
+    line-height: 1;
+}
+.dashboard-vis-detailed .dvd-speed-unit {
+    color: #A0A0A0;
+    font-size: calc(clamp(9px, 3.5cqi, 14px) * var(--dvd-value-scale, 1));
+}
+
+/* Gear row */
+.dashboard-vis-detailed .dvd-row-gear .dvd-gear-value {
+    font-weight: 700;
+    font-size: calc(clamp(12px, 5cqi, 22px) * var(--dvd-value-scale, 1));
+    color: #FFFFFF;
+    letter-spacing: 1px;
+}
+
+/* Steering row — image icon + green angle text */
+.dashboard-vis-detailed .dvd-row-steering .dvd-value { gap: 10px; }
+.dashboard-vis-detailed .dvd-steering-cluster {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.6em;
+}
+.dashboard-vis-detailed .dvd-steering-icon-wrap {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: calc(clamp(20px, 7cqi, 38px) * var(--dvd-value-scale, 1));
+    height: calc(clamp(20px, 7cqi, 38px) * var(--dvd-value-scale, 1));
+    border-radius: 50%;
+    background: rgba(112, 112, 112, 0.25);
+    transition: background 0.15s, box-shadow 0.15s;
+    flex-shrink: 0;
+}
+.dashboard-vis-detailed .dvd-steering-icon-wrap.active {
+    background: rgba(0, 72, 255, 0.32);
+    box-shadow: 0 0 8px rgba(0, 72, 255, 0.5);
+}
+.dashboard-vis-detailed .dvd-steering-icon {
+    width: 78%;
+    height: 78%;
+    object-fit: contain;
+    /* Off: collapse to gray — same recipe as .autosteer-icon in style.css */
+    filter: grayscale(100%) brightness(0.6);
+    opacity: 0.7;
+    transition: transform 0.12s linear, filter 0.15s, opacity 0.15s;
+    pointer-events: none;
+}
+.dashboard-vis-detailed .dvd-steering-icon-wrap.active .dvd-steering-icon {
+    /* On (AP/FSD): keep native PNG colors + apply blue drop-shadow glow.
+       Mirrors the floating widget's .autosteer-icon.active recipe so the
+       wheel's spokes/details stay visible (earlier brightness(0)+hue-rotate
+       collapsed the wheel into a flat blue disc). */
+    filter: drop-shadow(0 0 5px var(--dashboard-accent-glow, rgba(0, 72, 255, 0.5)))
+            drop-shadow(0 0 10px var(--dashboard-accent-glow, rgba(0, 72, 255, 0.5)));
+    opacity: 1;
+}
+.dashboard-vis-detailed .dvd-steering-angle {
+    color: #00CC44;
+    font-weight: 600;
+    font-size: calc(clamp(10px, 4cqi, 16px) * var(--dvd-value-scale, 1));
+    min-width: 2.8em;
+    text-align: left;
+}
+
+/* Accelerator row — % number on top, horizontal bar underneath */
+.dashboard-vis-detailed .dvd-accel-cluster {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    width: 100%;
+}
+.dashboard-vis-detailed .dvd-accel-pct {
+    color: #00CC44;
+    font-weight: 700;
+    font-size: calc(clamp(10px, 4cqi, 16px) * var(--dvd-value-scale, 1));
+}
+.dashboard-vis-detailed .dvd-accel-bar {
+    width: 80%;
+    height: calc(clamp(3px, 1.4cqi, 7px) * var(--dvd-value-scale, 1));
+    background: #404040;
+    border-radius: 2px;
+    overflow: hidden;
+}
+.dashboard-vis-detailed .dvd-accel-fill {
+    width: 0%;
+    height: 100%;
+    background: #00CC44;
+    transition: width 0.08s linear;
+}
+
+/* Brake row */
+.dashboard-vis-detailed .dvd-row-brake .dvd-brake-state {
+    font-weight: 700;
+    font-size: calc(clamp(11px, 4cqi, 18px) * var(--dvd-value-scale, 1));
+    letter-spacing: 1px;
+    color: #FFFFFF;
+}
+.dashboard-vis-detailed .dvd-row-brake .dvd-brake-state.on { color: #FF0000; }
+
+/* Blinker row — SVG turn-signal arrows reused from the floating widget */
+.dashboard-vis-detailed .dvd-blinker-cluster {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 22%;
+    width: 60%;
+}
+.dashboard-vis-detailed .dvd-blink-left,
+.dashboard-vis-detailed .dvd-blink-right {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: calc(clamp(16px, 6cqi, 32px) * var(--dvd-value-scale, 1));
+    height: calc(clamp(16px, 6cqi, 32px) * var(--dvd-value-scale, 1));
+    color: #505050;
+    transition: color 0.05s linear, filter 0.15s;
+}
+.dashboard-vis-detailed .dvd-blink-left svg,
+.dashboard-vis-detailed .dvd-blink-right svg {
+    width: 100%;
+    height: 100%;
+}
+.dashboard-vis-detailed .dvd-blink-left.active,
+.dashboard-vis-detailed .dvd-blink-right.active {
+    color: #22C55E;
+    filter: drop-shadow(0 0 4px rgba(34, 197, 94, 0.55));
+}
+
+/* Autopilot row */
+.dashboard-vis-detailed .dvd-row-autopilot .dvd-ap-state {
+    font-weight: 700;
+    font-size: calc(clamp(11px, 4cqi, 18px) * var(--dvd-value-scale, 1));
+    letter-spacing: 0.5px;
+    color: #FFFFFF;
+    text-align: center;
+}
+.dashboard-vis-detailed .dvd-row-autopilot .dvd-ap-state.active { color: #0048FF; }
+
+/* GPS row — two stacked lines */
+.dashboard-vis-detailed .dvd-gps-cluster,
+.dashboard-vis-detailed .dvd-gforce-cluster {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+}
+.dashboard-vis-detailed .dvd-gps-coords {
+    font-weight: 600;
+    color: #CCCCCC;
+    font-size: calc(clamp(8px, 3cqi, 11px) * var(--dvd-value-scale, 1));
+}
+.dashboard-vis-detailed .dvd-gps-heading {
+    color: #A0A0A0;
+    font-size: calc(clamp(7px, 2.8cqi, 11px) * var(--dvd-value-scale, 1));
+}
+
+/* G-Force row */
+.dashboard-vis-detailed .dvd-gforce-lat,
+.dashboard-vis-detailed .dvd-gforce-lon {
+    color: #CCCCCC;
+    font-size: calc(clamp(7px, 2.8cqi, 11px) * var(--dvd-value-scale, 1));
+}
+
+/* =================================================================
+ * Compact + Default dashboard scaling inside an AE tile
+ * The "Label Size" / "Value Size" dropdowns set --dvd-label-scale and
+ * --dvd-value-scale on the .ae-tile root. These rules forward those
+ * variables into the cloned Compact and Default panels so users get
+ * the same scaling behavior as Detailed.
+ *
+ * Compact: children use em-based font-sizes, so bumping the panel's
+ * parent font-size scales them all together via the em cascade. We
+ * apply value-scale (Compact has no "label" elements really).
+ *
+ * Default (#dashboardVis clone): children use absolute px font-sizes
+ * that don't cascade, so we override the major ones individually.
+ * Labels in the extra-data row use label-scale; everything else uses
+ * value-scale.
+ * ================================================================= */
+
+/* Compact — fill the AE tile (overrides .dashboard-vis-compact's
+   !important fixed 56px height / absolute positioning from style.css)
+   and bump parent font-size with the user's Value Size, which cascades
+   via em to all child elements. */
+.ae-tile[data-tile-name="dashboard"] .dashboard-vis-compact {
+    position: static !important;
+    top: auto !important;
+    bottom: auto !important;
+    left: auto !important;
+    right: auto !important;
+    transform: none !important;
+    width: 100% !important;
+    height: 100% !important;
+    padding: 6px 10px !important;
+    display: flex !important;
+    font-size: calc(clamp(10px, 1.2vh, 16px) * var(--dvd-value-scale, 1)) !important;
+}
+
+/* Default's scaling is handled in JS (overlayPreviews.makeDefaultDashboardPreview)
+   via a transform: scale fit-to-tile + Value Size multiplier, so spacing scales
+   with text. No per-element CSS needed here. Label Size has no effect on
+   Default since the floating-widget layout doesn't have a meaningful
+   label/value distinction. */
+
+/* =========================================================================
+   Tesla Mobile — Date Bar (top tile)
+
+   Mirrors the top half of writeTeslaMobileDashboardAss: centered date/time
+   text in white Segoe UI on a #1A1A1A panel with a thin gray separator
+   along the bottom.
+
+   The source template carries the `.hidden` class so it stays off-screen
+   in the document; the JS makers strip `.hidden` from the clone and append
+   it to the AE tile. NO `!important` on display — the global
+   `.hidden { display: none !important }` rule remains the source of truth
+   for hiding the template.
+
+   The --dvd-date-value-scale var is inherited from the parent .ae-tile
+   (set by applyDashboardScales when the Date Bar Size dropdown changes).
+   Sizing is container-relative (cqh / cqi) because the clone is sized
+   by the tile, not by its own content.
+   ========================================================================= */
+.dashboard-vis-tesla-mobile-date {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%;
+    height: 100%;
+    background: #1A1A1A;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    overflow: hidden;
+    box-sizing: border-box;
+}
+.dashboard-vis-tesla-mobile-date .dvm-date-text {
+    color: #FFFFFF;
+    /* font-size is set in JS by fitDateText() — measuring tile height +
+       text width gives us a guaranteed-visible value at any tile size.
+       The 16px fallback here is just for the brief moment before JS runs. */
+    font-size: 16px;
+    line-height: 1;
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    padding: 0 8px;
+}
+.dashboard-vis-tesla-mobile-date .dvm-date-separator {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 1px;
+    background: #333333;
+}
+
+/* =========================================================================
+   Tesla Mobile — Data Bar (bottom tile)
+
+   Mirrors the bottom half of writeTeslaMobileDashboardAss: five circular
+   icon clusters in a horizontal row on #1A1A1A.
+     [brake]  [gear]  ----  [← speed AP →]  ----  [steering]  [accel]
+   Circles use border-radius: 50% and scale with the tile height (76cqh,
+   matching ASS's circleR = dashHeight * 0.38).
+
+   Icon images are the SAME PNG assets used by the compact dashboard and
+   floating widget (pedal_brake.png / pedal_acc.png / autosteer-icon.png /
+   arrow.png), recolored via CSS `filter` to match each state. This keeps
+   the AE preview visually consistent with the rest of the app.
+
+   The --dvd-value-scale var inherited from the parent .ae-tile drives
+   text scaling (matches existing detailed/compact behavior).
+   ========================================================================= */
+.dashboard-vis-tesla-mobile-data {
+    position: absolute;
+    inset: 0;
+    background: #1A1A1A;
+    container-type: size;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 3cqi;
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    overflow: hidden;
+    box-sizing: border-box;
+    gap: 1.5cqi;
+}
+.dashboard-vis-tesla-mobile-data .dvm-circle {
+    height: 76cqh;
+    aspect-ratio: 1;
+    border-radius: 50%;
+    background: #303030;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: background-color 0.1s;
+}
+.dashboard-vis-tesla-mobile-data .dvm-circle.gear        { background: #404040; }
+/* AP-active accent across the bar uses the brand blue (--dashboard-accent
+   #0048FF), matching every other dashboard preview and the ASS render
+   (where COLORS.blue = &H00FF4800 = #0048FF — BGR-encoded, not orange). */
+.dashboard-vis-tesla-mobile-data .dvm-circle.gear.ap-on  { background: #0048FF; }
+.dashboard-vis-tesla-mobile-data .dvm-circle.brake.on    { background: #000050; }
+.dashboard-vis-tesla-mobile-data .dvm-circle.accel.on    { background: #505050; }
+.dashboard-vis-tesla-mobile-data .dvm-circle.steering    { background: transparent; }
+
+.dashboard-vis-tesla-mobile-data .dvm-gear-letter {
+    color: #FFFFFF;
+    font-weight: bold;
+    font-size: calc(clamp(8px, 53cqh, 60px) * var(--dvd-value-scale, 1));
+    line-height: 1;
+}
+.dashboard-vis-tesla-mobile-data .dvm-center {
+    display: flex;
+    align-items: center;          /* vertical center for arrows / speed / AP */
+    justify-content: center;
+    gap: 2cqi;
+    flex: 1 1 auto;
+    min-width: 0;
+    line-height: 1;
+}
+
+/* Blinker arrows — same inline SVG as the floating widget / detailed
+   dashboard, recolored via `color` (the SVG path uses fill="currentColor"). */
+.dashboard-vis-tesla-mobile-data .dvm-arrow {
+    height: 70cqh;
+    width: 70cqh;            /* SVG viewBox is square-ish; size by height */
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: #505050;
+    flex-shrink: 0;
+    transition: color 0.1s;
+}
+.dashboard-vis-tesla-mobile-data .dvm-arrow svg {
+    width: 100%;
+    height: 100%;
+    display: block;
+}
+.dashboard-vis-tesla-mobile-data .dvm-arrow.on {
+    color: #22C55E;          /* green when blinker is engaged */
+}
+
+.dashboard-vis-tesla-mobile-data .dvm-speed {
+    display: flex;
+    /* center (not baseline) so the small "MPH" unit visually centers next
+       to the big speed number instead of dropping to its baseline — looks
+       cleaner in a skinny bar and matches what the user sees in the ASS
+       render where each text element is centered on its own pos(). */
+    align-items: center;
+    gap: 1.5cqi;
+    flex-shrink: 1;
+    min-width: 0;
+    line-height: 1;
+}
+.dashboard-vis-tesla-mobile-data .dvm-speed-num {
+    color: #FFFFFF;
+    font-weight: bold;
+    font-size: calc(clamp(10px, 72cqh, 90px) * var(--dvd-value-scale, 1));
+    line-height: 1;
+}
+.dashboard-vis-tesla-mobile-data .dvm-speed-unit {
+    color: #808080;
+    font-size: calc(clamp(7px, 42cqh, 50px) * var(--dvd-value-scale, 1));
+    line-height: 1;
+}
+.dashboard-vis-tesla-mobile-data .dvm-ap {
+    color: #808080;
+    font-size: calc(clamp(7px, 42cqh, 50px) * var(--dvd-value-scale, 1));
+    line-height: 1;
+    white-space: nowrap;
+    flex-shrink: 0;
+    transition: color 0.1s;
+}
+.dashboard-vis-tesla-mobile-data .dvm-ap.on { color: #0048FF; }
+
+/* Pedal PNGs — same recipe as .brake-icon-compact in style.css. Default
+   filter dims to dark gray, .on filters flip to bright color (blue for
+   brake, white-ish for accel). */
+.dashboard-vis-tesla-mobile-data .dvm-brake-icon,
+.dashboard-vis-tesla-mobile-data .dvm-accel-icon {
+    width: 55%;
+    height: 55%;
+    object-fit: contain;
+    filter: brightness(0) saturate(100%) invert(60%) sepia(0%) saturate(0%) hue-rotate(0deg);
+    opacity: 0.8;
+    transition: filter 0.1s, opacity 0.1s;
+}
+.dashboard-vis-tesla-mobile-data .dvm-circle.brake.on .dvm-brake-icon {
+    /* #0000FF-ish bright blue */
+    filter: brightness(0) saturate(100%) invert(20%) sepia(100%) saturate(7000%) hue-rotate(240deg) brightness(110%) contrast(110%);
+    opacity: 1;
+}
+.dashboard-vis-tesla-mobile-data .dvm-circle.accel.on .dvm-accel-icon {
+    /* #C8C8C8 light gray */
+    filter: brightness(0) saturate(100%) invert(85%) sepia(0%) saturate(0%) hue-rotate(0deg);
+    opacity: 1;
+}
+
+/* Steering wheel uses the SAME autosteer-icon.png as the floating widget,
+   and we mirror the floating widget's recipe exactly (style.css:2145-2158):
+   off = grayscale + dim, on = native colors + blue drop-shadow glow.
+   Earlier `brightness(0) + hue-rotate` collapsed the wheel into a solid
+   blue disc because brightness(0) turns ALL opaque pixels black, losing
+   the spoke detail. drop-shadow preserves the wheel pixels intact and
+   just adds glow around them. The image rotates to follow steering angle. */
+.dashboard-vis-tesla-mobile-data .dvm-steering-icon {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    /* Off: collapse to gray */
+    filter: grayscale(100%) brightness(0.6);
+    opacity: 0.55;
+    transition: filter 0.15s, opacity 0.15s;
+}
+.dashboard-vis-tesla-mobile-data .dvm-circle.steering.on {
+    background: rgba(0, 72, 255, 0.15);
+    box-shadow: inset 0 0 0 2px #0048FF;
+}
+.dashboard-vis-tesla-mobile-data .dvm-circle.steering.on .dvm-steering-icon {
+    /* On (FSD/AP): keep native colors + apply blue glow — matches the
+       floating widget's .autosteer-icon.active rule. */
+    filter: drop-shadow(0 0 6px var(--dashboard-accent-glow, rgba(0, 72, 255, 0.5)))
+            drop-shadow(0 0 12px var(--dashboard-accent-glow, rgba(0, 72, 255, 0.5)));
+    opacity: 1;
+}

@@ -27,6 +27,7 @@ import {
     resetCameraOrder, getEffectiveSlots, initCameraDragAndDrop, updateTileLabels, updateCompactDashboardPosition
 } from './scripts/features/cameraRearrange.js';
 import { initDraggablePanels, resetPanelPosition } from './scripts/ui/draggablePanels.js';
+import { initAdvancedEditor, openAdvancedEditor } from './scripts/ui/advancedEditor/index.js';
 import { initEventMarkers, updateEventTimelineMarker, updateEventCameraHighlight } from './scripts/ui/eventMarkers.js';
 import { initSkipSeconds, skipSeconds } from './scripts/features/skipSeconds.js';
 import { initMapVisualization, updateMapVisibility, updateMapMarker, clearMapMarker, getMapOrientation, setMapOrientation, getMapBearing } from './scripts/ui/mapVisualization.js';
@@ -1050,6 +1051,14 @@ let useMetric = false; // Will be loaded from settings
     }
     if (exportBtn) {
         exportBtn.onclick = (e) => { e.preventDefault(); openExportModal(); exportBtn.blur(); };
+    }
+    const openAdvEditorBtn = $('openAdvancedEditorBtn');
+    if (openAdvEditorBtn) {
+        openAdvEditorBtn.onclick = (e) => {
+            e.preventDefault();
+            openAdvancedEditor();
+            openAdvEditorBtn.blur();
+        };
     }
     if (closeExportModalBtn) {
         closeExportModalBtn.onclick = (e) => { 
@@ -4784,6 +4793,16 @@ initExportModule({
     getBaseFolderPath: () => baseFolderPath,
     getProgressBar: () => progressBar,
     getUseMetric: () => useMetric
+});
+
+initAdvancedEditor({
+    getState: () => state,
+    getNativeVideo: () => nativeVideo,
+    getBaseFolderPath: () => baseFolderPath,
+    getVideoBySlot: () => videoBySlot,
+    getExportState: () => exportState,
+    getUseMetric: () => useMetric,
+    findSeiAtTime
 });
 
 // Call updateExportButtonState initially

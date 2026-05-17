@@ -3,7 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const { spawn, spawnSync } = require('child_process');
-const { writeCompactDashboardAss, writeDetailedDashboardAss, writeTeslaMobileDashboardAss, writeTeslaScreenDashAss, writeMinimapAss } = require('./assGenerator');
+const { writeCompactDashboardAss, writeDefaultDashboardAss, writeDetailedDashboardAss, writeTeslaMobileDashboardAss, writeTeslaMobileDateAss, writeTeslaMobileDataAss, writeTeslaScreenDashAss, writeMinimapAss } = require('./assGenerator');
 // Pure-JS PNG compositor used for blur masks. Replaces `sharp` so Linux (and other)
 // users don't need the native libvips binaries bundled.
 const { PNG } = require('pngjs');
@@ -235,7 +235,8 @@ async function applyBlurZonesToStreams({ blurZones, blurType, streams, streamTag
 
 // Video Export Implementation
 async function performVideoExport(event, exportId, exportData, ffmpegPath) {
-  const { segments, startTimeMs, endTimeMs, outputPath, cameras, mobileExport, quality, includeDashboard, seiData, layoutData, useMetric, dashboardStyle = 'standard', dashboardPosition = 'bottom-center', dashboardSize = 'medium', includeTimestamp = false, timestampPosition = 'bottom-center', timestampDateFormat = 'mdy', timestampTimeFormat = '12h', blurZones = [], blurType = 'solid', language = 'en', includeMinimap = false, minimapPosition = 'top-right', minimapSize = 'small', minimapRenderMode = 'ass', minimapDarkMode = false, mapPath = [], mirrorCameras = true, accelPedMode = 'iconbar', enableTimelapse = false, timelapseSpeed = 1 } = exportData;
+  const { segments, startTimeMs, endTimeMs, outputPath, cameras, mobileExport, quality, includeDashboard, seiData, layoutData, overlayData = null, useMetric, dashboardStyle = 'standard', dashboardPosition = 'bottom-center', dashboardSize = 'medium', dashboardLabelScale = 1, dashboardValueScale = 1, dashboardDateValueScale = 1, includeTimestamp = false, timestampPosition = 'bottom-center', timestampDateFormat = 'mdy', timestampTimeFormat = '12h', blurZones = [], blurType = 'solid', language = 'en', includeMinimap = false, minimapPosition = 'top-right', minimapSize = 'small', minimapRenderMode = 'ass', minimapDarkMode = false, mapPath = [], mirrorCameras = true, accelPedMode = 'iconbar', enableTimelapse = false, timelapseSpeed = 1 } = exportData;
+  const isAdvancedLayout = !!(layoutData && layoutData.layoutMode === 'advanced');
 
   console.log(`[EXPORT] Received exportData - includeMinimap: ${includeMinimap}, mapPath.length: ${mapPath?.length || 0}, minimapPosition: ${minimapPosition}, minimapSize: ${minimapSize}, renderMode: ${minimapRenderMode}`);
 
@@ -472,56 +473,89 @@ async function performVideoExport(event, exportId, exportData, ffmpegPath) {
     let baseInputIdx = null;
 
     if (layoutData && layoutData.cameras && Object.keys(layoutData.cameras).length > 0) {
-      // Use custom layout - map canvas positions to video coordinates
       const cameraLayouts = layoutData.cameras;
 
-      // Get card dimensions from layout (all cards have the same size)
-      // This is the size of each card on the canvas
+      if (isAdvancedLayout) {
+        // Advanced Editor layout: each camera has its own width/height in output px.
+        // Bounding box includes any enabled overlays so positions outside the
+        // camera region (e.g. a dashboard floating below) expand the frame.
+        const canvasW_px = layoutData.canvasWidth  || w;
+        const canvasH_px = layoutData.canvasHeight || h;
+        let minX = Infinity, minY = Infinity;
+        let maxX = -Infinity, maxY = -Infinity;
+
+        for (const camera of activeCamerasForGrid) {
+          const layout = cameraLayouts[camera];
+          if (!layout) continue;
+          if (layout.x < minX) minX = layout.x;
+          if (layout.y < minY) minY = layout.y;
+          if (layout.x + layout.width  > maxX) maxX = layout.x + layout.width;
+          if (layout.y + layout.height > maxY) maxY = layout.y + layout.height;
+        }
+        for (const key of ['timestamp', 'dashboard', 'minimap']) {
+          const o = overlayData?.[key];
+          if (!o) continue;
+          const ox = o.x * canvasW_px;
+          const oy = o.y * canvasH_px;
+          const ow = o.w * canvasW_px;
+          const oh = o.h * canvasH_px;
+          if (ox < minX) minX = ox;
+          if (oy < minY) minY = oy;
+          if (ox + ow > maxX) maxX = ox + ow;
+          if (oy + oh > maxY) maxY = oy + oh;
+        }
+        if (!isFinite(minX) || !isFinite(minY)) { minX = 0; minY = 0; maxX = canvasW_px; maxY = canvasH_px; }
+
+        totalW = Math.ceil(maxX - minX);
+        totalH = Math.ceil(maxY - minY);
+        totalW = totalW + (totalW % 2);
+        totalH = totalH + (totalH % 2);
+
+        // Stash bbox offsets so the camera loop + overlay code can apply them.
+        layoutData._advancedBBox = { minX, minY };
+
+        cols = 0; rows = 0;
+        console.log(`📐 Advanced layout: ${totalW}x${totalH} (canvas ${canvasW_px}x${canvasH_px}, bbox start ${minX.toFixed(1)},${minY.toFixed(1)})`);
+
+        baseInputIdx = inputs.length + 1;
+        cmd.push('-f', 'lavfi', '-i', `color=c=black:s=${totalW}x${totalH}:r=${FPS}:d=${durationSec}`);
+      } else {
+      // Legacy simple-modal custom layout — all cameras assumed same size as the first.
       const firstLayout = cameraLayouts[Object.keys(cameraLayouts)[0]];
       const cardWidth = firstLayout?.width || 200;
       const cardHeight = firstLayout?.height || 112;
 
       // Scale factors: map canvas card size to native camera size
-      // Each card on the canvas represents one camera at native size (w x h)
-      const scaleX = w / cardWidth; // Map card width to camera width
-      const scaleY = h / cardHeight; // Map card height to camera height
+      const scaleX = w / cardWidth;
+      const scaleY = h / cardHeight;
 
-      // Calculate bounding box: find min position and max position + camera size
       let minX = Infinity, minY = Infinity;
       let maxRight = -Infinity, maxBottom = -Infinity;
 
       for (const camera of activeCamerasForGrid) {
         const layout = cameraLayouts[camera];
         if (!layout) continue;
-
-        // Position in video coordinates (scale from canvas)
         const videoX = layout.x * scaleX;
         const videoY = layout.y * scaleY;
-
-        // Camera ends at position + native size
         const cameraRight = videoX + w;
         const cameraBottom = videoY + h;
-
         if (videoX < minX) minX = videoX;
         if (videoY < minY) minY = videoY;
         if (cameraRight > maxRight) maxRight = cameraRight;
         if (cameraBottom > maxBottom) maxBottom = cameraBottom;
       }
 
-      // Total output size is from 0 to max (we'll offset positions to start at 0)
       totalW = Math.ceil(maxRight - minX);
       totalH = Math.ceil(maxBottom - minY);
-
-      // Ensure even dimensions for video encoding
       totalW = totalW + (totalW % 2);
       totalH = totalH + (totalH % 2);
 
-      cols = 0; rows = 0; // Not used for custom layout
+      cols = 0; rows = 0;
       console.log(`📐 Custom layout: ${totalW}x${totalH} (cameras at native ${w}x${h}, card ${cardWidth}x${cardHeight}, scale ${scaleX.toFixed(3)}x/${scaleY.toFixed(3)}y)`);
 
-      // Add base canvas input for custom layout (after black source)
       baseInputIdx = inputs.length + 1;
       cmd.push('-f', 'lavfi', '-i', `color=c=black:s=${totalW}x${totalH}:r=${FPS}:d=${durationSec}`);
+      }
     } else {
       // Grid layout - calculate grid dimensions and total output resolution
       const numStreams = activeCamerasForGrid.length;
@@ -537,6 +571,10 @@ async function performVideoExport(event, exportId, exportData, ffmpegPath) {
 
     let useAssDashboard = false;
     let assTempPath = null;
+    // Tesla Mobile in AE mode: holds the date-bar ASS path so the filter
+    // graph can chain `ass='data',ass='date'` for the two free-placed tiles.
+    // Stays null for all other styles and for the simple-modal Tesla Mobile path.
+    let dashboardDateAssPath = null;
     let teslaMobileDashHeight = 0; // Height of Tesla Mobile dashboard bar
     let teslaMobileDateHeight = 0; // Height of Tesla Mobile date header bar
     let teslaMobileIsTop = false;  // Whether Tesla Mobile dashboard bar is at top
@@ -555,7 +593,9 @@ async function performVideoExport(event, exportId, exportData, ffmpegPath) {
         // Two bars: date header (always top) + dashboard (top or bottom of clip)
         // Bottom: [Date] [Clip] [Dashboard]
         // Top:    [Date] [Dashboard] [Clip]
-        if (dashboardStyle === 'tesla-mobile') {
+        // Skip canvas padding in advanced mode — the dashboard is sized/positioned
+        // by the user and fits inside the bounding box already.
+        if (dashboardStyle === 'tesla-mobile' && !isAdvancedLayout) {
           teslaMobileDashHeight = Math.round(totalW / 38);
           teslaMobileDashHeight = teslaMobileDashHeight + (teslaMobileDashHeight % 2); // Even for encoder
           teslaMobileDateHeight = Math.round(totalW / 45); // Tight fit around date text
@@ -565,6 +605,23 @@ async function performVideoExport(event, exportId, exportData, ffmpegPath) {
 
         const totalPadding = teslaMobileDashHeight + teslaMobileDateHeight;
         const paddedH = totalH + totalPadding;
+
+        // Build customPosition for the Advanced Editor — converts the user's
+        // normalized (0-1) position on the 16:9 canvas to output px,
+        // shifted to start at the bbox origin.
+        let dashCustomPosition = null;
+        if (isAdvancedLayout && overlayData?.dashboard) {
+          const canvasW_px = layoutData.canvasWidth  || totalW;
+          const canvasH_px = layoutData.canvasHeight || totalH;
+          const bbox = layoutData._advancedBBox || { minX: 0, minY: 0 };
+          const o = overlayData.dashboard;
+          dashCustomPosition = {
+            x: Math.round(o.x * canvasW_px - bbox.minX),
+            y: Math.round(o.y * canvasH_px - bbox.minY),
+            w: Math.round(o.w * canvasW_px),
+            h: Math.round(o.h * canvasH_px),
+          };
+        }
 
         const dashOpts = {
           playResX: totalW,
@@ -580,15 +637,47 @@ async function performVideoExport(event, exportId, exportData, ffmpegPath) {
           accelPedMode,
           videoH: totalH,               // Original video height (before padding)
           dateBarHeight: teslaMobileDateHeight, // Height of date header bar
-          dashBarHeight: teslaMobileDashHeight  // Height of dashboard bar
+          dashBarHeight: teslaMobileDashHeight, // Height of dashboard bar
+          customPosition: dashCustomPosition,   // Advanced Editor override
+          // AE label/value scale multipliers (defaults to 1 from destructure
+          // when simple modal exports — no behavior change).
+          labelScale: dashboardLabelScale,
+          valueScale: dashboardValueScale,
         };
 
         if (dashboardStyle === 'detailed') {
           assTempPath = await writeDetailedDashboardAss(exportId, seiData, startTimeMs, endTimeMs, dashOpts);
+        } else if (dashboardStyle === 'default') {
+          assTempPath = await writeDefaultDashboardAss(exportId, seiData, startTimeMs, endTimeMs, dashOpts);
         } else if (dashboardStyle === 'tesla-mobile') {
-          // Update totalH to include both bars (affects encoder resolution checks)
-          totalH = paddedH;
-          assTempPath = await writeTeslaMobileDashboardAss(exportId, seiData, startTimeMs, endTimeMs, dashOpts);
+          // Two paths:
+          //   - Advanced Editor with a dashboardDate tile: render BOTH bars as
+          //     separately-placed ASS files. No canvas padding (the user
+          //     positions both tiles freely on the existing video canvas).
+          //   - Legacy / simple-modal Tesla Mobile: pad the canvas and stack
+          //     date+dashboard with the existing writer. Unchanged.
+          if (isAdvancedLayout && overlayData?.dashboardDate) {
+            const canvasW_px = layoutData.canvasWidth  || totalW;
+            const canvasH_px = layoutData.canvasHeight || totalH;
+            const bbox = layoutData._advancedBBox || { minX: 0, minY: 0 };
+            const od = overlayData.dashboardDate;
+            const datePosition = {
+              x: Math.round(od.x * canvasW_px - bbox.minX),
+              y: Math.round(od.y * canvasH_px - bbox.minY),
+              w: Math.round(od.w * canvasW_px),
+              h: Math.round(od.h * canvasH_px),
+            };
+            assTempPath = await writeTeslaMobileDataAss(exportId, seiData, startTimeMs, endTimeMs, dashOpts);
+            dashboardDateAssPath = await writeTeslaMobileDateAss(exportId, seiData, startTimeMs, endTimeMs, {
+              ...dashOpts,
+              customPosition: datePosition,
+              dateValueScale: dashboardDateValueScale || 1,
+            });
+          } else {
+            // Update totalH to include both bars (affects encoder resolution checks)
+            totalH = paddedH;
+            assTempPath = await writeTeslaMobileDashboardAss(exportId, seiData, startTimeMs, endTimeMs, dashOpts);
+          }
         } else if (dashboardStyle === 'tesla-screen-dash') {
           // No canvas padding — overlay sits on the original frame
           assTempPath = await writeTeslaScreenDashAss(exportId, seiData, startTimeMs, endTimeMs, dashOpts);
@@ -596,10 +685,11 @@ async function performVideoExport(event, exportId, exportData, ffmpegPath) {
           assTempPath = await writeCompactDashboardAss(exportId, seiData, startTimeMs, endTimeMs, dashOpts);
         }
         tempFiles.push(assTempPath);
+        if (dashboardDateAssPath) tempFiles.push(dashboardDateAssPath);
         useAssDashboard = true;
 
         sendDashboardProgress(100, 'Dashboard overlay ready');
-        console.log(`[ASS] Generated dashboard: ${assTempPath}`);
+        console.log(`[ASS] Generated dashboard: ${assTempPath}${dashboardDateAssPath ? ` + date bar: ${dashboardDateAssPath}` : ''}`);
       } catch (err) {
         if (err.message === 'Export cancelled' || cancelledExports.has(exportId)) {
           throw err;
@@ -626,7 +716,16 @@ async function performVideoExport(event, exportId, exportData, ffmpegPath) {
       if (minimapRenderMode === 'ass') {
         // ASS Mode: Download map tiles + overlay ASS route/markers
         try {
-          const minimapDims = calculateMinimapSize(totalW, totalH, minimapSize);
+          let minimapDims = calculateMinimapSize(totalW, totalH, minimapSize);
+          if (isAdvancedLayout && overlayData?.minimap) {
+            const canvasW_px = layoutData.canvasWidth  || totalW;
+            const canvasH_px = layoutData.canvasHeight || totalH;
+            const mw = Math.round(overlayData.minimap.w * canvasW_px);
+            const mh = Math.round(overlayData.minimap.h * canvasH_px);
+            const sq = Math.max(2, Math.min(mw, mh));
+            const even = Math.floor(sq / 2) * 2 || 2;
+            minimapDims = { width: even, height: even };
+          }
           const minimapTargetSize = minimapDims.width; // Square minimap
           minimapPixelSize = minimapTargetSize;
 
@@ -780,7 +879,16 @@ async function performVideoExport(event, exportId, exportData, ffmpegPath) {
       } else {
         // Leaflet Mode: Slow BrowserWindow pre-rendering with map tiles
         try {
-          const minimapDims = calculateMinimapSize(totalW, totalH, minimapSize);
+          let minimapDims = calculateMinimapSize(totalW, totalH, minimapSize);
+          if (isAdvancedLayout && overlayData?.minimap) {
+            const canvasW_px = layoutData.canvasWidth  || totalW;
+            const canvasH_px = layoutData.canvasHeight || totalH;
+            const mw = Math.round(overlayData.minimap.w * canvasW_px);
+            const mh = Math.round(overlayData.minimap.h * canvasH_px);
+            const sq = Math.max(2, Math.min(mw, mh));
+            const even = Math.floor(sq / 2) * 2 || 2;
+            minimapDims = { width: even, height: even };
+          }
           const minimapWidth = minimapDims.width;
           const minimapHeight = minimapDims.height;
           minimapPixelSize = minimapWidth;
@@ -866,29 +974,29 @@ async function performVideoExport(event, exportId, exportData, ffmpegPath) {
     const streamTags = [];
 
     if (layoutData && layoutData.cameras && Object.keys(layoutData.cameras).length > 0) {
-      // Custom layout using overlay filters (base canvas already added as input)
-      // Cameras use native size (w x h), only positioning comes from layout
-
       const cameraLayouts = layoutData.cameras;
+      const useAdvanced = isAdvancedLayout;
 
-      // Get card dimensions from layout (all cards have the same size)
+      // Compute per-camera placement helpers depending on layout mode.
       const firstLayout = cameraLayouts[Object.keys(cameraLayouts)[0]];
       const cardWidth = firstLayout?.width || 200;
       const cardHeight = firstLayout?.height || 112;
+      const scaleX = useAdvanced ? 1 : w / cardWidth;
+      const scaleY = useAdvanced ? 1 : h / cardHeight;
 
-      // Calculate scale factors: map canvas card size to native camera size
-      const scaleX = w / cardWidth;
-      const scaleY = h / cardHeight;
-
-      // Find minimum positions to offset all cameras (so output starts at 0,0)
       let minX = Infinity, minY = Infinity;
-      for (const camera of activeCamerasForGrid) {
-        const layout = cameraLayouts[camera];
-        if (!layout) continue;
-        const videoX = layout.x * scaleX;
-        const videoY = layout.y * scaleY;
-        if (videoX < minX) minX = videoX;
-        if (videoY < minY) minY = videoY;
+      if (useAdvanced && layoutData._advancedBBox) {
+        minX = layoutData._advancedBBox.minX;
+        minY = layoutData._advancedBBox.minY;
+      } else {
+        for (const camera of activeCamerasForGrid) {
+          const layout = cameraLayouts[camera];
+          if (!layout) continue;
+          const videoX = layout.x * scaleX;
+          const videoY = layout.y * scaleY;
+          if (videoX < minX) minX = videoX;
+          if (videoY < minY) minY = videoY;
+        }
       }
 
       const cameraStreams = [];
@@ -903,21 +1011,42 @@ async function performVideoExport(event, exportId, exportData, ffmpegPath) {
         const srcIdx = hasVideo ? inputIdx : blackInputIdx;
         const isMirrored = mirrorCameras && ['back', 'left_repeater', 'right_repeater'].includes(camera);
 
-        // Scale camera to native size (w x h) - exactly like old grid code
-        // Ensure even dimensions
-        const finalW = w + (w % 2);
-        const finalH = h + (h % 2);
-
-        // Calculate position from canvas layout (scale and offset)
-        const x = Math.round((layout.x * scaleX) - minX);
-        const y = Math.round((layout.y * scaleY) - minY);
+        // Advanced layout: scale each camera to ITS own canvas size.
+        // Legacy custom layout: every camera uses native (w x h).
+        let finalW, finalH, x, y;
+        if (useAdvanced) {
+          const ew = Math.round(layout.width);
+          const eh = Math.round(layout.height);
+          finalW = ew + (ew % 2);
+          finalH = eh + (eh % 2);
+          x = Math.round(layout.x - minX);
+          y = Math.round(layout.y - minY);
+        } else {
+          finalW = w + (w % 2);
+          finalH = h + (h % 2);
+          x = Math.round((layout.x * scaleX) - minX);
+          y = Math.round((layout.y * scaleY) - minY);
+        }
+        // For advanced mode we fill the tile with the camera (no black bars)
+        // via increase+crop. The AE strictly aspect-locks camera tiles so
+        // the tile's W:H ratio matches the camera's native aspect — the crop
+        // is sub-pixel, but this guarantees zero letterboxing even if
+        // floating-point math drifts the aspect slightly. Legacy mode keeps
+        // the prior force_original_aspect_ratio=disable behavior.
+        const scaleMode = useAdvanced ? 'increase' : 'disable';
 
         // Use smoother frame rate conversion
         // Normalize timestamps, convert frame rate, mirror if needed, scale to target size
         let chain = `[${srcIdx}:v]setpts=PTS-STARTPTS`;
         chain += `,fps=${FPS}:round=near`; // Smooth frame rate conversion
         if (hasVideo && isMirrored) chain += ',hflip';
-        chain += `,scale=${finalW}:${finalH}:force_original_aspect_ratio=disable:flags=lanczos,setsar=1[v${i}]`;
+        chain += `,scale=${finalW}:${finalH}:force_original_aspect_ratio=${scaleMode}:flags=lanczos`;
+        if (useAdvanced) {
+          // Center-crop the scaled-up camera to exactly finalW x finalH so
+          // the tile is filled completely (no letterbox / pillarbox).
+          chain += `,crop=${finalW}:${finalH}:(iw-${finalW})/2:(ih-${finalH})/2`;
+        }
+        chain += `,setsar=1[v${i}]`;
 
         filters.push(chain);
         const streamTag = `[v${i}]`;
@@ -1073,34 +1202,51 @@ async function performVideoExport(event, exportId, exportData, ffmpegPath) {
         .replace(/\\/g, '/')           // Convert backslashes to forward slashes
         .replace(/:/g, '\\:');         // Escape colons (Windows drive letters)
 
+      // Tesla Mobile in AE mode emits a second ASS file for the date bar
+      // (independently placed by the user). Chain it directly after the
+      // dashboard ASS — FFmpeg supports comma-chained `ass=` filters.
+      let dashAssChain = `ass='${escapedAssPath}'`;
+      if (dashboardDateAssPath) {
+        const escapedDateAssPath = dashboardDateAssPath
+          .replace(/\\/g, '/')
+          .replace(/:/g, '\\:');
+        dashAssChain = `${dashAssChain},ass='${escapedDateAssPath}'`;
+      }
+
       if (useAssMinimap && minimapAssTempPath) {
         // Dashboard ASS + Minimap ASS: Chain both ASS filters
         const escapedMinimapAssPath = minimapAssTempPath
           .replace(/\\/g, '/')
           .replace(/:/g, '\\:');
-        filters.push(`${currentStreamTag}ass='${escapedAssPath}',ass='${escapedMinimapAssPath}'[out]`);
-        console.log(`[ASS] Dashboard + ASS Minimap overlay`);
-      } else if (useLeafletMinimap && minimapInputIdx >= 0 && dashboardStyle === 'tesla-screen-dash') {
-        // Tesla Screen Dash: minimap flush against the corner (no gap), so
-        // the map butts right up to the edge of the frame the way the Tesla
-        // in-car display does.
+        filters.push(`${currentStreamTag}${dashAssChain},ass='${escapedMinimapAssPath}'[out]`);
+        console.log(`[ASS] Dashboard + ASS Minimap overlay${dashboardDateAssPath ? ' (with Tesla Mobile date bar)' : ''}`);
+      } else if (useLeafletMinimap && minimapInputIdx >= 0 && dashboardStyle === 'tesla-screen-dash' && !isAdvancedLayout) {
+        // Tesla Screen Dash: minimap flush against the corner (no gap).
         const tsdPos = minimapPosition === 'top-left' ? '0:0'
           : minimapPosition === 'bottom-left' ? '0:H-h'
           : minimapPosition === 'bottom-right' ? 'W-w:H-h'
           : 'W-w:0';
-        filters.push(`${currentStreamTag}ass='${escapedAssPath}'[with_dash]`);
+        filters.push(`${currentStreamTag}${dashAssChain}[with_dash]`);
         filters.push(`[with_dash][${minimapInputIdx}:v]overlay=${tsdPos}:format=auto[out]`);
         console.log(`[ASS+MINIMAP] Tesla Screen Dash flush-corner overlay`);
       } else if (useLeafletMinimap && minimapInputIdx >= 0) {
-        // Dashboard ASS + Leaflet Minimap video overlay
-        const mapPos = minimapPosExprs[minimapPosition] || minimapPosExprs['top-right'];
-        filters.push(`${currentStreamTag}ass='${escapedAssPath}'[with_dash]`);
+        // Dashboard ASS + Leaflet Minimap video overlay.
+        let mapPos = minimapPosExprs[minimapPosition] || minimapPosExprs['top-right'];
+        if (isAdvancedLayout && overlayData?.minimap) {
+          const canvasW_px = layoutData.canvasWidth  || totalW;
+          const canvasH_px = layoutData.canvasHeight || totalH;
+          const bbox = layoutData._advancedBBox || { minX: 0, minY: 0 };
+          const px = Math.round(overlayData.minimap.x * canvasW_px - bbox.minX);
+          const py = Math.round(overlayData.minimap.y * canvasH_px - bbox.minY);
+          mapPos = `${px}:${py}`;
+        }
+        filters.push(`${currentStreamTag}${dashAssChain}[with_dash]`);
         filters.push(`[with_dash][${minimapInputIdx}:v]overlay=${mapPos}:format=auto[out]`);
-        console.log(`[ASS+MINIMAP] Dashboard + Leaflet Minimap overlay at ${minimapPosition}`);
+        console.log(`[ASS+MINIMAP] Dashboard + Leaflet Minimap overlay at ${mapPos}`);
       } else {
         // Dashboard only
-        filters.push(`${currentStreamTag}ass='${escapedAssPath}'[out]`);
-        console.log(`[ASS] Using ASS subtitle filter for compact dashboard: ${assTempPath}`);
+        filters.push(`${currentStreamTag}${dashAssChain}[out]`);
+        console.log(`[ASS] Using ASS subtitle filter for dashboard${dashboardDateAssPath ? ' (+ Tesla Mobile date bar)' : ''}: ${assTempPath}`);
       }
     } else if (useAssMinimap && minimapAssTempPath) {
       // ASS Minimap only (no dashboard)
@@ -1111,12 +1257,19 @@ async function performVideoExport(event, exportId, exportData, ffmpegPath) {
       console.log(`[ASS] Using ASS minimap filter: ${minimapAssTempPath}`);
     } else if (useLeafletMinimap && minimapInputIdx >= 0) {
       // Leaflet Minimap only (no dashboard)
-      const mapPos = minimapPosExprs[minimapPosition] || minimapPosExprs['top-right'];
+      let mapPos = minimapPosExprs[minimapPosition] || minimapPosExprs['top-right'];
+      if (isAdvancedLayout && overlayData?.minimap) {
+        const canvasW_px = layoutData.canvasWidth  || totalW;
+        const canvasH_px = layoutData.canvasHeight || totalH;
+        const bbox = layoutData._advancedBBox || { minX: 0, minY: 0 };
+        const px = Math.round(overlayData.minimap.x * canvasW_px - bbox.minX);
+        const py = Math.round(overlayData.minimap.y * canvasH_px - bbox.minY);
+        mapPos = `${px}:${py}`;
+      }
       filters.push(`${currentStreamTag}[${minimapInputIdx}:v]overlay=${mapPos}:format=auto[out]`);
-      console.log(`[MINIMAP] Leaflet Minimap overlay at ${minimapPosition}`);
+      console.log(`[MINIMAP] Leaflet Minimap overlay at ${mapPos}`);
     } else if (useTimestamp && timestampBasetimeUs) {
-      // Timestamp-only overlay using FFmpeg drawtext filter (simpler, smaller like old version)
-      // Position expressions for drawtext (x/y coordinates)
+      // Timestamp-only overlay using FFmpeg drawtext filter.
       const drawtextPositions = {
         'bottom-center': `x=(w-text_w)/2:y=h-th-${padding}`,
         'bottom-left': `x=${padding}:y=h-th-${padding}`,
@@ -1125,7 +1278,21 @@ async function performVideoExport(event, exportId, exportData, ffmpegPath) {
         'top-left': `x=${padding}:y=${padding}`,
         'top-right': `x=w-text_w-${padding}:y=${padding}`
       };
-      const drawtextPos = drawtextPositions[timestampPosition] || drawtextPositions['bottom-center'];
+      let drawtextPos = drawtextPositions[timestampPosition] || drawtextPositions['bottom-center'];
+      let fontSize = 36;
+
+      // Advanced Editor: position derived from the canvas tile; fontsize from tile height.
+      if (isAdvancedLayout && overlayData?.timestamp) {
+        const canvasW_px = layoutData.canvasWidth  || totalW;
+        const canvasH_px = layoutData.canvasHeight || totalH;
+        const bbox = layoutData._advancedBBox || { minX: 0, minY: 0 };
+        const px = Math.round(overlayData.timestamp.x * canvasW_px - bbox.minX);
+        const py = Math.round(overlayData.timestamp.y * canvasH_px - bbox.minY);
+        const ph = Math.round(overlayData.timestamp.h * canvasH_px);
+        drawtextPos = `x=${px}:y=${py}`;
+        // Heuristic: text height ≈ 70% of box height so it fits with the box padding.
+        fontSize = Math.max(10, Math.round(ph * 0.7));
+      }
 
       // Date format strings for strftime
       const dateFormats = {
@@ -1134,18 +1301,16 @@ async function performVideoExport(event, exportId, exportData, ffmpegPath) {
         'ymd': '%Y-%m-%d'   // ISO: YYYY-MM-DD
       };
       const dateFormat = dateFormats[timestampDateFormat] || dateFormats['mdy'];
-      // Time format: 12h uses %I (12-hour) with %p (AM/PM), 24h uses %H (24-hour)
       const timeFormat = timestampTimeFormat === '24h' ? '%H\\:%M\\:%S' : '%I\\:%M\\:%S %p';
       const timestampText = `${dateFormat} ${timeFormat}`;
 
-      // Build drawtext filter with timestamp (similar to old version)
       const drawtextFilter = [
         "drawtext=font='Arial'",
         'expansion=strftime',
         `basetime=${timestampBasetimeUs}`,
         `text='${timestampText}'`,
         'fontcolor=white',
-        'fontsize=36',
+        `fontsize=${fontSize}`,
         'box=1',
         'boxcolor=black@0.4',
         'boxborderw=5',
@@ -1153,7 +1318,7 @@ async function performVideoExport(event, exportId, exportData, ffmpegPath) {
       ].join(':');
 
       filters.push(`${currentStreamTag}${drawtextFilter}[out]`);
-      console.log(`[TIMESTAMP] Using drawtext filter at position: ${timestampPosition}, format: ${timestampDateFormat}`);
+      console.log(`[TIMESTAMP] Using drawtext filter at ${drawtextPos}, fontsize ${fontSize}`);
     } else {
       filters.push(`${currentStreamTag}format=yuv420p[out]`);
     }

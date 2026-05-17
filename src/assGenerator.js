@@ -479,30 +479,48 @@ function generateCompactDashboardEvents(seiData, startTimeMs, endTimeMs, options
     dateFormat = 'mdy',
     timeFormat = '12h',
     language = 'en',
-    accelPedMode = 'iconbar'
+    accelPedMode = 'iconbar',
+    customPosition = null,
+    // Defaults to 1 so the simple modal (which doesn't send these) is
+    // unaffected. The AE sends user-chosen multipliers from the sidebar.
+    labelScale = 1,
+    valueScale = 1
   } = options;
 
-  // Dashboard dimensions - fixed size based on 1920px reference width
-  // This ensures the dashboard is the same size regardless of camera count
-  // Size options: small (25%), medium (35%), large (45%), xlarge (55% - for high-res exports)
+  // Dashboard dimensions - fixed size based on 1920px reference width.
+  // When `customPosition` is supplied (Advanced Editor), use the user's
+  // canvas-defined rectangle instead of the size/position presets.
   const sizeMultipliers = {
-    'small': 0.25,
-    'medium': 0.35,
-    'large': 0.45,
-    'xlarge': 0.55
+    'small': 0.25, 'medium': 0.35, 'large': 0.45, 'xlarge': 0.55
   };
   const sizeMultiplier = sizeMultipliers[size] || 0.35;
 
-  // Compact style aspect ratio: 480x56 (8.57:1)
-  // Always use 1920px reference so dashboard size is consistent across camera counts
-  // Cap at video width minus margins to prevent overflow on very small exports
-  const refDashWidth = Math.round(1920 * sizeMultiplier * 1.15);
-  const dashWidth = Math.min(refDashWidth, playResX - 80);
-  const dashHeight = Math.round(dashWidth / 8.57);
-  const fontSize = Math.round(dashHeight * 0.45);
-  const iconSize = Math.round(dashHeight * 0.5);
-
-  const pos = calculatePosition(position, playResX, playResY, dashWidth, dashHeight);
+  let dashWidth, dashHeight, pos;
+  if (customPosition) {
+    dashWidth = Math.max(80, Math.round(customPosition.w));
+    dashHeight = Math.max(20, Math.round(customPosition.h));
+    pos = {
+      x: Math.round(customPosition.x + dashWidth / 2),
+      y: Math.round(customPosition.y + dashHeight / 2)
+    };
+  } else {
+    const refDashWidth = Math.round(1920 * sizeMultiplier * 1.15);
+    dashWidth = Math.min(refDashWidth, playResX - 80);
+    dashHeight = Math.round(dashWidth / 8.57);
+    pos = calculatePosition(position, playResX, playResY, dashWidth, dashHeight);
+  }
+  // Base sizes — unchanged formula so simple-modal exports stay identical.
+  // valueScale multiplies the user-controlled "Value Size" up/down; capped
+  // by dashHeight so text/icons can never exceed the bar's vertical bounds.
+  const baseFontSize = Math.round(dashHeight * 0.45);
+  const fontSize = Math.min(
+    Math.max(8, Math.round(baseFontSize * valueScale)),
+    Math.round(dashHeight * 0.85)
+  );
+  const iconSize = Math.min(
+    Math.max(8, Math.round(dashHeight * 0.5 * valueScale)),
+    Math.round(dashHeight * 0.90)
+  );
   const events = [];
 
   // Calculate element positions - evenly distributed across dashboard width
@@ -512,6 +530,28 @@ function generateCompactDashboardEvents(seiData, startTimeMs, endTimeMs, options
   const padding = dashWidth * 0.05; // 5% padding on each side
   const usableWidth = dashWidth - (padding * 2);
   const spacing = usableWidth / (numElements - 1);
+
+  // Per-element horizontal width cap so a wide font (high valueScale) can't
+  // spill into the neighboring slot. AE-only — simple modal's preset sizing
+  // was already tuned for its full-width layout and would be incorrectly
+  // shrunk if we capped it here.
+  const widthCap = (charCount, available) =>
+    Math.max(8, Math.floor(Math.max(10, available) / Math.max(1, charCount * 0.55)));
+  const capIfCustom = (size, cap) => customPosition ? Math.min(size, cap) : size;
+  const dateTimeFontCap = widthCap(20, spacing * 1.7);
+  const speedFontCap    = widthCap(7,  spacing * 1.2);
+  const gearApFontCap   = widthCap(10, spacing * 1.2);
+
+  // Hoisted text sizes (used by all state-change events) + per-element
+  // width caps so high valueScale never spills text across slot boundaries.
+  const speedNumSize = Math.round(fontSize * 0.8);
+  const speedUnitSize = Math.round(fontSize * 0.5);
+  const dateNumSz    = capIfCustom(speedNumSize,  dateTimeFontCap);
+  const dateUnitSz   = capIfCustom(speedUnitSize, dateTimeFontCap);
+  const speedNumSz   = capIfCustom(speedNumSize,  speedFontCap);
+  const speedUnitSz  = capIfCustom(speedUnitSize, speedFontCap);
+  const gearApNumSz  = capIfCustom(speedNumSize,  gearApFontCap);
+  const gearApUnitSz = capIfCustom(speedUnitSize, gearApFontCap);
   const startX = pos.x - dashWidth / 2 + padding;
 
   // Spread blinkers outward to give speed/gearAp more room in center
@@ -693,18 +733,16 @@ function generateCompactDashboardEvents(seiData, startTimeMs, endTimeMs, options
           drawBrakePedalTab(pedalScale) + `{\\p0}`
         ));
 
-        // Speed and gear font sizes (declared early as used by gear display)
-        const speedNumSize = Math.round(fontSize * 0.8);
-        const speedUnitSize = Math.round(fontSize * 0.5);
+        // Per-frame: only the small text size is still needed locally.
         const smallTextSize = Math.round(fontSize * 0.7);
 
         // Date and Time display (stacked vertically) - at position 1 (where Gear was)
         // Date on top, Time below - both same size as the old time display
         events.push(dialogueLine(1, startAssTime, endAssTime, 'CompactDash',
-          `{\\an5\\pos(${positions.dateTime},${pos.y - fontSize * 0.35})\\bord0\\shad0\\fs${speedNumSize}\\1c&HA0A0A0&}${prev.displayDate}`
+          `{\\an5\\pos(${positions.dateTime},${pos.y - fontSize * 0.35})\\bord0\\shad0\\fs${dateNumSz}\\1c&HA0A0A0&}${prev.displayDate}`
         ));
         events.push(dialogueLine(1, startAssTime, endAssTime, 'CompactDash',
-          `{\\an5\\pos(${positions.dateTime},${pos.y + fontSize * 0.35})\\bord0\\shad0\\fs${speedUnitSize}\\1c&HA0A0A0&}${prev.displayTime}`
+          `{\\an5\\pos(${positions.dateTime},${pos.y + fontSize * 0.35})\\bord0\\shad0\\fs${dateUnitSz}\\1c&HA0A0A0&}${prev.displayTime}`
         ));
 
         // Left blinker arrow - from Illustrator export, centered at (0,0)
@@ -720,20 +758,20 @@ function generateCompactDashboardEvents(seiData, startTimeMs, endTimeMs, options
 
         // Speed display - number with unit below it (e.g. "32" over "MPH")
         events.push(dialogueLine(1, startAssTime, endAssTime, 'CompactDash',
-          `{\\an5\\pos(${positions.speed},${pos.y - fontSize * 0.35})\\bord0\\shad0\\fs${speedNumSize}\\b1\\1c&HFFFFFF&}${prev.speed}`
+          `{\\an5\\pos(${positions.speed},${pos.y - fontSize * 0.35})\\bord0\\shad0\\fs${speedNumSz}\\b1\\1c&HFFFFFF&}${prev.speed}`
         ));
         events.push(dialogueLine(1, startAssTime, endAssTime, 'CompactDash',
-          `{\\an5\\pos(${positions.speed},${pos.y + fontSize * 0.35})\\bord0\\shad0\\fs${speedUnitSize}\\1c&H909090&}${speedUnit}`
+          `{\\an5\\pos(${positions.speed},${pos.y + fontSize * 0.35})\\bord0\\shad0\\fs${speedUnitSz}\\1c&H909090&}${speedUnit}`
         ));
 
         // Autopilot label and Gear (stacked vertically) - AP on top, Gear below
         const apColor = prev.apActive ? '&HFF4800&' : '&H808080&';
         events.push(dialogueLine(1, startAssTime, endAssTime, 'CompactDash',
-          `{\\an5\\pos(${positions.gearAp},${pos.y - fontSize * 0.35})\\bord0\\shad0\\fs${speedNumSize}\\1c${apColor}}${prev.apText}`
+          `{\\an5\\pos(${positions.gearAp},${pos.y - fontSize * 0.35})\\bord0\\shad0\\fs${gearApNumSz}\\1c${apColor}}${prev.apText}`
         ));
         const gearColor = '&HFFFFFF&';
         events.push(dialogueLine(1, startAssTime, endAssTime, 'CompactDash',
-          `{\\an5\\pos(${positions.gearAp},${pos.y + fontSize * 0.35})\\bord0\\shad0\\b1\\fs${speedUnitSize}\\1c${gearColor}}${prev.gearText}`
+          `{\\an5\\pos(${positions.gearAp},${pos.y + fontSize * 0.35})\\bord0\\shad0\\b1\\fs${gearApUnitSz}\\1c${gearColor}}${prev.gearText}`
         ));
 
         // Right blinker arrow - from Illustrator export, centered at (0,0)
@@ -1575,7 +1613,13 @@ function generateDetailedDashboardEvents(seiData, startTimeMs, endTimeMs, option
     cumStarts = [],
     dateFormat = 'mdy',
     timeFormat = '12h',
-    language = 'en'
+    language = 'en',
+    customPosition = null,
+    // Defaults to 1 so the simple modal (which doesn't send these) is
+    // unaffected. The AE sends user-chosen multipliers from the sidebar's
+    // Label Size / Value Size dropdowns.
+    labelScale = 1,
+    valueScale = 1
   } = options;
 
   const tLang = DASHBOARD_TRANSLATIONS[language] || DASHBOARD_TRANSLATIONS.en;
@@ -1584,36 +1628,55 @@ function generateDetailedDashboardEvents(seiData, startTimeMs, endTimeMs, option
   const apStates = tLang.apStates || DASHBOARD_TRANSLATIONS.en.apStates;
 
   // Dashboard dimensions
-  const sizeMultipliers = {
-    'small': 0.30,
-    'medium': 0.40,
-    'large': 0.50,
-    'xlarge': 0.60
-  };
+  const sizeMultipliers = { 'small': 0.30, 'medium': 0.40, 'large': 0.50, 'xlarge': 0.60 };
   const sizeMultiplier = sizeMultipliers[size] || 0.40;
 
-  // Detailed layout: vertical panel that fits within the video frame.
-  // Date/Time header occupies a full row-height zone at the top (so it matches the
-  // rhythm of the other rows: Speed, Gear, Steering, …). Effective row count = 10.
-  const dashWidth = Math.min(Math.round(1920 * sizeMultiplier * 0.50), playResX - 80);
   const numRows = 9; // Speed, Gear, Steering, Accel, Brake, Blinkers, Autopilot, GPS, Acceleration
   const totalRows = numRows + 1; // +1 for the Date/Time header row at the top
-  const maxHeight = Math.round(playResY * 0.80);
-  const rowHeight = Math.min(Math.round(dashWidth * 0.16), Math.floor(maxHeight / (totalRows + 1)));
+
+  let dashWidth, dashHeight, rowHeight, pos;
+  if (customPosition) {
+    dashWidth = Math.max(80, Math.round(customPosition.w));
+    dashHeight = Math.max(80, Math.round(customPosition.h));
+    // Fill the user's tile precisely: 10 content rows (header + 9 data)
+    // sized to fit between top and bottom paddings. The old `/ (totalRows
+    // + 1)` left an extra row's worth of dead space below the last row.
+    const customPadding = Math.round(dashWidth * 0.06);
+    rowHeight = Math.max(10, Math.floor((dashHeight - 2 * customPadding) / totalRows));
+    pos = {
+      x: Math.round(customPosition.x + dashWidth / 2),
+      y: Math.round(customPosition.y + dashHeight / 2)
+    };
+  } else {
+    dashWidth = Math.min(Math.round(1920 * sizeMultiplier * 0.50), playResX - 80);
+    const maxHeight = Math.round(playResY * 0.80);
+    rowHeight = Math.min(Math.round(dashWidth * 0.16), Math.floor(maxHeight / (totalRows + 1)));
+    dashHeight = Math.min(Math.round(rowHeight * (totalRows + 1)), maxHeight);
+    pos = calculatePosition(position, playResX, playResY, dashWidth, dashHeight);
+  }
   // Header zone = one full row, so the header reads as a sibling of the other rows.
   const dateHeaderHeight = rowHeight;
-  const dashHeight = Math.min(Math.round(rowHeight * (totalRows + 1)), maxHeight); // +1 for top/bottom padding
-  const fontSize = Math.max(12, Math.round(rowHeight * 0.42));
-  const labelFontSize = Math.max(10, Math.round(fontSize * 0.75));
-  const largeFontSize = Math.round(fontSize * 2.0);
-  const smallFontSize = Math.round(fontSize * 0.82);
-  // Slightly smaller than Brake's OFF (fontSize * 1.3) so the full date+time string
-  // fits inside the narrower Detailed panel without overflowing horizontally.
-  const headerFontSize = Math.round(fontSize * 1.15);
-  const iconSize = Math.round(rowHeight * 0.70);
+  // Base sizes — unchanged formula so simple-modal exports stay identical.
+  // AE applies labelScale / valueScale as multipliers on top.
+  const baseFont = Math.max(12, Math.round(rowHeight * 0.42));
+  const fontSize = Math.max(8, Math.round(baseFont * valueScale));
+  const labelFontSize = Math.max(8, Math.round(baseFont * 0.75 * labelScale));
+  const largeFontSize = Math.max(10, Math.round(baseFont * 2.0 * valueScale));
+  const smallFontSize = Math.max(8, Math.round(baseFont * 0.82 * valueScale));
+  const headerFontSize = Math.max(10, Math.round(baseFont * 1.15 * valueScale));
+  // Icons must FIT inside the row regardless of value scale — otherwise the
+  // steering wheel (and any future icon) bleeds into the row above/below
+  // when the user picks a large value-scale.
+  const iconSize = Math.min(
+    Math.max(8, Math.round(rowHeight * 0.70 * valueScale)),
+    Math.round(rowHeight * 0.85)
+  );
+  // For rows that display TWO stacked text lines in a single rowHeight (GPS:
+  // coords + heading; G-Force: lateral + longitudinal). Capped at ~38% so
+  // both lines plus inter-line padding fit cleanly without crowding the
+  // separator below.
+  const dualLineFontSize = Math.min(smallFontSize, Math.max(8, Math.round(rowHeight * 0.38)));
   const padding = Math.round(dashWidth * 0.06);
-
-  const pos = calculatePosition(position, playResX, playResY, dashWidth, dashHeight);
   const events = [];
 
   // Panel bounds
@@ -1625,6 +1688,37 @@ function generateDetailedDashboardEvents(seiData, startTimeMs, endTimeMs, option
   const contentRight = panelRight - padding;
   const contentWidth = contentRight - contentLeft;
   const centerX = pos.x;
+
+  // ---- Horizontal width caps (AE-only) ----
+  // ASS computes fonts from rowHeight only, so a tall+narrow dashboard ends
+  // up with text wider than the panel. Cap each text by an estimated char
+  // count so the centered/aligned strings stay inside the dashboard width.
+  // Simple modal exports use their original (uncapped) font sizes — only
+  // gated for customPosition (AE) since the simple modal's preset sizes
+  // were already tuned for its layout and shouldn't be shrunk.
+  const widthCap = (charCount, available) =>
+    Math.max(8, Math.floor(Math.max(10, available) / Math.max(1, charCount * 0.55)));
+  const capIfCustom = (size, ...caps) =>
+    customPosition ? Math.min(size, ...caps) : size;
+  // Speed: value sits LEFT of centerX, unit sits RIGHT — each gets ~half.
+  const speedFontWidth = capIfCustom(largeFontSize, widthCap(6, contentWidth * 0.55));
+  const speedUnitFontWidth = capIfCustom(smallFontSize, widthCap(4, contentWidth * 0.42));
+  // Header date/time spans the full width: longest format is ~24 chars.
+  const headerFontWidth = capIfCustom(headerFontSize, widthCap(24, contentWidth));
+  // Centered single-line value texts. Each capped by its longest string.
+  const gearFontWidth   = capIfCustom(Math.round(fontSize * 1.5), widthCap(7,  contentWidth));  // "REVERSE"
+  // Accel value sits ABOVE a horizontal progress bar — extra height cap so
+  // the centered value never extends downward into the bar's area. AE-only
+  // because the simple modal's original sizing was already safe.
+  const accelFontWidth  = capIfCustom(
+    Math.round(fontSize * 1.3),
+    widthCap(5, contentWidth),
+    Math.round(rowHeight * 0.50)
+  );
+  const brakeFontWidth  = capIfCustom(Math.round(fontSize * 1.3), widthCap(8,  contentWidth));  // "REGEN" / "OFF" / "ON"
+  const apFontWidth     = capIfCustom(Math.round(fontSize * 1.3), widthCap(16, contentWidth));  // "FSD Supervised"
+  // Steering angle sits next to the wheel icon, occupies right half only.
+  const steerAngleFontWidth = capIfCustom(Math.round(fontSize * 1.3), widthCap(7, contentWidth * 0.40));
 
   // Row Y positions (top of each row's content area). Row 0 sits below the
   // date/time header row, so all rows shift down by dateHeaderHeight.
@@ -1804,7 +1898,7 @@ function generateDetailedDashboardEvents(seiData, startTimeMs, endTimeMs, option
           // Value (centered in the row, bold, white — same pattern as Brake's OFF/ON
           // and Gear's DRIVE, just a touch smaller so the full timestamp fits).
           events.push(dialogueLine(1, startAssTime, endAssTime, 'DetailedDash',
-            `{\\an5\\pos(${centerX},${headerRowY + rowHeight * 0.58})\\bord0\\shad0\\fs${headerFontSize}\\1c&HFFFFFF&\\b1}${headerText}`
+            `{\\an5\\pos(${centerX},${headerRowY + rowHeight * 0.58})\\bord0\\shad0\\fs${headerFontWidth}\\1c&HFFFFFF&\\b1}${headerText}`
           ));
           // Separator below the header (matches every other row's bottom separator).
           drawSectionSep(startAssTime, endAssTime, headerRowY + rowHeight);
@@ -1818,11 +1912,11 @@ function generateDetailedDashboardEvents(seiData, startTimeMs, endTimeMs, option
         ));
         // Large speed value centered
         events.push(dialogueLine(1, startAssTime, endAssTime, 'DetailedDash',
-          `{\\an6\\pos(${centerX},${row0Y + rowHeight * 0.55})\\bord0\\shad0\\fs${largeFontSize}\\1c&H00CC44&\\b1}${prev.primarySpeed}`
+          `{\\an6\\pos(${centerX},${row0Y + rowHeight * 0.55})\\bord0\\shad0\\fs${speedFontWidth}\\1c&H00CC44&\\b1}${prev.primarySpeed}`
         ));
         // Unit label to the right of speed number
         events.push(dialogueLine(1, startAssTime, endAssTime, 'DetailedDash',
-          `{\\an4\\pos(${centerX + Math.round(fontSize * 0.3)},${row0Y + rowHeight * 0.55})\\bord0\\shad0\\fs${smallFontSize}\\1c&HA0A0A0&}${primaryUnit}`
+          `{\\an4\\pos(${centerX + Math.round(fontSize * 0.3)},${row0Y + rowHeight * 0.55})\\bord0\\shad0\\fs${speedUnitFontWidth}\\1c&HA0A0A0&}${primaryUnit}`
         ));
 
         drawSectionSep(startAssTime, endAssTime, row0Y + rowHeight);
@@ -1833,7 +1927,7 @@ function generateDetailedDashboardEvents(seiData, startTimeMs, endTimeMs, option
           `{\\an4\\pos(${contentLeft},${row1Y + rowPadding})\\bord0\\shad0\\fs${labelFontSize}\\1c&H909090&}${labels.gear}`
         ));
         events.push(dialogueLine(1, startAssTime, endAssTime, 'DetailedDash',
-          `{\\an5\\pos(${centerX},${row1Y + rowHeight * 0.58})\\bord0\\shad0\\fs${Math.round(fontSize * 1.5)}\\1c&HFFFFFF&\\b1}${prev.gearText}`
+          `{\\an5\\pos(${centerX},${row1Y + rowHeight * 0.58})\\bord0\\shad0\\fs${gearFontWidth}\\1c&HFFFFFF&\\b1}${prev.gearText}`
         ));
 
         drawSectionSep(startAssTime, endAssTime, row1Y + rowHeight);
@@ -1864,7 +1958,7 @@ function generateDetailedDashboardEvents(seiData, startTimeMs, endTimeMs, option
         const steerAngleDisplay = prev.steeringAngle.toFixed(1) + '°';
         const steerTextX = Math.round(steerWheelX + steerIconRadius + padding);
         events.push(dialogueLine(1, startAssTime, endAssTime, 'DetailedDash',
-          `{\\an4\\pos(${steerTextX},${steerWheelY})\\bord0\\shad0\\fs${Math.round(fontSize * 1.3)}\\1c&H00CC44&\\b1}${steerAngleDisplay}`
+          `{\\an4\\pos(${steerTextX},${steerWheelY})\\bord0\\shad0\\fs${steerAngleFontWidth}\\1c&H00CC44&\\b1}${steerAngleDisplay}`
         ));
 
         drawSectionSep(startAssTime, endAssTime, row2Y + rowHeight);
@@ -1876,7 +1970,7 @@ function generateDetailedDashboardEvents(seiData, startTimeMs, endTimeMs, option
         ));
         // Percentage value
         events.push(dialogueLine(1, startAssTime, endAssTime, 'DetailedDash',
-          `{\\an5\\pos(${centerX},${row3Y + rowHeight * 0.40})\\bord0\\shad0\\fs${Math.round(fontSize * 1.3)}\\1c&H00CC44&\\b1}${prev.accelPct}`
+          `{\\an5\\pos(${centerX},${row3Y + rowHeight * 0.40})\\bord0\\shad0\\fs${accelFontWidth}\\1c&H00CC44&\\b1}${prev.accelPct}`
         ));
         // Horizontal bar background
         const barLeft = Math.round(contentLeft);
@@ -1906,7 +2000,7 @@ function generateDetailedDashboardEvents(seiData, startTimeMs, endTimeMs, option
         const brakeText = prev.brakeApplied ? brakeStates.on : brakeStates.off;
         const brakeColor = prev.brakeApplied ? '&H0000FF&' : '&HFFFFFF&';
         events.push(dialogueLine(1, startAssTime, endAssTime, 'DetailedDash',
-          `{\\an5\\pos(${centerX},${row4Y + rowHeight * 0.58})\\bord0\\shad0\\fs${Math.round(fontSize * 1.3)}\\1c${brakeColor}\\b1}${brakeText}`
+          `{\\an5\\pos(${centerX},${row4Y + rowHeight * 0.58})\\bord0\\shad0\\fs${brakeFontWidth}\\1c${brakeColor}\\b1}${brakeText}`
         ));
 
         drawSectionSep(startAssTime, endAssTime, row4Y + rowHeight);
@@ -1943,7 +2037,7 @@ function generateDetailedDashboardEvents(seiData, startTimeMs, endTimeMs, option
         ));
         const apColor = prev.apActive ? '&HFF4800&' : '&HFFFFFF&';
         events.push(dialogueLine(1, startAssTime, endAssTime, 'DetailedDash',
-          `{\\an5\\pos(${centerX},${row6Y + rowHeight * 0.58})\\bord0\\shad0\\fs${Math.round(fontSize * 1.3)}\\1c${apColor}\\b1}${prev.apDisplayText}`
+          `{\\an5\\pos(${centerX},${row6Y + rowHeight * 0.58})\\bord0\\shad0\\fs${apFontWidth}\\1c${apColor}\\b1}${prev.apDisplayText}`
         ));
 
         drawSectionSep(startAssTime, endAssTime, row6Y + rowHeight);
@@ -1953,14 +2047,15 @@ function generateDetailedDashboardEvents(seiData, startTimeMs, endTimeMs, option
         events.push(dialogueLine(1, startAssTime, endAssTime, 'DetailedDash',
           `{\\an4\\pos(${contentLeft},${row7Y + rowPadding})\\bord0\\shad0\\fs${labelFontSize}\\1c&H909090&}${labels.gps}`
         ));
-        // Coordinates
+        // Coordinates — uses dualLineFontSize (capped) so coord + heading
+        // both fit cleanly inside the row at high value-scale.
         const gpsText = `${prev.latStr}, ${prev.lonStr}`;
         events.push(dialogueLine(1, startAssTime, endAssTime, 'DetailedDash',
-          `{\\an5\\pos(${centerX},${row7Y + rowHeight * 0.42})\\bord0\\shad0\\fs${smallFontSize}\\1c&HCCCCCC&}${gpsText}`
+          `{\\an5\\pos(${centerX},${row7Y + rowHeight * 0.42})\\bord0\\shad0\\fs${dualLineFontSize}\\1c&HCCCCCC&}${gpsText}`
         ));
         // Heading
         events.push(dialogueLine(1, startAssTime, endAssTime, 'DetailedDash',
-          `{\\an5\\pos(${centerX},${row7Y + rowHeight * 0.68})\\bord0\\shad0\\fs${smallFontSize}\\1c&HA0A0A0&}${labels.heading}: ${prev.headingStr}`
+          `{\\an5\\pos(${centerX},${row7Y + rowHeight * 0.68})\\bord0\\shad0\\fs${dualLineFontSize}\\1c&HA0A0A0&}${labels.heading}: ${prev.headingStr}`
         ));
 
         drawSectionSep(startAssTime, endAssTime, row7Y + rowHeight);
@@ -1970,12 +2065,11 @@ function generateDetailedDashboardEvents(seiData, startTimeMs, endTimeMs, option
         events.push(dialogueLine(1, startAssTime, endAssTime, 'DetailedDash',
           `{\\an4\\pos(${contentLeft},${row8Y + rowPadding})\\bord0\\shad0\\fs${labelFontSize}\\1c&H909090&}${labels.gForce}`
         ));
-        const accelFontSz = Math.round(smallFontSize);
         events.push(dialogueLine(1, startAssTime, endAssTime, 'DetailedDash',
-          `{\\an5\\pos(${centerX},${row8Y + rowHeight * 0.42})\\bord0\\shad0\\fs${accelFontSz}\\1c&HCCCCCC&}${labels.lateral}:  ${prev.gForceXStr} G`
+          `{\\an5\\pos(${centerX},${row8Y + rowHeight * 0.42})\\bord0\\shad0\\fs${dualLineFontSize}\\1c&HCCCCCC&}${labels.lateral}:  ${prev.gForceXStr} G`
         ));
         events.push(dialogueLine(1, startAssTime, endAssTime, 'DetailedDash',
-          `{\\an5\\pos(${centerX},${row8Y + rowHeight * 0.68})\\bord0\\shad0\\fs${accelFontSz}\\1c&HCCCCCC&}${labels.longitudinal}:  ${prev.gForceYStr} G`
+          `{\\an5\\pos(${centerX},${row8Y + rowHeight * 0.68})\\bord0\\shad0\\fs${dualLineFontSize}\\1c&HCCCCCC&}${labels.longitudinal}:  ${prev.gForceYStr} G`
         ));
       }
 
@@ -2026,6 +2120,26 @@ async function writeDetailedDashboardAss(exportId, seiData, startTimeMs, endTime
 
   await fs.promises.writeFile(tempPath, assContent, 'utf8');
   console.log(`[ASS] Generated detailed dashboard subtitle: ${tempPath}`);
+
+  return tempPath;
+}
+
+// ============================================
+// DEFAULT (floating-widget) DASHBOARD
+// Matches the look of the floating #dashboardVis widget shown in the main
+// player. v1: delegates the actual ASS render to the compact generator
+// (same horizontal cluster of speed/gear/blinkers/autopilot/brake/accel),
+// but writes to a distinct file path so logs/temp files identify the style.
+// A future iteration can extend this with a second row containing the
+// G-force meter + compass shapes to fully match the floating widget.
+// ============================================
+
+async function writeDefaultDashboardAss(exportId, seiData, startTimeMs, endTimeMs, options) {
+  const assContent = generateCompactDashboardAss(seiData, startTimeMs, endTimeMs, options);
+  const tempPath = path.join(os.tmpdir(), `dashboard_default_${exportId}_${Date.now()}.ass`);
+
+  await fs.promises.writeFile(tempPath, assContent, 'utf8');
+  console.log(`[ASS] Generated default (floating-widget) dashboard subtitle: ${tempPath}`);
 
   return tempPath;
 }
@@ -2115,26 +2229,45 @@ function generateTeslaMobileDashboardEvents(seiData, startTimeMs, endTimeMs, opt
     dateBarHeight = 0,
     dashBarHeight = 0,
     dateFormat = 'mdy',
-    timeFormat = '12h'
+    timeFormat = '12h',
+    customPosition = null,
+    // Defaults to 1 so the simple modal (which doesn't send these) is
+    // unaffected. The AE sends user-chosen multipliers from the sidebar.
+    labelScale = 1,
+    valueScale = 1
   } = options;
 
-  // Tesla Mobile: use explicit bar heights if provided, else fallback to old calculation
-  const dashHeight = dashBarHeight > 0 ? dashBarHeight : (playResY - videoH);
-  const dateHeight = dateBarHeight > 0 ? dateBarHeight : 0;
-  const dashWidth = playResX;
-
-  // All circles use the SAME radius - derived from bar height with small padding
-  const circleR = Math.round(dashHeight * 0.38); // Circle diameter ~ 76% of bar height
-  const fontSize = Math.round(circleR * 0.7);     // Text proportional to circle
-
-  // Layout zones in padded canvas:
-  // Top dashboard:    [DateBar 0..dateH] [DashBar dateH..dateH+dashH] [Video dateH+dashH..]
-  // Bottom dashboard: [DateBar 0..dateH] [Video dateH..dateH+videoH] [DashBar dateH+videoH..]
+  let dashWidth, dashHeight, dateHeight, posX0, posY;
+  if (customPosition) {
+    // Advanced Editor: dashboard bar fills the user's tile. No separate date bar.
+    dashWidth = Math.max(80, Math.round(customPosition.w));
+    dashHeight = Math.max(20, Math.round(customPosition.h));
+    dateHeight = 0;
+    posX0 = Math.round(customPosition.x);
+    posY = Math.round(customPosition.y + dashHeight / 2);
+  } else {
+    dashHeight = dashBarHeight > 0 ? dashBarHeight : (playResY - videoH);
+    dateHeight = dateBarHeight > 0 ? dateBarHeight : 0;
+    dashWidth = playResX;
+    posX0 = 0;
+    const isTop = position === 'top' || position === 'top-center' || position === 'top-left' || position === 'top-right';
+    posY = isTop
+      ? dateHeight + dashHeight / 2          // Dashboard just below date bar
+      : dateHeight + videoH + dashHeight / 2; // Dashboard below video
+  }
   const isTop = position === 'top' || position === 'top-center' || position === 'top-left' || position === 'top-right';
   const dateCenterY = dateHeight / 2;
-  const posY = isTop
-    ? dateHeight + dashHeight / 2          // Dashboard just below date bar
-    : dateHeight + videoH + dashHeight / 2; // Dashboard below video
+
+  // All circles use the SAME radius - derived from bar height with small padding.
+  // valueScale scales the fontSize/text up/down (icons stay sized to circle so
+  // they fit). Capped at ~90% of the bar height so text never overflows
+  // vertically out of the bar.
+  const circleR = Math.round(dashHeight * 0.38); // Circle diameter ~ 76% of bar height
+  const baseFontSize = Math.round(circleR * 0.7); // Text proportional to circle
+  const fontSize = Math.min(
+    Math.max(8, Math.round(baseFontSize * valueScale)),
+    Math.round(dashHeight * 0.85)
+  );
 
   const events = [];
 
@@ -2144,17 +2277,17 @@ function generateTeslaMobileDashboardEvents(seiData, startTimeMs, endTimeMs, opt
   const circleDiameter = circleR * 2;
   const circleGap = Math.round(circleR * 0.5); // Gap between adjacent circles
   const edgePadding = Math.round(dashWidth * 0.03);
-  const centerX = dashWidth / 2;
+  const centerX = posX0 + dashWidth / 2;
 
   // Left edge: [brake] [gap] [gear] starting from left padding
   const positions = {
-    brake: edgePadding + circleR,
-    gear: edgePadding + circleDiameter + circleGap + circleR,
+    brake: posX0 + edgePadding + circleR,
+    gear: posX0 + edgePadding + circleDiameter + circleGap + circleR,
   };
 
   // Right edge: [steering] [gap] [accel] ending at right padding
-  positions.accel = dashWidth - edgePadding - circleR;
-  positions.steering = dashWidth - edgePadding - circleDiameter - circleGap - circleR;
+  positions.accel = posX0 + dashWidth - edgePadding - circleR;
+  positions.steering = posX0 + dashWidth - edgePadding - circleDiameter - circleGap - circleR;
 
   // Center group: [← blinker] [speed MPH] [AP text] [→ blinker]
   // Tight spacing - fits within ~35% of width
@@ -2164,6 +2297,23 @@ function generateTeslaMobileDashboardEvents(seiData, startTimeMs, endTimeMs, opt
   positions.speed = centerX - centerSpacing * 0.5;
   positions.apStatus = centerX + centerSpacing * 0.5;
   positions.rightBlinker = centerX + centerSpacing * 1.5;
+
+  // Hoisted text sizes with valueScale + width caps. AE's user-chosen Value
+  // Size multiplies the base. Width caps (centerSpacing) are AE-only —
+  // simple modal Tesla Mobile uses full canvas width and would be unfairly
+  // shrunk by a centerSpacing cap. Vertical cap (dashHeight * 0.85) and
+  // gear-letter cap (circle interior) apply to both modes since the
+  // originals were already below them.
+  const circleDiamLocal = circleR * 2;
+  const heightCapTm = Math.round(dashHeight * 0.85);
+  const widthCapTm = (charCount, available) =>
+    Math.max(8, Math.floor(Math.max(10, available) / Math.max(1, charCount * 0.55)));
+  const capIfCustomTm = (size, ...caps) =>
+    customPosition ? Math.min(size, ...caps) : Math.min(size, heightCapTm);
+  const speedNumSize  = capIfCustomTm(Math.round(circleDiamLocal * 0.95 * valueScale), heightCapTm, widthCapTm(5,  centerSpacing));
+  const speedUnitSize = capIfCustomTm(Math.round(circleDiamLocal * 0.65 * valueScale), heightCapTm, widthCapTm(4,  centerSpacing * 0.7));
+  const gearLetterSize = Math.min(Math.round(circleDiamLocal * 0.70 * valueScale), Math.round(circleDiamLocal * 0.85));
+  const apFontSize    = capIfCustomTm(Math.round(circleDiamLocal * 0.65 * valueScale), heightCapTm, widthCapTm(16, centerSpacing));
 
   const durationMs = endTimeMs - startTimeMs;
   const totalFrames = Math.ceil((durationMs / 1000) * FPS);
@@ -2280,14 +2430,13 @@ function generateTeslaMobileDashboardEvents(seiData, startTimeMs, endTimeMs, opt
         ));
 
         // --- Uniform sizing: everything matches circle diameter height ---
-        // Circle diameter is the visual reference height for ALL elements
+        // Circle diameter is the visual reference height for ALL elements.
+        // Icon scales stay constant per-frame (sized to circle); text sizes
+        // are hoisted outside the loop above so valueScale + caps apply.
         const circleDiam = circleR * 2;
         const pedalScale = circleR / 450 * 0.50;    // Pedal icons fit inside circle
         const steerScale = circleR / 446.5;  // Steering wheel matches other circle sizes
-        // All center elements same visual height as circle diameter (matching Tesla mobile)
         const arrowScale = circleDiam / 100 * 0.45;          // Blinker arrows
-        const speedNumSize = Math.round(circleDiam * 0.95);  // Speed number - same height as arrows
-        const speedUnitSize = Math.round(circleDiam * 0.65); // MPH/KMH - same height as arrows
 
         // === LEFT EDGE: Brake circle + Gear circle ===
 
@@ -2315,7 +2464,6 @@ function generateTeslaMobileDashboardEvents(seiData, startTimeMs, endTimeMs, opt
           `{\\an7\\pos(${gearCX},${posY})\\bord0\\shad0\\1c${gearCircleColor}\\1a&H00&\\p1}` +
           drawCircle(circleR) + `{\\p0}`
         ));
-        const gearLetterSize = Math.round(circleDiam * 0.70);
         events.push(dialogueLine(2, startAssTime, endAssTime, 'CompactDash',
           `{\\an5\\pos(${gearCX},${posY})\\bord0\\shad0\\fs${gearLetterSize}\\1c&HFFFFFF&\\b1}${prev.gearLetter}`
         ));
@@ -2338,9 +2486,8 @@ function generateTeslaMobileDashboardEvents(seiData, startTimeMs, endTimeMs, opt
           `{\\an4\\pos(${Math.round(positions.speed + speedGap)},${posY})\\bord0\\shad0\\fs${speedUnitSize}\\1c&H808080&}${speedUnit}`
         ));
 
-        // AP status text - same height as speed number
+        // AP status text - same height as speed number (apFontSize hoisted above)
         const apColor = prev.apActive ? '&HFF4800&' : '&H808080&';
-        const apFontSize = Math.round(circleDiam * 0.65);
         events.push(dialogueLine(1, startAssTime, endAssTime, 'CompactDash',
           `{\\an5\\pos(${Math.round(positions.apStatus)},${posY})\\bord0\\shad0\\fs${apFontSize}\\1c${apColor}}${prev.apText}`
         ));
@@ -2543,6 +2690,151 @@ async function writeTeslaMobileDashboardAss(exportId, seiData, startTimeMs, endT
 }
 
 // ============================================
+// TESLA MOBILE — Advanced Editor split writers
+//
+// In AE mode each section (date bar / data bar) is a freely-placed tile,
+// so we emit them as two separate ASS files (each with its own customPosition).
+// The legacy writeTeslaMobileDashboardAss stays untouched for the simple-modal
+// (non-AE) path, which uses FFmpeg padding to stack date+data.
+//
+// Each writer below renders ONLY its own section — no shared
+// `dashBarTop = isTop ? dateHeight : dateHeight + videoH` arithmetic because
+// the user's tile geometry already encodes the absolute Y in the padded canvas.
+// ============================================
+
+/**
+ * Generate ONLY the date-bar dialogue (Tesla Mobile AE mode).
+ * Centered "Day, Month D, YYYY  H:MM AM/PM" with a thin separator below.
+ * `options.customPosition = { x, y, w, h }` defines the tile.
+ */
+function generateTeslaMobileDateEvents(seiData, startTimeMs, endTimeMs, options) {
+  const {
+    playResX = 1920,
+    segments = [],
+    cumStarts = [],
+    timeFormat = '12h',
+    customPosition,
+    dateValueScale = 1,
+  } = options;
+
+  if (!customPosition) return '';
+
+  const dateX = Math.round(customPosition.x);
+  const dateY = Math.round(customPosition.y);
+  const dateW = Math.max(80, Math.round(customPosition.w));
+  const dateH = Math.max(12, Math.round(customPosition.h));
+  const centerX = dateX + dateW / 2;
+  const centerY = dateY + dateH / 2;
+  // Match the ASS legacy size scaling (dateHeight * 0.55) then apply user scale.
+  const dateFontSize = Math.max(10, Math.round(dateH * 0.55 * (dateValueScale || 1)));
+
+  const durationMs = endTimeMs - startTimeMs;
+  const totalFrames = Math.ceil((durationMs / 1000) * FPS);
+  const frameTimeMs = 1000 / FPS;
+
+  const events = [];
+  let prevTimeSec = null;
+  let eventStartFrame = 0;
+
+  for (let frame = 0; frame <= totalFrames; frame++) {
+    const currentTimeMs = startTimeMs + (frame * frameTimeMs);
+    const actualTs = convertVideoTimeToTimestamp(currentTimeMs, segments, cumStarts);
+    // Date bar updates once per second (minute precision is enough but
+    // matches the legacy keyframing).
+    const timeSec = Math.floor(actualTs / 1000);
+
+    if (timeSec !== prevTimeSec || frame === totalFrames) {
+      if (prevTimeSec !== null && eventStartFrame < frame) {
+        const startAssTime = formatAssTime(eventStartFrame * frameTimeMs);
+        const endAssTime = formatAssTime(frame * frameTimeMs);
+        const eventStartTimeMs = startTimeMs + (eventStartFrame * frameTimeMs);
+        const actualTimestampMs = convertVideoTimeToTimestamp(eventStartTimeMs, segments, cumStarts);
+
+        const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+        const monthNames = ['January', 'February', 'March', 'April', 'May', 'June',
+          'July', 'August', 'September', 'October', 'November', 'December'];
+        const dateObj = actualTimestampMs ? new Date(actualTimestampMs) : new Date();
+        const dayName = dayNames[dateObj.getDay()];
+        const monthName = monthNames[dateObj.getMonth()];
+        const dayNum = dateObj.getDate();
+        const year = dateObj.getFullYear();
+        const timeStr = formatDisplayTime(actualTimestampMs, timeFormat);
+        const dateTimeStr = `${dayName}, ${monthName} ${dayNum}, ${year}   ${timeStr}`;
+
+        // Solid panel background (matches the #1A1A1A pad color used in
+        // legacy non-AE mode). Layer 0 so the text sits above it.
+        events.push(dialogueLine(0, startAssTime, endAssTime, 'CompactDash',
+          `{\\an7\\pos(0,0)\\bord0\\shad0\\1c&H1A1A1A&\\1a&H00&\\p1}` +
+          `m ${dateX} ${dateY} l ${dateX + dateW} ${dateY} l ${dateX + dateW} ${dateY + dateH} l ${dateX} ${dateY + dateH}{\\p0}`
+        ));
+
+        // Centered date/time text
+        events.push(dialogueLine(2, startAssTime, endAssTime, 'CompactDash',
+          `{\\an5\\pos(${Math.round(centerX)},${Math.round(centerY)})\\fs${dateFontSize}\\bord0\\shad0\\1c&HFFFFFF&\\1a&H00&}${dateTimeStr}`
+        ));
+
+        // Thin separator along the bottom edge
+        const sepY = dateY + dateH - 1;
+        events.push(dialogueLine(1, startAssTime, endAssTime, 'CompactDash',
+          `{\\an7\\pos(0,0)\\bord0\\shad0\\1c&H333333&\\1a&H00&\\p1}` +
+          `m ${dateX} ${sepY} l ${dateX + dateW} ${sepY} l ${dateX + dateW} ${sepY + 1} l ${dateX} ${sepY + 1}{\\p0}`
+        ));
+      }
+      prevTimeSec = timeSec;
+      eventStartFrame = frame;
+    }
+  }
+
+  return events.join('\n');
+}
+
+function generateTeslaMobileDateAss(seiData, startTimeMs, endTimeMs, options) {
+  const { playResX = 1920, playResY = 1080, customPosition } = options;
+  const dateH = customPosition ? Math.max(12, Math.round(customPosition.h)) : 60;
+  // Font size in the V4+ Style table is a fallback; per-event \fs overrides it.
+  const fontSize = Math.max(10, Math.round(dateH * 0.55));
+  const header = generateTeslaMobileAssHeader(playResX, playResY, fontSize);
+  const events = generateTeslaMobileDateEvents(seiData, startTimeMs, endTimeMs, options);
+  return header + events;
+}
+
+async function writeTeslaMobileDateAss(exportId, seiData, startTimeMs, endTimeMs, options) {
+  const assContent = generateTeslaMobileDateAss(seiData, startTimeMs, endTimeMs, options);
+  const tempPath = path.join(os.tmpdir(), `dashboard_tesla_mobile_date_${exportId}_${Date.now()}.ass`);
+  await fs.promises.writeFile(tempPath, assContent, 'utf8');
+  console.log(`[ASS] Generated Tesla Mobile date-bar subtitle: ${tempPath}`);
+  return tempPath;
+}
+
+/**
+ * Generate ONLY the dashboard-data dialogue (Tesla Mobile AE mode).
+ * Reuses generateTeslaMobileDashboardEvents — it already honors customPosition
+ * by forcing dateHeight = 0 and emitting only the dashboard bar at the tile's
+ * absolute position. So writeTeslaMobileDataAss is essentially a thin wrapper
+ * around the existing event generator, just with a more specific filename.
+ *
+ * (We keep this as its own export so the AE dispatch logic in main.js is
+ * symmetric with writeTeslaMobileDateAss.)
+ */
+async function writeTeslaMobileDataAss(exportId, seiData, startTimeMs, endTimeMs, options) {
+  const { playResX = 1920, playResY = 1080, customPosition } = options;
+  if (!customPosition) {
+    throw new Error('writeTeslaMobileDataAss requires options.customPosition');
+  }
+  const dashHeight = Math.max(20, Math.round(customPosition.h));
+  const circleR = Math.round(dashHeight * 0.38);
+  const fontSize = Math.round(circleR * 0.7);
+  const header = generateTeslaMobileAssHeader(playResX, playResY, fontSize);
+  const events = generateTeslaMobileDashboardEvents(seiData, startTimeMs, endTimeMs, options);
+  const assContent = header + events;
+
+  const tempPath = path.join(os.tmpdir(), `dashboard_tesla_mobile_data_${exportId}_${Date.now()}.ass`);
+  await fs.promises.writeFile(tempPath, assContent, 'utf8');
+  console.log(`[ASS] Generated Tesla Mobile data-bar subtitle: ${tempPath}`);
+  return tempPath;
+}
+
+// ============================================
 // TESLA SCREEN DASH
 // In-car Tesla driving display look:
 //   Top-left HUD: PRND row, big speed number, MPH/KPH unit, "Self-Driving"/"Manual"
@@ -2582,12 +2874,25 @@ function generateTeslaScreenDashEvents(seiData, startTimeMs, endTimeMs, options)
     segments = [],
     cumStarts = [],
     language = 'en',
-    timeFormat = '12h'
+    timeFormat = '12h',
+    customPosition = null
   } = options;
 
-  // Uniform scale so the HUD fits any mosaic resolution without distortion.
-  const scale = Math.min(playResX / SCREEN_DASH_REF_W, playResY / SCREEN_DASH_REF_H);
-  const sx = v => Math.round(v * scale);
+  // Advanced Editor: HUD is scaled + offset to the user's canvas tile.
+  let scale, offsetX, offsetY;
+  if (customPosition) {
+    scale = Math.max(0.1, Math.min(customPosition.w / SCREEN_DASH_REF_W, customPosition.h / SCREEN_DASH_REF_H));
+    offsetX = Math.round(customPosition.x);
+    offsetY = Math.round(customPosition.y);
+  } else {
+    scale = Math.min(playResX / SCREEN_DASH_REF_W, playResY / SCREEN_DASH_REF_H);
+    offsetX = 0;
+    offsetY = 0;
+  }
+  // sx/sy: absolute positions (include offset). sd: scaled distance (no offset).
+  const sx = v => offsetX + Math.round(v * scale);
+  const sy = v => offsetY + Math.round(v * scale);
+  const sd = v => Math.round(v * scale);
   const sf = v => Math.max(8, Math.round(v * scale));
 
   const durationMs = endTimeMs - startTimeMs;
@@ -2607,26 +2912,28 @@ function generateTeslaScreenDashEvents(seiData, startTimeMs, endTimeMs, options)
 
   // Pre-compute fixed pixel positions once.
   const hudX = sx(40);
-  const prndY = sx(60);
+  const prndY = sy(60);
   const prndFs = sf(48);
-  const prndGap = sx(48);
-  const speedY = sx(110);
+  const prndGap = sd(48);
+  const speedY = sy(110);
   const speedFs = sf(180);
-  const unitY = sx(310);
+  const unitY = sy(310);
   const unitFs = sf(48);
-  const apY = sx(370);
+  const apY = sy(370);
   const apFs = sf(44);
 
   const barX = sx(18);
-  const barW = sx(10);
-  const barTop = sx(140);
-  const barBottom = sx(330);
+  const barW = sd(10);
+  const barTop = sy(140);
+  const barBottom = sy(330);
   const barHeight = barBottom - barTop;
   const barCenterY = Math.round((barTop + barBottom) / 2);
 
-  const clockY = sx(40);
+  const clockY = sy(40);
   const clockFs = sf(44);
-  const clockX = Math.round(playResX / 2);
+  const clockX = customPosition
+    ? Math.round(offsetX + customPosition.w / 2)
+    : Math.round(playResX / 2);
 
   for (let frame = 0; frame <= totalFrames; frame++) {
     const currentTimeMs = startTimeMs + (frame * frameTimeMs);
@@ -2804,8 +3111,11 @@ async function writeTeslaScreenDashAss(exportId, seiData, startTimeMs, endTimeMs
 
 module.exports = {
   writeCompactDashboardAss,
+  writeDefaultDashboardAss,
   writeDetailedDashboardAss,
   writeTeslaMobileDashboardAss,
+  writeTeslaMobileDateAss,
+  writeTeslaMobileDataAss,
   writeTeslaScreenDashAss,
   writeMinimapAss
 };

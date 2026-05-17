@@ -8642,3 +8642,28 @@ body>.dashboard-vis-compact.draggable:not(.fixed-to-camera) {
     border-radius: 3px;
     font-size: 10px;
 }
+
+/* AE-driven export: simple modal is locked + clearly marked. */
+.ae-export-banner {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 16px;
+    margin: 0 16px 8px 16px;
+    background: rgba(0, 72, 255, 0.10);
+    border-left: 3px solid var(--dashboard-accent, #0048FF);
+    color: var(--text-primary, #fff);
+    font-size: 13px;
+    border-radius: 4px;
+}
+
+/* Dim the form sections but leave the progress sticky at full opacity.
+   (CSS opacity creates a stacking group that children can't escape, so the
+   only way to keep the progress bars bright is to skip the body itself and
+   target only the siblings we want dimmed.) */
+#exportModal.ae-export-mode .modal-body > *:not(#exportProgressSticky) {
+    opacity: 0.55;
+    pointer-events: none; /* belt + suspenders alongside `inert` */
+    transition: opacity 0.15s ease;
+}
+}
