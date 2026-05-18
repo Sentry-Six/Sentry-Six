@@ -256,6 +256,16 @@ async function performVideoExport(event, exportId, exportData, ffmpegPath) {
     event.sender.send('export:progress', exportId, { type: 'minimap-progress', percentage, message });
   };
 
+  // AE-only: emitted when the bbox would exceed the encoder-safe ceiling
+  // and we proportionally downscale the whole layout. Renderer listeners
+  // turn this into a toast / banner so the user knows their export
+  // resolution was reduced.
+  const sendDownscaled = (original, scaled) => {
+    event.sender.send('export:progress', exportId, {
+      type: 'downscaled', original, scaled
+    });
+  };
+
   let completeSent = false;
   const sendComplete = (success, message, warning = null) => {
     completeSent = true;
@@ -511,11 +521,50 @@ async function performVideoExport(event, exportId, exportData, ffmpegPath) {
         totalW = totalW + (totalW % 2);
         totalH = totalH + (totalH % 2);
 
+        // -------- AE bbox auto-downscale --------
+        // If the user laid out tiles that produce an output larger than the
+        // safest encoder ceiling (4096×4096 — matches the existing h264MaxRes
+        // and stays well within most consumer GPU encoder limits), scale the
+        // ENTIRE layout proportionally so the export still succeeds.
+        // Scales: every camera layout, the canvas dims (used downstream to
+        // resolve normalized overlay positions to pixels), and the bbox
+        // origin. Then recomputes totalW/totalH from the scaled rectangle.
+        // Simple modal exports skip this entirely (gated by `isAdvancedLayout`).
+        const AE_MAX_DIM = 4096;
+        if (totalW > AE_MAX_DIM || totalH > AE_MAX_DIM) {
+          const scale = Math.min(AE_MAX_DIM / totalW, AE_MAX_DIM / totalH);
+          const originalDims = { w: totalW, h: totalH };
+
+          for (const camera of Object.keys(cameraLayouts)) {
+            const layout = cameraLayouts[camera];
+            if (!layout) continue;
+            layout.x      = layout.x      * scale;
+            layout.y      = layout.y      * scale;
+            layout.width  = layout.width  * scale;
+            layout.height = layout.height * scale;
+          }
+          layoutData.canvasWidth  = (layoutData.canvasWidth  || canvasW_px) * scale;
+          layoutData.canvasHeight = (layoutData.canvasHeight || canvasH_px) * scale;
+
+          minX = minX * scale;
+          minY = minY * scale;
+          maxX = maxX * scale;
+          maxY = maxY * scale;
+          totalW = Math.ceil(maxX - minX);
+          totalH = Math.ceil(maxY - minY);
+          totalW = totalW + (totalW % 2);
+          totalH = totalH + (totalH % 2);
+
+          console.log(`[AE] Bbox ${originalDims.w}×${originalDims.h} exceeds ${AE_MAX_DIM}×${AE_MAX_DIM} cap; scaled to ${totalW}×${totalH} (scale ${scale.toFixed(3)})`);
+          sendDownscaled(originalDims, { w: totalW, h: totalH });
+        }
+        // ---------------------------------------
+
         // Stash bbox offsets so the camera loop + overlay code can apply them.
         layoutData._advancedBBox = { minX, minY };
 
         cols = 0; rows = 0;
-        console.log(`📐 Advanced layout: ${totalW}x${totalH} (canvas ${canvasW_px}x${canvasH_px}, bbox start ${minX.toFixed(1)},${minY.toFixed(1)})`);
+        console.log(`📐 Advanced layout: ${totalW}x${totalH} (canvas ${layoutData.canvasWidth || canvasW_px}x${layoutData.canvasHeight || canvasH_px}, bbox start ${minX.toFixed(1)},${minY.toFixed(1)})`);
 
         baseInputIdx = inputs.length + 1;
         cmd.push('-f', 'lavfi', '-i', `color=c=black:s=${totalW}x${totalH}:r=${FPS}:d=${durationSec}`);
@@ -1347,12 +1396,15 @@ async function performVideoExport(event, exportId, exportData, ffmpegPath) {
     //    with the non-ASS path. Helps QSV/HEVC encoders that are strict about input format.
     //  - HEVC QSV on Intel Gen 9.5 (UHD 620, etc.) fails to open the encoder with "Invalid
     //    argument" when width/height aren't 16-aligned. Pad the canvas to the next multiple
-    //    of 16 for all GPU encoders — the extra pixels (at most 15 per axis) are imperceptible.
+    //    of 16 ALWAYS (not just for the initial GPU path) — when CPU fallback fires the
+    //    filter chain is reused, but if useGpu was false from the start (Linux-no-GPU,
+    //    explicit CPU-only build, etc.) we'd otherwise skip the pad entirely and lose that
+    //    defensive layer for any future encoder that ends up consuming this filter graph.
+    //    The extra pixels (at most 15 per axis) are imperceptible.
     {
       const lastIdx = filters.length - 1;
       filters[lastIdx] = filters[lastIdx].replace('[out]', '[pre_norm]');
-      const padExpr = useGpu ? ',pad=ceil(iw/16)*16:ceil(ih/16)*16:0:0:color=0x1A1A1A' : '';
-      filters.push(`[pre_norm]format=yuv420p${padExpr}[out]`);
+      filters.push(`[pre_norm]format=yuv420p,pad=ceil(iw/16)*16:ceil(ih/16)*16:0:0:color=0x1A1A1A[out]`);
     }
 
     // VAAPI (Linux AMD/Intel): append hwupload to the final filter and declare the

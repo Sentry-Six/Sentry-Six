@@ -2199,6 +2199,18 @@ export async function startExport() {
                 if (exportState.modalMinimized) {
                     updateFloatingProgress(progress.message, progress.percentage);
                 }
+            } else if (progress.type === 'downscaled') {
+                // AE-only: the bbox exceeded the encoder-safe ceiling and the
+                // main process scaled the layout down. Tell the user — the
+                // export still succeeds, just at a lower output resolution.
+                const o = progress.original;
+                const s = progress.scaled;
+                notify(
+                    `Advanced Editor layout was too large for safe encoding ` +
+                    `(${o.w}×${o.h}). Output resolution was reduced to ` +
+                    `${s.w}×${s.h} to ensure the export succeeds.`,
+                    { type: 'warn', duration: 8000 }
+                );
             } else if (progress.type === 'complete') {
                 exportState.isExporting = false;
                 exportState.currentExportId = null;

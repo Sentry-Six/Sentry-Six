@@ -8,6 +8,7 @@
 import { advancedEditorState, parseTileId } from './state.js';
 import { filePathToUrl } from '../../lib/utils.js';
 import { translateMessage, showExportCompletePanel, openExportModal, setSimpleModalAeMode } from '../../features/exportVideo.js';
+import { notify } from '../notifications.js';
 
 // Quality preset → reference canvas width in pixels.
 // The canvas represents "3 cameras wide × 2 cameras tall" (the natural 3×2
@@ -284,6 +285,18 @@ export async function runAdvancedExport() {
                 if (r.miniProgressEl) r.miniProgressEl.classList.remove('hidden');
                 if (r.miniProgressBar) r.miniProgressBar.style.width = `${progress.percentage}%`;
                 if (r.miniProgressText) r.miniProgressText.textContent = translateMessage(progress.message);
+            } else if (progress.type === 'downscaled') {
+                // Bbox exceeded the encoder-safe ceiling — main process scaled
+                // the layout down. Surface this so the user understands why
+                // the output resolution is lower than expected.
+                const o = progress.original;
+                const s = progress.scaled;
+                notify(
+                    `Advanced Editor layout was too large for safe encoding ` +
+                    `(${o.w}×${o.h}). Output resolution was reduced to ` +
+                    `${s.w}×${s.h} to ensure the export succeeds.`,
+                    { type: 'warn', duration: 8000 }
+                );
             } else if (progress.type === 'complete') {
                 if (r.dashProgressEl) r.dashProgressEl.classList.add('hidden');
                 if (r.miniProgressEl) r.miniProgressEl.classList.add('hidden');
