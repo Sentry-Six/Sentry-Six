@@ -1,6 +1,6 @@
 {
   "name": "sentry-six-revamped",
-  "version": "2026.17.27",
+  "version": "2026.22.28",
   "description": "Sentry Studio - Tesla Dashcam Viewer",
   "main": "src/main.js",
   "scripts": {
@@ -30,7 +30,8 @@
     "electron-updater": "^6.1.7",
     "node-machine-id": "^1.1.12",
     "pngjs": "^7.0.0",
-    "protobufjs": "^7.5.4"
+    "protobufjs": "^7.5.4",
+    "stream-json": "^3.1.0"
   },
   "build": {
     "appId": "com.sentry-six.revamped",
@@ -40,7 +41,9 @@
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ],
       "verifyUpdateCodeSignature": false,
@@ -67,11 +70,15 @@
       "target": [
         {
           "target": "dmg",
-          "arch": ["universal"]
+          "arch": [
+            "universal"
+          ]
         },
         {
           "target": "zip",
-          "arch": ["universal"]
+          "arch": [
+            "universal"
+          ]
         }
       ],
       "category": "public.app-category.utilities",
@@ -80,7 +87,9 @@
       "identity": "Scott Vandereems (6733Y82885)",
       "entitlements": "build/entitlements.mac.plist",
       "entitlementsInherit": "build/entitlements.mac.inherit.plist",
-      "signIgnore": ["\\.pak$"],
+      "signIgnore": [
+        "\\.pak$"
+      ],
       "notarize": true,
       "artifactName": "SentryStudio-${version}-macOS.${ext}",
       "x64ArchFiles": "Contents/Resources/ffmpeg_bin/*",

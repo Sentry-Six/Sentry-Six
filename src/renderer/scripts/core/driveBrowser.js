@@ -38,6 +38,18 @@ export function renderDriveList() {
     if (!driveList) return;
 
     const driveState = getDriveState?.();
+    // Loading state: show while a parse/group is in-flight so the user knows
+    // something is happening (a large drive-data.json on a slow disk can take
+    // tens of seconds to stream + group).
+    if (driveState?.loading) {
+        driveList.innerHTML = `
+            <div class="drive-list-placeholder drive-list-loading">
+                <div class="loading-spinner"></div>
+                <p class="drive-no-data-title" style="margin-top:14px">Loading drive data…</p>
+                <p class="drive-no-data-desc">Streaming and grouping routes. Large drive-data.json files (1GB+) can take a minute.</p>
+            </div>`;
+        return;
+    }
     if (!driveState?.loaded || !driveState.drives?.length) {
         driveList.innerHTML = `
             <div class="drive-list-placeholder drive-list-no-data">

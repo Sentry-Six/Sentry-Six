@@ -53,6 +53,51 @@
     gap: 10px;
 }
 
+/* One-time disclaimer banner between header and body. Uses the same cyan
+   accent as the rest of the AE modal so it reads as informational, not as
+   a warning. Persisted dismissal lives in setting aeOverlayDisclaimerDismissed. */
+.ae-disclaimer {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 22px;
+    background: rgba(0, 212, 255, 0.08);
+    border-bottom: 1px solid rgba(0, 212, 255, 0.18);
+    color: var(--text-color);
+    font-size: 12.5px;
+    line-height: 1.4;
+    flex-shrink: 0;
+}
+
+.ae-disclaimer.hidden { display: none; }
+
+.ae-disclaimer-icon {
+    color: #00d4ff;
+    font-size: 18px;
+    flex-shrink: 0;
+}
+
+.ae-disclaimer-text { flex: 1; }
+
+.ae-disclaimer-dismiss {
+    background: transparent;
+    border: none;
+    color: var(--text-color);
+    font-size: 20px;
+    line-height: 1;
+    cursor: pointer;
+    padding: 2px 8px;
+    border-radius: 4px;
+    opacity: 0.65;
+    transition: opacity 0.15s ease, background 0.15s ease;
+    flex-shrink: 0;
+}
+
+.ae-disclaimer-dismiss:hover {
+    opacity: 1;
+    background: rgba(255, 255, 255, 0.06);
+}
+
 /* Body: canvas/main + right sidebar */
 .ae-body {
     flex: 1;

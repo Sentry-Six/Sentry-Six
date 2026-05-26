@@ -1704,10 +1704,14 @@ app.whenReady().then(async () => {
 
   createWindow();
 
-  // Pre-cache FFmpeg path in background after window is ready.
-  // This eliminates the UI freeze on macOS when opening the export modal,
-  // since findFFmpegPath uses spawnSync which blocks the main thread.
-  setTimeout(() => preCacheFFmpegPath(), 2000);
+  // Pre-cache FFmpeg path in background after window is ready. preCacheFFmpegPath
+  // is now async (uses spawn, not spawnSync) so the main-process event loop
+  // keeps servicing IPC while ffmpeg is being probed.
+  setTimeout(() => {
+    preCacheFFmpegPath().catch((err) => {
+      console.error('[STARTUP] FFmpeg pre-cache failed:', err);
+    });
+  }, 2000);
 
   // Set up electron-updater event handlers (extracted to src/main/autoUpdate.js)
   setupAutoUpdaterEvents(mainWindow);
@@ -2495,6 +2499,95 @@ ipcMain.handle('fs:readFile', async (_event, filePath) => {
   } catch (err) {
     console.error('Error reading file:', err);
     throw err;
+  }
+});
+
+// Stream-parse a SentryUSB drive-data.json file and return the grouped drives.
+// The file can be >1GB (16k+ routes), which exceeds V8's max string length
+// (~512MB). We stream the JSON with stream-json so the whole file never lives
+// in memory as one string, then run the existing groupStoreDataIntoDrives
+// pipeline (ESM module, dynamic-imported) and ship only the drives array back
+// to the renderer.
+ipcMain.handle('sentryUsb:loadAndGroup', async (_event, filePath) => {
+  try {
+    if (!filePath) return { success: false, error: 'No file path provided' };
+    if (!fs.existsSync(filePath)) return { success: false, error: 'File not found: ' + filePath };
+
+    const [
+      { parser },
+      { pick },
+      { streamArray },
+      { streamObject },
+      chainMod,
+      grouperMod,
+    ] = await Promise.all([
+      import('stream-json'),
+      import('stream-json/filters/pick.js'),
+      import('stream-json/streamers/stream-array.js'),
+      import('stream-json/streamers/stream-object.js'),
+      import('stream-chain'),
+      import('./renderer/scripts/core/driveGrouper.js'),
+    ]);
+    const chain = chainMod.default ?? chainMod.chain;
+    const { groupStoreDataIntoDrives } = grouperMod;
+
+    const fileSize = fs.statSync(filePath).size;
+    console.log(`[SentryUSB] Stream-parsing routes from ${filePath} (${(fileSize / 1024 / 1024).toFixed(1)} MB)`);
+    const t0 = Date.now();
+    const routes = [];
+    {
+      const pipeline = chain([
+        fs.createReadStream(filePath),
+        parser(),
+        pick({ filter: /^routes$/i }),
+        streamArray(),
+      ]);
+      // Consume with for-await to avoid any chain-vs-flowing-mode quirks.
+      // Log progress so it's obvious when streaming is in-flight on a slow disk.
+      let lastLog = Date.now();
+      for await (const d of pipeline) {
+        routes.push(d.value);
+        if (routes.length % 1000 === 0 || Date.now() - lastLog > 2000) {
+          console.log(`[SentryUSB]   ...${routes.length} routes parsed (${((Date.now() - t0) / 1000).toFixed(1)}s)`);
+          lastLog = Date.now();
+        }
+      }
+    }
+    console.log(`[SentryUSB] Streamed ${routes.length} routes in ${Date.now() - t0}ms`);
+
+    const t1 = Date.now();
+    const driveTags = {};
+    {
+      const pipeline = chain([
+        fs.createReadStream(filePath),
+        parser(),
+        pick({ filter: /^drive[_]?tags$/i }),
+        streamObject(),
+      ]);
+      for await (const d of pipeline) {
+        driveTags[d.key] = d.value;
+      }
+    }
+    console.log(`[SentryUSB] Streamed driveTags (${Object.keys(driveTags).length} keys) in ${Date.now() - t1}ms`);
+
+    const t2 = Date.now();
+    const { drives, driveCount, routeCount } = groupStoreDataIntoDrives({
+      Routes: routes,
+      DriveTags: driveTags,
+    });
+    console.log(`[SentryUSB] Grouped into ${driveCount} drives in ${Date.now() - t2}ms`);
+
+    return {
+      success: true,
+      drives,
+      driveCount,
+      routeCount,
+      routesLen: routes.length,
+      topKeys: ['routes', 'driveTags'],
+    };
+  } catch (err) {
+    console.error('[SentryUSB] Load failed:', err);
+    return { success: false, error: err?.message || String(err) };
   }
 });
 

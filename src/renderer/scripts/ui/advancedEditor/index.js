@@ -25,7 +25,11 @@ let modalEl = null;
 let closeBtnEl = null;
 let exportBtnEl = null;
 let resetLayoutBtnEl = null;
+let disclaimerEl = null;
+let disclaimerDismissEl = null;
 let initialized = false;
+
+const AE_DISCLAIMER_SETTING = 'aeOverlayDisclaimerDismissed';
 
 // Tracks the previously-selected dashboard style across the onChange
 // callback so the style-switch branch can compute a tile set-diff
@@ -39,9 +43,25 @@ export function initAdvancedEditor(injected) {
     closeBtnEl = document.getElementById('closeAdvancedEditorBtn');
     exportBtnEl = document.getElementById('aeExportBtn');
     resetLayoutBtnEl = document.getElementById('aeResetLayoutBtn');
+    disclaimerEl = document.getElementById('aeOverlayDisclaimer');
+    disclaimerDismissEl = document.getElementById('aeOverlayDisclaimerDismiss');
 
     if (initialized) return;
     initialized = true;
+
+    // One-time-acknowledge disclaimer about overlay preview fidelity.
+    if (disclaimerDismissEl) {
+        disclaimerDismissEl.addEventListener('click', async (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (disclaimerEl) disclaimerEl.classList.add('hidden');
+            try {
+                await window.electronAPI?.setSetting?.(AE_DISCLAIMER_SETTING, true);
+            } catch (err) {
+                console.warn('[AE] Failed to persist disclaimer dismissal:', err);
+            }
+        });
+    }
 
     if (closeBtnEl) {
         closeBtnEl.addEventListener('click', (e) => {
@@ -164,6 +184,17 @@ export async function openAdvancedEditor() {
     modalEl.focus();
 
     advancedEditorState.isOpen = true;
+
+    // Show the overlay-preview disclaimer unless the user has dismissed it.
+    if (disclaimerEl) {
+        try {
+            const dismissed = await window.electronAPI?.getSetting?.(AE_DISCLAIMER_SETTING);
+            disclaimerEl.classList.toggle('hidden', !!dismissed);
+        } catch {
+            // If the setting read fails, default to showing the disclaimer.
+            disclaimerEl.classList.remove('hidden');
+        }
+    }
 
     // Collapsible section toggling — EXACT same pattern as the simple
     // export modal (exportVideo.js:803-818): double RAF, cloneNode to strip

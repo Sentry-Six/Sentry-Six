@@ -15,14 +15,6 @@
 </head>
 
 <body>
-    <!-- Startup loader: shown while main-process pre-cache (FFmpeg) + the initial
-         update-check telemetry API call are running. Hidden as soon as the update
-         check resolves (or is skipped, or the 15s safety timeout fires). -->
-    <div id="startupLoader" class="startup-loader">
-        <div class="loading-spinner"></div>
-        <div class="loading-text" data-i18n="ui.startup.checkingForUpdates">Checking for updates...</div>
-    </div>
-
     <div class="app-container">
         <!-- File Drop / Video Area -->
         <div class="video-container" id="videoContainer">
@@ -1287,6 +1279,7 @@
                 <button id="openAdvancedEditorBtn" class="btn btn-secondary">
                     <span class="material-symbols-outlined mi-sm" style="vertical-align: middle; margin-right: 4px;">tune</span>
                     Open in Advanced Editor
+                    <span class="feature-new-badge" id="advancedEditorNewBadge">NEW</span>
                 </button>
                 <button id="cancelExportBtn" class="btn btn-secondary" data-i18n="ui.export.cancel">Cancel</button>
                 <button id="startExportBtn" class="btn btn-primary" disabled
@@ -1468,12 +1461,24 @@
                 <h2>
                     <span class="material-symbols-outlined mi-md">tune</span>
                     <span>Advanced Editor</span>
+                    <span class="beta-tag">Beta</span>
                 </h2>
                 <div class="ae-header-actions">
                     <button id="aeExportBtn" class="btn btn-primary"
                         data-i18n="ui.export.exportBtn">Export</button>
                     <button id="closeAdvancedEditorBtn" class="modal-close">&times;</button>
                 </div>
+            </div>
+
+            <!-- One-time disclaimer about overlay preview fidelity. Dismissal is
+                 persisted in settings (aeOverlayDisclaimerDismissed) so it only
+                 shows until the user acknowledges it. -->
+            <div id="aeOverlayDisclaimer" class="ae-disclaimer hidden" role="status">
+                <span class="material-symbols-outlined ae-disclaimer-icon">info</span>
+                <span class="ae-disclaimer-text">
+                    Overlay previews (dashboard, minimap, timestamp) show <strong>where</strong> elements will appear and <strong>how large</strong> they'll be on export. Their on-screen styling here is approximate — we're still polishing the preview to match the final export exactly.
+                </span>
+                <button id="aeOverlayDisclaimerDismiss" class="ae-disclaimer-dismiss" aria-label="Dismiss" title="Dismiss">&times;</button>
             </div>
 
             <div class="modal-body ae-body">

@@ -2,7 +2,7 @@ const { app } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
-const { spawnSync } = require('child_process');
+const { spawnSync, spawn } = require('child_process');
 
 // Cached GPU encoder detection
 let gpuEncoder = null;
@@ -31,60 +31,36 @@ function ensureExecutable(filePath) {
   }
 }
 
-function findFFmpegPath() {
-  // Return cached path if already found
-  if (cachedFFmpegPath !== undefined) return cachedFFmpegPath;
-  
+/**
+ * Build the platform-specific ordered list of paths to check for ffmpeg.
+ * Shared by the sync and async detection paths.
+ */
+function buildFFmpegCandidatePaths() {
   const isMac = process.platform === 'darwin';
   const isWin = process.platform === 'win32';
-  
-  // Build list of paths to check
   const paths = [];
-  
+
   if (isMac) {
-    // macOS: Check bundled paths first (like Windows), then fall back to system paths
-    console.log('🍎 macOS detected, checking FFmpeg paths:');
-    
-    // For packaged builds, extraResources places files in process.resourcesPath
     if (app.isPackaged) {
-      paths.push(
-        path.join(process.resourcesPath, 'ffmpeg_bin', 'ffmpeg')
-      );
+      paths.push(path.join(process.resourcesPath, 'ffmpeg_bin', 'ffmpeg'));
     }
-    // Also check standard development paths (npm start)
     paths.push(
       path.join(__dirname, '..', 'ffmpeg_bin', 'ffmpeg'),
       path.join(__dirname, 'ffmpeg_bin', 'ffmpeg'),
       path.join(process.cwd(), 'ffmpeg_bin', 'ffmpeg'),
       path.join(app.getAppPath(), 'ffmpeg_bin', 'ffmpeg'),
-      path.join(app.getAppPath(), '..', 'ffmpeg_bin', 'ffmpeg')
-    );
-    
-    // Fall back to system install locations (Homebrew, MacPorts, etc.)
-    const systemPaths = [
-      '/opt/homebrew/bin/ffmpeg',  // Homebrew Apple Silicon
-      '/usr/local/bin/ffmpeg',      // Homebrew Intel Mac
-      '/opt/local/bin/ffmpeg',      // MacPorts
-      '/usr/bin/ffmpeg',            // System
+      path.join(app.getAppPath(), '..', 'ffmpeg_bin', 'ffmpeg'),
+      '/opt/homebrew/bin/ffmpeg',
+      '/usr/local/bin/ffmpeg',
+      '/opt/local/bin/ffmpeg',
+      '/usr/bin/ffmpeg',
       path.join(os.homedir(), '.local', 'bin', 'ffmpeg'),
       path.join(os.homedir(), 'bin', 'ffmpeg')
-    ];
-    paths.push(...systemPaths);
-    
-    // Log what we're checking for debugging
-    for (const p of paths) {
-      const exists = fs.existsSync(p);
-      console.log(`   ${exists ? '✓' : '✗'} ${p}`);
-    }
+    );
   } else if (isWin) {
-    // Windows: Check bundled paths first, then system
-    // For packaged builds, extraResources places files in process.resourcesPath
     if (app.isPackaged) {
-      paths.push(
-        path.join(process.resourcesPath, 'ffmpeg_bin', 'ffmpeg.exe')
-      );
+      paths.push(path.join(process.resourcesPath, 'ffmpeg_bin', 'ffmpeg.exe'));
     }
-    // Also check standard development paths
     paths.push(
       path.join(__dirname, '..', 'ffmpeg_bin', 'ffmpeg.exe'),
       path.join(__dirname, 'ffmpeg_bin', 'ffmpeg.exe'),
@@ -93,7 +69,6 @@ function findFFmpegPath() {
       path.join(app.getAppPath(), '..', 'ffmpeg_bin', 'ffmpeg.exe')
     );
   } else {
-    // Linux: Check bundled paths and system paths
     paths.push(
       path.join(__dirname, '..', 'ffmpeg_bin', 'ffmpeg'),
       path.join(__dirname, 'ffmpeg_bin', 'ffmpeg'),
@@ -102,10 +77,16 @@ function findFFmpegPath() {
       '/usr/local/bin/ffmpeg'
     );
   }
-  
-  // Always try PATH as last resort
-  paths.push('ffmpeg');
 
+  paths.push('ffmpeg');
+  return paths;
+}
+
+function findFFmpegPath() {
+  // Return cached path if already found
+  if (cachedFFmpegPath !== undefined) return cachedFFmpegPath;
+
+  const paths = buildFFmpegCandidatePaths();
   console.log('[SEARCH] Searching for FFmpeg in:', paths);
 
   for (const p of paths) {
@@ -113,26 +94,26 @@ function findFFmpegPath() {
       // First check if file exists (skip for bare 'ffmpeg' which relies on PATH)
       const exists = p === 'ffmpeg' || fs.existsSync(p);
       console.log(`  Checking ${p}: exists=${exists}`);
-      
+
       if (!exists) continue;
-      
+
       // Ensure bundled binaries are executable on macOS/Linux
       if (p !== 'ffmpeg' && !p.startsWith('/opt') && !p.startsWith('/usr')) {
         ensureExecutable(p);
       }
-      
+
       // Don't use shell:true on Windows - it breaks paths with spaces
       // Only use shell on macOS for symlink handling
       const isMacLocal = process.platform === 'darwin';
-      const result = spawnSync(p, ['-version'], { 
-        timeout: 5000, 
+      const result = spawnSync(p, ['-version'], {
+        timeout: 5000,
         windowsHide: true,
         encoding: 'utf8',
         shell: isMacLocal  // Only use shell on macOS for symlinks
       });
-      
+
       console.log(`  Spawn result: status=${result.status}, error=${result.error?.message || 'none'}`);
-      
+
       if (result.status === 0) {
         console.log(`[OK] Found FFmpeg at: ${p}`);
         cachedFFmpegPath = p;
@@ -142,21 +123,87 @@ function findFFmpegPath() {
       console.log(`  Error checking ${p}: ${err.message}`);
     }
   }
-  
+
   console.warn('[ERROR] FFmpeg not found in any of the checked paths');
   cachedFFmpegPath = null;
   return null;
 }
 
 /**
- * Pre-cache FFmpeg path at startup (runs in background via setTimeout).
- * This eliminates the UI freeze when opening the export modal on macOS,
- * since findFFmpegPath uses spawnSync which blocks the main thread.
+ * Async version of findFFmpegPath — uses spawn (not spawnSync) so the Node
+ * event loop is never blocked. Used by preCacheFFmpegPath so startup IPC
+ * (and any pending renderer messages) keep flowing while FFmpeg is probed.
  */
-function preCacheFFmpegPath() {
+function findFFmpegPathAsync() {
+  if (cachedFFmpegPath !== undefined) return Promise.resolve(cachedFFmpegPath);
+
+  const paths = buildFFmpegCandidatePaths();
+  const isMacLocal = process.platform === 'darwin';
+  console.log('[SEARCH] Searching for FFmpeg in:', paths);
+
+  // Probe paths sequentially so the first match wins (same order as sync version).
+  return (async () => {
+    for (const p of paths) {
+      try {
+        const exists = p === 'ffmpeg' || fs.existsSync(p);
+        console.log(`  Checking ${p}: exists=${exists}`);
+        if (!exists) continue;
+
+        if (p !== 'ffmpeg' && !p.startsWith('/opt') && !p.startsWith('/usr')) {
+          ensureExecutable(p);
+        }
+
+        const ok = await new Promise((resolve) => {
+          let settled = false;
+          const done = (val) => { if (!settled) { settled = true; resolve(val); } };
+          let proc;
+          try {
+            proc = spawn(p, ['-version'], { windowsHide: true, shell: isMacLocal });
+          } catch (err) {
+            console.log(`  Spawn threw for ${p}: ${err.message}`);
+            return done(false);
+          }
+          const killer = setTimeout(() => {
+            try { proc.kill(); } catch {}
+            console.log(`  Spawn timeout for ${p}`);
+            done(false);
+          }, 5000);
+          proc.on('error', (err) => {
+            clearTimeout(killer);
+            console.log(`  Spawn error for ${p}: ${err.message}`);
+            done(false);
+          });
+          proc.on('exit', (code) => {
+            clearTimeout(killer);
+            console.log(`  Spawn result: status=${code}, error=none`);
+            done(code === 0);
+          });
+        });
+
+        if (ok) {
+          console.log(`[OK] Found FFmpeg at: ${p}`);
+          cachedFFmpegPath = p;
+          return p;
+        }
+      } catch (err) {
+        console.log(`  Error checking ${p}: ${err.message}`);
+      }
+    }
+
+    console.warn('[ERROR] FFmpeg not found in any of the checked paths');
+    cachedFFmpegPath = null;
+    return null;
+  })();
+}
+
+/**
+ * Pre-cache FFmpeg path at startup in the background. Uses async spawn so the
+ * main-process event loop never blocks — IPC from the renderer keeps flowing.
+ */
+async function preCacheFFmpegPath() {
   if (cachedFFmpegPath !== undefined) return; // Already cached
   console.log('[STARTUP] Pre-caching FFmpeg path...');
-  const result = findFFmpegPath();
+  const result = await findFFmpegPathAsync();
   console.log(`[STARTUP] FFmpeg pre-cache complete: ${result ? 'found' : 'not found'}`);
 }
 

@@ -287,7 +287,11 @@ function setupExportOverlaySaveHandlers() {
 // Feature NEW Badge Management
 // Badges disappear after first interaction, persisted in settings
 // ============================================================
-const FEATURE_BADGE_KEYS = {
+// Single source of truth for NEW badges. Exported so the dev settings panel
+// (settingsModal.js) can reset/dismiss all known badges without duplicating
+// the list. When adding a NEW badge, register it here AND wire a dismiss
+// trigger in initFeatureBadges() below.
+export const FEATURE_BADGE_KEYS = {
     overlaysNewBadge: 'featureSeen_teslaMobileStyle',
     styleNewBadge: 'featureSeen_teslaMobileStyle',
     shareClipNewBadge: 'featureSeen_shareClip',
@@ -297,7 +301,8 @@ const FEATURE_BADGE_KEYS = {
     prevClipNewDot: 'featureSeen_clipNavPreview',
     previewNewBadge: 'featureSeen_clipNavPreview',
     minimapRenderModeNewDot: 'featureSeen_minimapStaticMap',
-    minimapNewBadge: 'featureSeen_minimapStaticMap'
+    minimapNewBadge: 'featureSeen_minimapStaticMap',
+    advancedEditorNewBadge: 'featureSeen_advancedEditor'
 };
 
 /**
@@ -474,6 +479,12 @@ export async function initFeatureBadges() {
                 dismissFeatureBadge('minimapRenderModeNewDot');
                 dismissFeatureBadge('minimapNewBadge');
             });
+        }
+
+        // Advanced Editor launcher - dismiss the NEW badge on first open
+        const openAdvancedEditorBtn = $('openAdvancedEditorBtn');
+        if (openAdvancedEditorBtn) {
+            openAdvancedEditorBtn.addEventListener('click', () => dismissFeatureBadge('advancedEditorNewBadge'));
         }
 
         // Use event delegation for settings-modal badges (may not be initialized when export modal opens)

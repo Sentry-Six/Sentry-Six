@@ -41,7 +41,7 @@ import {
     initClipBrowser, renderClipList, highlightSelectedClip,
     buildDisplayItems, parseTimestampKeyToEpochMs
 } from './scripts/core/clipBrowser.js';
-import { groupStoreDataIntoDrives, matchClipsTodrives } from './scripts/core/driveGrouper.js';
+import { matchClipsTodrives } from './scripts/core/driveGrouper.js';
 import { initDriveBrowser, renderDriveList, setDriveTagFilter } from './scripts/core/driveBrowser.js';
 import { initI18n, t, onLanguageChange } from './scripts/lib/i18n.js';
 
@@ -1748,68 +1748,82 @@ async function loadDefaultFolderOnStartup() {
 // Call after a short delay to allow UI to initialize
 setTimeout(loadDefaultFolderOnStartup, 500);
 
+// In-flight load tracker: dedupes concurrent loads of the same file (e.g., the
+// settings file picker firing while the startup auto-load is still streaming a
+// large drive-data.json) so we don't pile up parallel reads of a 1GB file.
+const _inFlightSentryUsbLoads = new Map();
+
 /**
  * Load and parse a SentryUSB drive-data.json file.
- * Groups routes into drives and cross-references with loaded clips.
+ * Streaming parse + drive grouping happen in the main process — the renderer
+ * receives only the final small `drives` array. This handles files that exceed
+ * V8's max string length (~512MB), which a renderer-side fs:readFile + JSON.parse
+ * cannot.
  * @param {string} filePath - Absolute path to drive-data.json
  * @returns {Promise<{success: boolean, driveCount?: number, routeCount?: number, error?: string}>}
  */
 async function loadSentryUsbData(filePath) {
     if (!filePath) return { success: false, error: 'No file path provided' };
 
+    // If the same file is already being loaded, return that promise instead of
+    // kicking off a second parallel parse of a potentially 1GB file.
+    if (_inFlightSentryUsbLoads.has(filePath)) {
+        console.log('[SentryUSB] Load already in flight for', filePath, '— reusing promise');
+        return _inFlightSentryUsbLoads.get(filePath);
+    }
+
     const sentryUsb = state.sentryUsb;
     sentryUsb.loading = true;
+    // Reflect the loading state in the Drives tab so the user sees something
+    // is happening instead of the "No drive data loaded" placeholder.
+    try { renderDriveList(); } catch {}
 
-    try {
-        const rawText = await window.electronAPI.readFile(filePath);
-        const storeData = JSON.parse(rawText);
+    const promise = (async () => {
+        try {
+            const result = await window.electronAPI.loadSentryUsbDrives(filePath);
+            if (!result?.success) {
+                const err = result?.error || 'Unknown load error';
+                console.error('[SentryUSB] Failed to load drive data:', err);
+                return { success: false, error: err };
+            }
+            const { topKeys, routesLen, drives, driveCount, routeCount } = result;
+            console.log(`[SentryUSB] File keys: ${(topKeys || []).join(', ')} | Routes: ${routesLen ?? 'not found'}`);
 
-        // Diagnostic: log the top-level structure so mismatches are visible
-        const topKeys = Object.keys(storeData);
-        const routeArr = storeData.Routes ?? storeData.routes ?? storeData.Data?.Routes ?? null;
-        console.log(`[SentryUSB] File keys: ${topKeys.join(', ')} | Routes: ${routeArr?.length ?? 'not found'}`);
+            sentryUsb.dataPath = filePath;
+            sentryUsb.drives = drives;
+            sentryUsb.loaded = true;
 
-        // Normalise: support both capitalised (StoreData) and lowercase key variants
-        const normalised = {
-            Routes: storeData.Routes ?? storeData.routes ?? [],
-            DriveTags: storeData.DriveTags ?? storeData.driveTags ?? storeData.drive_tags ?? {},
-        };
+            // Cross-reference with currently loaded clips.
+            // Pass folderStructure.dates as a fallback so drives from dates other than
+            // the currently-loaded date still get the Footage badge (Electron mode loads
+            // clips one date at a time, so library.clipGroups is date-scoped).
+            sentryUsb.hasFootage = matchClipsTodrives(drives, library.clipGroups, folderStructure?.dates);
 
-        const { drives, driveCount, routeCount } = groupStoreDataIntoDrives(normalised);
-
-        sentryUsb.dataPath = filePath;
-        sentryUsb.drives = drives;
-        sentryUsb.loaded = true;
-        sentryUsb.loading = false;
-
-        // Cross-reference with currently loaded clips.
-        // Pass folderStructure.dates as a fallback so drives from dates other than
-        // the currently-loaded date still get the Footage badge (Electron mode loads
-        // clips one date at a time, so library.clipGroups is date-scoped).
-        sentryUsb.hasFootage = matchClipsTodrives(drives, library.clipGroups, folderStructure?.dates);
-
-        // Update tab bar to show Drives tab
-        updateDrivesTabVisibility();
-
-        // Refresh the drive list immediately so data appears without re-clicking the tab
-        renderDriveList();
-
-        console.log(`[SentryUSB] Loaded ${driveCount} drives from ${routeCount} routes`);
-        console.log(`[SentryUSB] Footage matched: ${sentryUsb.hasFootage.size}/${driveCount} drives`);
-        if (drives.length > 0) {
-            console.log(`[SentryUSB] Sample route keys (drive 1):`, drives[0].routeTimestampKeys?.slice(0, 3));
+            console.log(`[SentryUSB] Loaded ${driveCount} drives from ${routeCount} routes`);
+            console.log(`[SentryUSB] Footage matched: ${sentryUsb.hasFootage.size}/${driveCount} drives`);
+            if (drives.length > 0) {
+                console.log(`[SentryUSB] Sample route keys (drive 1):`, drives[0].routeTimestampKeys?.slice(0, 3));
+            }
+            if (library.clipGroups.length > 0) {
+                console.log(`[SentryUSB] Sample clip keys:`, library.clipGroups.slice(0, 3).map(g => g.timestampKey));
+            } else {
+                console.log(`[SentryUSB] No clips loaded yet — matching will re-run when clips load`);
+            }
+            return { success: true, driveCount, routeCount };
+        } catch (err) {
+            console.error('[SentryUSB] Failed to load drive data:', err);
+            return { success: false, error: err?.message || String(err) };
+        } finally {
+            sentryUsb.loading = false;
+            _inFlightSentryUsbLoads.delete(filePath);
+            // Always refresh the Drives tab and badge after the load settles so
+            // success → drive list, failure → empty placeholder.
+            try { updateDrivesTabVisibility(); } catch {}
+            try { renderDriveList(); } catch {}
         }
-        if (library.clipGroups.length > 0) {
-            console.log(`[SentryUSB] Sample clip keys:`, library.clipGroups.slice(0, 3).map(g => g.timestampKey));
-        } else {
-            console.log(`[SentryUSB] No clips loaded yet — matching will re-run when clips load`);
-        }
-        return { success: true, driveCount, routeCount };
-    } catch (err) {
-        sentryUsb.loading = false;
-        console.error('[SentryUSB] Failed to load drive data:', err);
-        return { success: false, error: err.message };
-    }
+    })();
+    _inFlightSentryUsbLoads.set(filePath, promise);
+    return promise;
 }
 
 /**
@@ -1862,32 +1876,9 @@ async function loadSentryUsbDataOnStartup() {
 // Load after clips folder startup (slight delay to avoid competing with folder load)
 setTimeout(loadSentryUsbDataOnStartup, 800);
 
-// Startup loader: covers the window while FFmpeg pre-cache + update telemetry API
-// run in the main process (both can take several seconds on cold start). Hidden
-// as soon as the update check resolves, is skipped, or the safety timer fires.
-let _startupLoaderHidden = false;
-function hideStartupLoader() {
-    if (_startupLoaderHidden) return;
-    _startupLoaderHidden = true;
-    const el = document.getElementById('startupLoader');
-    if (!el) return;
-    el.classList.add('hidden');
-    // Remove from DOM after the opacity transition so it can't eat clicks.
-    setTimeout(() => { try { el.remove(); } catch {} }, 400);
-}
-// Safety timer: never leave the overlay up longer than 15s regardless of what
-// the update path does. 15s comfortably covers slow FFmpeg detection + a slow
-// telemetry API call even on an unreliable network.
-setTimeout(hideStartupLoader, 15000);
-// Also hide when any update event fires — those UIs (update-available modal,
-// force-manual modal) want to be visible over the main app, not the loader.
-if (window.electronAPI?.on) {
-    ['update:available', 'update:forceManual', 'update:downloaded'].forEach((evt) => {
-        window.electronAPI.on(evt, hideStartupLoader);
-    });
-}
-
-// Check for updates on startup (unless API requests are disabled in developer settings)
+// Check for updates on startup (unless API requests are disabled in developer settings).
+// Runs silently in the background — if an update is available, the existing
+// update-available / force-manual modals surface it. No blocking UI on startup.
 async function checkForUpdatesOnStartup() {
     let apiRequestsDisabled = false;
 
@@ -1912,30 +1903,21 @@ async function checkForUpdatesOnStartup() {
 
     if (apiRequestsDisabled) {
         console.log('[UPDATE] Skipping auto-update check - API requests disabled in developer settings');
-        hideStartupLoader();
     } else if (!shouldSkipUpdate && window.electronAPI?.checkForUpdates) {
         console.log('[UPDATE] Auto-checking for updates on startup');
         try {
             await window.electronAPI.checkForUpdates();
         } catch (err) {
             console.log('[UPDATE] Check failed:', err?.message || err);
-        } finally {
-            hideStartupLoader();
         }
     } else if (shouldSkipUpdate) {
         console.log('[UPDATE] Skipping auto-update check - waiting for welcome screen acceptance');
-        hideStartupLoader();
-    } else {
-        hideStartupLoader();
     }
 }
 
 // Delay update check to allow app to fully initialize (not applicable in MAS builds)
 if (!window.electronAPI?.isMas) {
     setTimeout(checkForUpdatesOnStartup, 2000);
-} else {
-    // MAS build: no update check at all, so the loader has nothing to wait for.
-    hideStartupLoader();
 }
 
 // Show welcome guide for first-time users (only if privacy already accepted)
