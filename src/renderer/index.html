@@ -5,10 +5,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Sentry Studio</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" />
+    <!-- Material Symbols comes from the bundled @font-face in style.css; the
+         Google Fonts CDN copy was redundant and render-blocking (blank window
+         offline / on slow networks). Leaflet is vendored for the same reason. -->
+    <link rel="stylesheet" href="vendor/leaflet/leaflet.css" />
     <link rel="stylesheet" href="style.css">
     <link rel="stylesheet" href="styles/advancedEditor.css">
 </head>
@@ -3188,7 +3188,7 @@
     </div>
 
     <!-- Scripts -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+    <script src="vendor/leaflet/leaflet.js"></script>
     <script src="vendor/protobuf.min.js"></script>
     <script src="scripts/data/dashcam-mp4.js"></script>
     <script type="module" src="script.js"></script>

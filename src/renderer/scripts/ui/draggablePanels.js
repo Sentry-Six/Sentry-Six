@@ -18,15 +18,23 @@ export function initDraggablePanels(panels) {
     const validPanels = panels.filter(Boolean);
     
     validPanels.forEach(panel => {
+        // Already wired? A dragOffsets entry is created exactly once per panel
+        // below, so its presence means the listeners exist. This function is
+        // re-invoked on every dashboard layout/movability toggle — without
+        // this guard, duplicate document-level mousemove/mouseup handlers
+        // accumulate for the session (N forced layouts per mousemove).
+        if (dragOffsets.has(panel)) {
+            constrainedPanels.add(panel);
+            return;
+        }
+
         let isDragging = false;
         let startX = 0;
         let startY = 0;
         let hasMoved = false;
-        
-        if (!dragOffsets.has(panel)) {
-            dragOffsets.set(panel, { x: 0, y: 0 });
-        }
-        
+
+        dragOffsets.set(panel, { x: 0, y: 0 });
+
         panel.addEventListener('mousedown', (e) => {
             // Don't drag if clicking on interactive elements
             if (e.target.closest('button, input, select, a')) return;

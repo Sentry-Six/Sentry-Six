@@ -785,6 +785,11 @@ export function initSettingsModal() {
 
     function applyGlassBlur(value) {
         document.documentElement.style.setProperty('--glass-blur', `${value}px`);
+        // At 0 the blur radius alone still leaves a backdrop-filter layer
+        // (saturate pass + per-frame re-composite over video). The .no-glass
+        // class disables backdrop-filter entirely — this is the "reduce
+        // effects" path for machines without GPUs.
+        document.documentElement.classList.toggle('no-glass', value === 0);
         if (glassBlurValue) glassBlurValue.textContent = `${value}px`;
         if (settingsGlassBlur) settingsGlassBlur.value = value;
     }

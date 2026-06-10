@@ -585,25 +585,6 @@ function generateCompactDashboardEvents(seiData, startTimeMs, endTimeMs, options
   let smoothedSteeringAngle = 0;
   const steerFactor = 1 - Math.exp(-45 * (frameTimeMs / 1000)); // STEERING_TRACKING_SPEED=45
 
-  // Find SEI data for a given video time
-  function findSeiAtTime(videoTimeMs) {
-    if (!seiData || seiData.length === 0) return null;
-
-    let closest = seiData[0];
-    let minDiff = Math.abs(seiData[0].timestampMs - videoTimeMs);
-
-    for (let i = 1; i < seiData.length; i++) {
-      const diff = Math.abs(seiData[i].timestampMs - videoTimeMs);
-      if (diff < minDiff) {
-        minDiff = diff;
-        closest = seiData[i];
-      }
-      if (seiData[i].timestampMs > videoTimeMs && diff > minDiff) break;
-    }
-
-    return closest?.sei || null;
-  }
-
   // Convert video time to actual timestamp for display
   function convertVideoTimeToTimestamp(videoTimeMs) {
     if (!segments || segments.length === 0) return videoTimeMs;
@@ -631,7 +612,7 @@ function generateCompactDashboardEvents(seiData, startTimeMs, endTimeMs, options
 
   for (let frame = 0; frame <= totalFrames; frame++) {
     const currentTimeMs = startTimeMs + (frame * frameTimeMs);
-    const sei = findSeiAtTime(currentTimeMs);
+    const sei = findSeiAtTime(seiData, currentTimeMs);
     const actualTimestampMs = convertVideoTimeToTimestamp(currentTimeMs);
 
     // Extract telemetry values
@@ -1743,22 +1724,6 @@ function generateDetailedDashboardEvents(seiData, startTimeMs, endTimeMs, option
   let smoothedSteeringAngle = 0;
   const steerFactor = 1 - Math.exp(-45 * (frameTimeMs / 1000));
 
-  // Find SEI data for a given video time
-  function findSeiAtTime(videoTimeMs) {
-    if (!seiData || seiData.length === 0) return null;
-    let closest = seiData[0];
-    let minDiff = Math.abs(seiData[0].timestampMs - videoTimeMs);
-    for (let i = 1; i < seiData.length; i++) {
-      const diff = Math.abs(seiData[i].timestampMs - videoTimeMs);
-      if (diff < minDiff) {
-        minDiff = diff;
-        closest = seiData[i];
-      }
-      if (seiData[i].timestampMs > videoTimeMs && diff > minDiff) break;
-    }
-    return closest?.sei || null;
-  }
-
   // Track previous state for change detection
   let prevState = null;
   let eventStartFrame = 0;
@@ -1780,7 +1745,7 @@ function generateDetailedDashboardEvents(seiData, startTimeMs, endTimeMs, option
 
   for (let frame = 0; frame <= totalFrames; frame++) {
     const currentTimeMs = startTimeMs + (frame * frameTimeMs);
-    const sei = findSeiAtTime(currentTimeMs);
+    const sei = findSeiAtTime(seiData, currentTimeMs);
 
     // Extract telemetry values
     const mps = Math.abs(getSeiValue(sei, 'vehicleSpeedMps', 'vehicle_speed_mps') || 0);
@@ -2614,24 +2579,31 @@ function generateTeslaMobileDashboardEvents(seiData, startTimeMs, endTimeMs, opt
 }
 
 /**
- * Helper: find SEI data at a given time (extracted for reuse)
+ * Helper: find the SEI sample nearest to a given time (earlier sample wins
+ * ties). seiData is sorted by timestampMs, so this is a binary search —
+ * the frame loops call it once per output frame, and a linear scan made
+ * long exports O(n²) (minutes of blocked main process).
  */
 function findSeiAtTime(seiData, videoTimeMs) {
   if (!seiData || seiData.length === 0) return null;
 
-  let closest = seiData[0];
-  let minDiff = Math.abs(seiData[0].timestampMs - videoTimeMs);
-
-  for (let i = 1; i < seiData.length; i++) {
-    const diff = Math.abs(seiData[i].timestampMs - videoTimeMs);
-    if (diff < minDiff) {
-      minDiff = diff;
-      closest = seiData[i];
-    }
-    if (seiData[i].timestampMs > videoTimeMs && diff > minDiff) break;
+  // Binary search for the first sample with timestampMs >= videoTimeMs
+  let lo = 0;
+  let hi = seiData.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (seiData[mid].timestampMs < videoTimeMs) lo = mid + 1;
+    else hi = mid;
   }
 
-  return closest?.sei || null;
+  // Nearest is either seiData[lo] or its predecessor; on a tie the earlier wins
+  if (lo > 0) {
+    const prevDiff = Math.abs(seiData[lo - 1].timestampMs - videoTimeMs);
+    const currDiff = Math.abs(seiData[lo].timestampMs - videoTimeMs);
+    if (prevDiff <= currDiff) lo -= 1;
+  }
+
+  return seiData[lo]?.sei || null;
 }
 
 /**
@@ -3110,6 +3082,7 @@ async function writeTeslaScreenDashAss(exportId, seiData, startTimeMs, endTimeMs
 }
 
 module.exports = {
+  findSeiAtTime,
   writeCompactDashboardAss,
   writeDefaultDashboardAss,
   writeDetailedDashboardAss,

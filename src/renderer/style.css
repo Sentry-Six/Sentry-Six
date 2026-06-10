@@ -17,7 +17,13 @@
     unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
 }
 
-/* === Material Symbols Outlined (bundled) === */
+/* === Material Symbols Outlined (bundled, SUBSETTED) ===
+   This woff2 contains ONLY the icons the app uses (~48KB vs 3.8MB full set).
+   ADDING A NEW ICON? You must regenerate the subset or the new icon renders
+   as its raw text name. Fetch a new subset from Google's css2 endpoint:
+     https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&icon_names=<comma-separated,sorted,all icon names incl. yours>&display=block
+   then download the woff2 URL from the returned @font-face and replace
+   ./fonts/MaterialSymbolsOutlined.woff2 with it. */
 @font-face {
     font-family: 'Material Symbols Outlined';
     src: url('./fonts/MaterialSymbolsOutlined.woff2') format('woff2');
@@ -91,7 +97,10 @@
     --amber-color: #fbbf24;
     --sky-color: #38bdf8;
     --inset-highlight: rgba(255, 255, 255, 0.06);
-    --glass-blur: 22px;
+    /* 7px matches the settings default — the saved value is applied async at
+       startup, so a heavier CSS default meant every launch paid the most
+       expensive blur for its first frames, then visibly snapped down. */
+    --glass-blur: 7px;
     --clips-float-width: 340px;
     --clips-dock-width: 360px;
     --clips-collapsed-width: 46px;
@@ -99,6 +108,20 @@
     --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
     --font-icons: 'Material Symbols Outlined';
+}
+
+/* === Reduced effects mode (Glass Blur slider at 0) ===
+   backdrop-filter is the single most expensive CSS feature in the app: the
+   surfaces that float over playing video (dashboard, map, controls bar,
+   clip browser) force a re-blur of their backdrop every video frame, which
+   falls back to software compositing on machines without a usable GPU.
+   Setting the radius to 0 isn't enough — the saturate() pass and the
+   backdrop root remain — so this kills the filter outright. */
+html.no-glass *,
+html.no-glass *::before,
+html.no-glass *::after {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
 }
 
 /* === Material Symbols Outlined base class === */

@@ -21,12 +21,13 @@ const { pathToFileURL } = require('url');
 let driveTags = {};
 let tagsResolve;
 const tagsReceived = new Promise((resolve) => { tagsResolve = resolve; });
-parentPort.on('message', (msg) => {
+const onParentMessage = (msg) => {
   if (msg && msg.type === 'driveTags') {
     driveTags = msg.driveTags || {};
     tagsResolve();
   }
-});
+};
+parentPort.on('message', onParentMessage);
 
 (async () => {
   try {
@@ -95,5 +96,9 @@ parentPort.on('message', (msg) => {
     }, transfers);
   } catch (err) {
     parentPort.postMessage({ type: 'error', error: err?.message || String(err) });
+  } finally {
+    // The permanent 'message' listener pins the worker's event loop; remove
+    // it so the thread exits instead of leaking a live isolate per load.
+    parentPort.removeListener('message', onParentMessage);
   }
 })();

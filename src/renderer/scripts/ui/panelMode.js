@@ -131,20 +131,29 @@ export function createClipsPanelMode({ map, clipsCollapseBtn } = {}) {
     if (map) setTimeout(() => { try { map.invalidateSize(); } catch { } }, 50);
   }
 
+  // Document-level handlers from the most recent initResizeHandle() call.
+  // initResizeHandle re-runs on every layout-style switch / sidebar toggle;
+  // the old handle element dies with remove(), but document listeners would
+  // accumulate for the session unless the previous pair is removed first.
+  let resizeMoveHandler = null;
+  let resizeUpHandler = null;
+
   // Initialize the resize handle for classic sidebar
   function initResizeHandle() {
     const clipBrowser = document.querySelector('.clip-browser');
     if (!clipBrowser) return;
-    
+
     // Remove existing handle if any
     const existingHandle = clipBrowser.querySelector('.sidebar-resize-handle');
     if (existingHandle) existingHandle.remove();
-    
+    if (resizeMoveHandler) document.removeEventListener('mousemove', resizeMoveHandler);
+    if (resizeUpHandler) document.removeEventListener('mouseup', resizeUpHandler);
+
     // Create resize handle
     const handle = document.createElement('div');
     handle.className = 'sidebar-resize-handle';
     clipBrowser.appendChild(handle);
-    
+
     let isResizing = false;
     let startX = 0;
     let startWidth = 0;
@@ -165,7 +174,7 @@ export function createClipsPanelMode({ map, clipsCollapseBtn } = {}) {
     // drags do that several times per frame and visibly drop frames.
     let pendingWidth = null;
     let resizeRaf = 0;
-    document.addEventListener('mousemove', (e) => {
+    resizeMoveHandler = (e) => {
       if (!isResizing) return;
       const delta = e.clientX - startX;
       pendingWidth = Math.max(MIN_SIDEBAR_WIDTH, Math.min(MAX_SIDEBAR_WIDTH, startWidth + delta));
@@ -175,9 +184,10 @@ export function createClipsPanelMode({ map, clipsCollapseBtn } = {}) {
           if (isResizing && pendingWidth !== null) applySidebarWidth(pendingWidth);
         });
       }
-    });
+    };
+    document.addEventListener('mousemove', resizeMoveHandler);
 
-    document.addEventListener('mouseup', () => {
+    resizeUpHandler = () => {
       if (!isResizing) return;
       isResizing = false;
       if (resizeRaf) { cancelAnimationFrame(resizeRaf); resizeRaf = 0; }
@@ -189,7 +199,8 @@ export function createClipsPanelMode({ map, clipsCollapseBtn } = {}) {
       if (!isNaN(computedWidth)) {
         setSidebarWidth(computedWidth);
       }
-    });
+    };
+    document.addEventListener('mouseup', resizeUpHandler);
   }
 
   return { 

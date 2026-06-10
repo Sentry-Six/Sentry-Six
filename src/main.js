@@ -114,6 +114,11 @@ function createWindow() {
     minWidth: 1384,
     minHeight: 861,
     title: 'Sentry Studio',
+    // Match the app theme (--bg-color) and defer showing until the renderer
+    // has painted — Electron's default white window flashed for the whole
+    // HTML-parse + style period on slower machines.
+    backgroundColor: '#07090c',
+    show: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -121,6 +126,9 @@ function createWindow() {
       sandbox: false,
       webSecurity: false, // Required for file:// video playback from local TeslaCam folders
     },
+  });
+  mainWindow.once('ready-to-show', () => {
+    if (!mainWindow.isDestroyed()) mainWindow.show();
   });
   mainWindow.setMenuBarVisibility(false);
 
@@ -964,13 +972,26 @@ async function performVideoExport(event, exportId, exportData, ffmpegPath) {
 
           await new Promise((resolve, reject) => {
             const proc = spawn(ffmpegPath, minimapFfmpegArgs, { stdio: ['pipe', 'pipe', 'pipe'] });
+            // Register in activeExports so export:cancel and before-quit can
+            // kill this process too — it encodes the full export duration and
+            // previously ran to completion (or outlived the app) untracked.
+            activeExports[exportId] = proc;
             let stderr = '';
             proc.stderr.on('data', d => stderr += d.toString());
             proc.on('close', code => {
-              if (code === 0) resolve();
+              if (activeExports[exportId] === proc) delete activeExports[exportId];
+              if (cancelledExports.has(exportId)) reject(new Error('Export cancelled'));
+              else if (code === 0) resolve();
               else reject(new Error(`FFmpeg minimap composite failed: ${stderr.slice(-500)}`));
             });
-            proc.on('error', reject);
+            proc.on('error', (err) => {
+              if (activeExports[exportId] === proc) delete activeExports[exportId];
+              reject(err);
+            });
+            // Cancel may have landed between the last checkpoint and spawn
+            if (cancelledExports.has(exportId)) {
+              try { proc.kill('SIGTERM'); } catch { }
+            }
           });
 
           // Use the composite video as the minimap (same as Leaflet mode)
@@ -1681,6 +1702,23 @@ async function performVideoExport(event, exportId, exportData, ffmpegPath) {
             return;
           }
 
+          // User cancellation: export:cancel killed the process, so a non-zero
+          // exit here is expected — don't classify it as an error (that showed
+          // an "Export failed" toast and reopened the modal after a deliberate
+          // cancel). The renderer already notified "Export cancelled".
+          if (cancelledExports.has(exportId)) {
+            console.log('[EXPORT] FFmpeg terminated by user cancellation');
+            delete activeExports[exportId];
+            cancelledExports.delete(exportId);
+            cleanup();
+            const err = new Error('Export cancelled');
+            err._completeSent = true;
+            reject(err);
+            try { fs.unlinkSync(outputPath); } catch { }
+            delete activeExportPaths[exportId];
+            return;
+          }
+
           console.error(`FFmpeg error (canvas ${totalW}x${totalH}, encoder ${retriedWithCpu || !useGpu ? 'cpu' : activeEncoder?.codec}):`, stderr.slice(-500));
           const errLower = stderr.toLowerCase();
           const isEncoderInitFailure =
@@ -1745,6 +1783,10 @@ async function performVideoExport(event, exportId, exportData, ffmpegPath) {
         proc.on('error', (err) => {
           cleanup();
           cancelledExports.delete(exportId);
+          // Spawn failures never fire 'close' — clear the tracking entries
+          // here too, or a dead ChildProcess lingers in activeExports.
+          delete activeExports[exportId];
+          delete activeExportPaths[exportId];
           sendComplete(false, `FFmpeg error: ${err.message}`);
           err._completeSent = true;
           reject(err);
@@ -1989,9 +2031,11 @@ ipcMain.handle('export:start', async (event, exportId, exportData) => {
   } catch (error) {
     console.error('Export failed:', error);
     cancelledExports.delete(exportId); // Clean up cancellation flag
-    // Only send complete if performVideoExport didn't already send one via sendComplete
-    // (FFmpeg close handler sends translated errors before rejecting)
-    if (!error._completeSent) {
+    // Only send complete if performVideoExport didn't already send one via
+    // sendComplete (FFmpeg close handler sends translated errors before
+    // rejecting). User cancellation is not a failure — the renderer already
+    // notified "Export cancelled", so don't surface an error toast for it.
+    if (!error._completeSent && error.message !== 'Export cancelled') {
       event.sender.send('export:progress', exportId, {
         type: 'complete',
         success: false,
@@ -2010,7 +2054,9 @@ ipcMain.handle('export:cancel', async (_event, exportId) => {
   if (proc) {
     proc.kill('SIGTERM');
     delete activeExports[exportId];
-    cancelledExports.delete(exportId); // Clean up immediately after killing
+    // NOTE: keep the cancelledExports flag — the killed ffmpeg's 'close'
+    // handler reads it to distinguish user cancellation from a real failure
+    // (deleting it here made every cancel report "Export failed").
     // Delete partial output file after ffmpeg releases the handle
     const outputPath = activeExportPaths[exportId];
     if (outputPath) {
@@ -2533,7 +2579,7 @@ ipcMain.handle('ffmpeg:check', async () => {
 
   if (ffmpegPath && !fakeNoGpu) {
     // Use cached encoder values if available (detection spawns ffmpeg subprocesses)
-    // Cached values are already null on first run; detectGpuEncoder/detectHEVCEncoder cache internally
+    // detectGpuEncoder/detectHEVCEncoder cache both positive and negative results internally
     const gpu = detectGpuEncoder(ffmpegPath);
     const hevc = detectHEVCEncoder(ffmpegPath);
 
@@ -2554,10 +2600,12 @@ ipcMain.handle('ffmpeg:check', async () => {
   };
 });
 
-// Read directory contents (for folder traversal)
+// Read directory contents (for folder traversal). Async so scanning a
+// TeslaCam drive (thousands of entries, often on slow USB) doesn't
+// serialize blocking syscalls through the main-process event loop.
 ipcMain.handle('fs:readDir', async (_event, dirPath) => {
   try {
-    const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+    const entries = await fs.promises.readdir(dirPath, { withFileTypes: true });
     return entries.map(entry => ({
       name: entry.name,
       isDirectory: entry.isDirectory(),
@@ -2572,13 +2620,18 @@ ipcMain.handle('fs:readDir', async (_event, dirPath) => {
 
 // Check if path exists
 ipcMain.handle('fs:exists', async (_event, filePath) => {
-  return fs.existsSync(filePath);
+  try {
+    await fs.promises.access(filePath);
+    return true;
+  } catch {
+    return false;
+  }
 });
 
 // Get file stats
 ipcMain.handle('fs:stat', async (_event, filePath) => {
   try {
-    const stats = fs.statSync(filePath);
+    const stats = await fs.promises.stat(filePath);
     return {
       size: stats.size,
       isDirectory: stats.isDirectory(),
@@ -2671,6 +2724,9 @@ ipcMain.handle('sentryUsb:loadAndGroup', async (_event, filePath) => {
           console.warn('[SentryUSB] Tags worker error:', err?.message || err);
           resolve({});
         });
+        // A worker killed without emitting 'message'/'error' (e.g. OOM) must
+        // still resolve, or the load worker waits on the tags forever.
+        worker.once('exit', () => resolve({}));
       } catch (err) {
         console.warn('[SentryUSB] Could not start tags worker:', err?.message || err);
         resolve({});
@@ -2681,8 +2737,17 @@ ipcMain.handle('sentryUsb:loadAndGroup', async (_event, filePath) => {
     // relays progress logs and forwards the tags result when it arrives.
     const result = await new Promise((resolve, reject) => {
       let settled = false;
-      const done = (fn, v) => { if (!settled) { settled = true; fn(v); } };
       let worker;
+      // Terminate on settle: the worker removes its own listeners on success,
+      // but terminate() guarantees the thread (a whole V8 isolate) is freed
+      // even if it wedges mid-parse.
+      const done = (fn, v) => {
+        if (!settled) {
+          settled = true;
+          fn(v);
+          try { worker.terminate(); } catch {}
+        }
+      };
       try {
         worker = new Worker(path.join(__dirname, 'main', 'driveLoadWorker.js'), {
           workerData: { filePath },
@@ -2902,8 +2967,8 @@ ipcMain.handle('diagnostics:get', async () => {
     const ffmpegPath = findFFmpegPath();
     const ffmpegDetected = ffmpegPath !== null;
 
-    // Detect GPU if not already done
-    if (ffmpegDetected && getGpuEncoder() === null) {
+    // Detect GPU if not already done (detectGpuEncoder caches both positive and negative results)
+    if (ffmpegDetected) {
       detectGpuEncoder(ffmpegPath);
     }
 
@@ -2918,7 +2983,7 @@ ipcMain.handle('diagnostics:get', async () => {
         cpuModel: os.cpus()[0]?.model || 'unknown',
         ramTotal: os.totalmem(),
         ramFree: os.freemem(),
-        gpuDetected: getGpuEncoder() !== null || gpuHardware !== null,
+        gpuDetected: Boolean(getGpuEncoder()) || gpuHardware !== null,
         gpuHardware: gpuHardware,  // Actual GPU name (e.g., "NVIDIA GeForce RTX 4070 Super")
         gpuEncoder: getGpuEncoder()?.name || null,  // Encoder type (e.g., "NVIDIA NVENC")
         ffmpegDetected

@@ -18,6 +18,11 @@ function getCameraLabel(camera) {
     return labels[camera] || camera;
 }
 
+// Window resize handler from the most recent initLayoutLab() call.
+// initLayoutLab runs on every export-modal open; without removing the
+// previous handler, debounced resize closures accumulate for the session.
+let activeResizeHandler = null;
+
 // Layout state: stores position and size for each camera
 export const layoutState = {
     cameras: new Map(), // camera -> { x, y, width, height }
@@ -105,9 +110,13 @@ export function initLayoutLab() {
         });
     });
     
-    // Handle window resize (debounced)
+    // Handle window resize (debounced). Replace the handler from any previous
+    // init so repeated export-modal opens don't stack resize listeners.
+    if (activeResizeHandler) {
+        window.removeEventListener('resize', activeResizeHandler);
+    }
     let resizeTimeout;
-    window.addEventListener('resize', () => {
+    activeResizeHandler = () => {
         clearTimeout(resizeTimeout);
         resizeTimeout = setTimeout(() => {
             const containerWidth = container.offsetWidth - 40;
@@ -117,7 +126,8 @@ export function initLayoutLab() {
             canvas.style.height = `${layoutState.canvasHeight}px`;
             updateCanvasPositions();
         }, 100);
-    });
+    };
+    window.addEventListener('resize', activeResizeHandler);
 }
 
 /**

@@ -92,6 +92,15 @@ export async function runAdvancedExport() {
     const exportDir = outputPath.replace(/[/\\][^/\\]*$/, '');
     if (exportDir) safeSetSetting('lastExportFolder', exportDir);
 
+    // Register this export in the shared export state so the simple modal's
+    // cancel / floating-progress machinery controls AE exports too. Without
+    // this, cancelExport() was a no-op for AE exports — closing the modal hid
+    // all progress while ffmpeg kept encoding with no way to stop it.
+    const exportId = `ae_export_${Date.now()}`;
+    exportStateRef.cancelled = false;
+    exportStateRef.isExporting = true;
+    exportStateRef.currentExportId = exportId;
+
     // ----- 2. Time range from current playback window -----
     const totalSec = (nativeVideo.cumulativeStarts || []).slice(-1)[0] || 0;
     const startSec = advancedEditorState.playback.startSec || 0;
@@ -140,9 +149,18 @@ export async function runAdvancedExport() {
             groups, cumStarts, nativeVideo,
             startTimeMs, endTimeMs,
             wantMinimap: settings.includeMinimap,
+            exportStateRef,
         });
         seiData = extracted.seiData;
         mapPath = extracted.mapPath;
+    }
+
+    // User cancelled during SEI extraction — stop before spawning ffmpeg.
+    if (exportStateRef.cancelled) {
+        exportStateRef.isExporting = false;
+        exportStateRef.currentExportId = null;
+        exportStateRef.cancelled = false;
+        return;
     }
 
     // ----- 5. Build layoutData (per-camera sizing) -----
@@ -202,7 +220,6 @@ export async function runAdvancedExport() {
     }
 
     // ----- 7. Assemble exportData (same shape as simple modal + extras) -----
-    const exportId = `ae_export_${Date.now()}`;
     const exportData = {
         segments,
         startTimeMs,
@@ -298,6 +315,9 @@ export async function runAdvancedExport() {
                     { type: 'warn', duration: 8000 }
                 );
             } else if (progress.type === 'complete') {
+                exportStateRef.isExporting = false;
+                exportStateRef.currentExportId = null;
+                exportStateRef.cancelled = false;
                 if (r.dashProgressEl) r.dashProgressEl.classList.add('hidden');
                 if (r.miniProgressEl) r.miniProgressEl.classList.add('hidden');
                 const text = translateMessage(progress.message);
@@ -318,6 +338,9 @@ export async function runAdvancedExport() {
         await window.electronAPI.startExport(exportId, exportData);
     } catch (err) {
         console.error('[AE] Export error:', err);
+        exportStateRef.isExporting = false;
+        exportStateRef.currentExportId = null;
+        exportStateRef.cancelled = false;
         const r = getSimpleModalProgressRefs();
         if (r.progressText) r.progressText.textContent = `Export failed: ${err.message || err}`;
         setSimpleModalAeMode(false);
@@ -348,7 +371,7 @@ function parseTimestampKeyToEpochMs(key) {
     return Date.UTC(+y, +mo - 1, +d, +h, +mi, +s);
 }
 
-async function extractSeiAndMapPath({ groups, cumStarts, nativeVideo, startTimeMs, endTimeMs, wantMinimap }) {
+async function extractSeiAndMapPath({ groups, cumStarts, nativeVideo, startTimeMs, endTimeMs, wantMinimap, exportStateRef }) {
     const allSei = [];
     const allMap = [];
 
@@ -367,6 +390,9 @@ async function extractSeiAndMapPath({ groups, cumStarts, nativeVideo, startTimeM
     };
 
     for (let i = 0; i < groups.length; i++) {
+        // Cancelled mid-extraction — stop reading/parsing segment buffers.
+        if (exportStateRef?.cancelled) break;
+
         const group = groups[i];
         const segStartMs = (cumStarts[i] || 0) * 1000;
         const segDurationMs = (nativeVideo.segmentDurations?.[i] || 60) * 1000;

@@ -4,12 +4,27 @@
  */
 
 
-// In-memory log storage (no limits - VPS has sufficient bandwidth/storage)
+// In-memory log storage. Capped as ring buffers: console output is captured
+// for the whole session and playback is chatty (~10 lines per segment
+// transition), so unbounded arrays of stringified entries grow renderer
+// memory monotonically during long review sessions.
+const MAX_LOG_ENTRIES = 5000;
+const MAX_ERROR_ENTRIES = 2000;
+const MAX_EVENT_ENTRIES = 2000;
 const logBuffer = {
     console: [],
     errors: [],
     events: []
 };
+
+/** Push an entry, dropping the oldest once the cap is reached. */
+function pushCapped(arr, entry, cap) {
+    arr.push(entry);
+    if (arr.length > cap) {
+        // Trim in chunks so we don't shift() on every push at the cap
+        arr.splice(0, arr.length - cap);
+    }
+}
 
 // Original console methods (preserved for passthrough)
 const originalConsole = {
@@ -83,7 +98,7 @@ function captureLog(level, args) {
         }).join(' ')
     };
 
-    logBuffer.console.push(entry);
+    pushCapped(logBuffer.console, entry, MAX_LOG_ENTRIES);
 }
 
 /**
@@ -107,18 +122,18 @@ function captureError(args) {
         }).join(' ')
     };
 
-    logBuffer.errors.push(entry);
+    pushCapped(logBuffer.errors, entry, MAX_ERROR_ENTRIES);
 }
 
 /**
  * Log a diagnostic event (for specific tracking)
  */
 export function logDiagnosticEvent(eventName, data = {}) {
-    logBuffer.events.push({
+    pushCapped(logBuffer.events, {
         t: Date.now(),
         e: eventName,
         d: data
-    });
+    }, MAX_EVENT_ENTRIES);
 }
 
 /**

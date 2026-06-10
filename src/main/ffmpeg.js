@@ -5,8 +5,8 @@ const os = require('os');
 const { spawnSync, spawn } = require('child_process');
 
 // Cached GPU encoder detection
-let gpuEncoder = null;
-let gpuEncoderHEVC = null;
+let gpuEncoder = undefined; // undefined = not checked, null = checked but none usable
+let gpuEncoderHEVC = undefined; // undefined = not checked, null = checked but none usable
 let cachedGpuHardware = undefined; // undefined = not checked, null = checked but not found
 let cachedFFmpegPath = undefined; // undefined = not checked, null = checked but not found
 
@@ -389,7 +389,7 @@ function testEncoderCapability(ffmpegPath, codec) {
 }
 
 function detectGpuEncoder(ffmpegPath) {
-  if (gpuEncoder !== null) return gpuEncoder;
+  if (gpuEncoder !== undefined) return gpuEncoder;
   
   try {
     // Query FFmpeg for available encoders
@@ -449,7 +449,7 @@ function detectGpuEncoder(ffmpegPath) {
  * Used when H.264 GPU encoding would exceed resolution limits.
  */
 function detectHEVCEncoder(ffmpegPath) {
-  if (gpuEncoderHEVC !== null) return gpuEncoderHEVC;
+  if (gpuEncoderHEVC !== undefined) return gpuEncoderHEVC;
   
   try {
     // Query FFmpeg for available encoders

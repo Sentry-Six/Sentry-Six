@@ -1680,9 +1680,11 @@ export async function checkFFmpegAvailability() {
     const timestampOptions = $('timestampOptions');
     const timestampToggleRow = timestampCheckbox?.closest('.toggle-row');
 
-    // Set up dashboard checkbox toggle for options visibility
+    // Set up dashboard checkbox toggle for options visibility.
+    // checkFFmpegAvailability runs on every export-modal open; use onchange
+    // assignment (idempotent) so listeners don't stack across opens.
     if (dashboardCheckbox && dashboardOptions) {
-        dashboardCheckbox.addEventListener('change', () => {
+        dashboardCheckbox.onchange = () => {
             if (dashboardCheckbox.checked) {
                 dashboardOptions.classList.remove('hidden');
                 // Dashboard includes timestamp, so disable timestamp-only option
@@ -1700,18 +1702,18 @@ export async function checkFFmpegAvailability() {
                     if (timestampToggleRow) timestampToggleRow.classList.remove('disabled');
                 }
             }
-        });
+        };
     }
 
     // Set up timestamp checkbox toggle for options visibility
     if (timestampCheckbox && timestampOptions) {
-        timestampCheckbox.addEventListener('change', () => {
+        timestampCheckbox.onchange = () => {
             if (timestampCheckbox.checked) {
                 timestampOptions.classList.remove('hidden');
             } else {
                 timestampOptions.classList.add('hidden');
             }
-        });
+        };
     }
 
     if (!statusEl) return;
