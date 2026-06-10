@@ -26,51 +26,67 @@
     font-display: block;
 }
 
-/* Reset & Base - Liquid Glass Inspired */
+/* Reset & Base - Liquid Glass (ported from SentryUSB Rusty) */
 :root {
-    --bg-color: #0a0a0f;
-    --bg-gradient: linear-gradient(135deg, #0a0a12 0%, #0d0d18 50%, #0a0a12 100%);
-    --text-color: #f0f0f5;
-    --text-secondary: rgba(255, 255, 255, 0.7);
-    --text-muted: rgba(255, 255, 255, 0.5);
-    --text-faint: rgba(255, 255, 255, 0.4);
-    --accent-color: #00d4ff;
-    /* Vibrant cyan */
-    --accent-glow: rgba(0, 212, 255, 0.4);
-    --accent-hover: rgba(0, 212, 255, 0.15);
-    --accent-bg: rgba(0, 212, 255, 0.1);
+    --bg-color: #07090c;
+    /* Ambient accent glow behind everything — the liquid glass backdrop */
+    --bg-gradient:
+        radial-gradient(1600px 820px at 50% -30%, oklch(0.82 0.18 150 / 0.20), transparent 72%),
+        radial-gradient(1200px 800px at 0% -8%, oklch(0.82 0.18 150 / 0.12), transparent 60%),
+        radial-gradient(1200px 800px at 100% -4%, oklch(0.62 0.19 285 / 0.12), transparent 60%),
+        radial-gradient(900px 560px at 50% 118%, oklch(0.82 0.18 150 / 0.11), transparent 64%),
+        #07090c;
+    --text-color: #e6e9ef;
+    --text-secondary: #b8bfcf;
+    --text-muted: #8a93a3;
+    --text-faint: #7a8294;
+    --accent-color: oklch(0.82 0.18 150);
+    --accent-glow: oklch(0.82 0.18 150 / 0.4);
+    --accent-hover: oklch(0.82 0.18 150 / 0.15);
+    --accent-bg: oklch(0.82 0.18 150 / 0.10);
+    --accent-solid-hover: oklch(0.87 0.16 150);
+    --accent-deep: oklch(0.62 0.16 150);
     --dashboard-accent: #0048ff;
     /* Dashboard overlay accent (autopilot, active states) */
     --dashboard-accent-glow: rgba(0, 72, 255, 0.5);
-    --panel-bg: rgba(20, 20, 30, 0.7);
-    --panel-bg-solid: rgb(35, 35, 40);
-    --panel-bg-gradient: linear-gradient(180deg, rgb(45, 45, 50) 0%, rgb(35, 35, 40) 50%, rgb(28, 28, 32) 100%);
-    --border-color: rgba(255, 255, 255, 0.1);
-    --border-subtle: rgba(255, 255, 255, 0.08);
-    --border-strong: rgba(255, 255, 255, 0.15);
+    --panel-bg: rgba(255, 255, 255, 0.05);
+    --panel-bg-solid: #10141b;
+    --panel-bg-gradient: linear-gradient(150deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02) 55%, rgba(255, 255, 255, 0.03));
+    --glass-bg: rgba(255, 255, 255, 0.04);
+    --glass-border: rgba(255, 255, 255, 0.08);
+    --glass-saturate: 185%;
+    --card-gradient: linear-gradient(180deg, #10141b 0%, #0b0e13 100%);
+    --card-gradient-hover: linear-gradient(180deg, #161b24 0%, #10141b 100%);
+    --border-color: rgba(255, 255, 255, 0.10);
+    --border-subtle: rgba(255, 255, 255, 0.06);
+    --border-strong: rgba(255, 255, 255, 0.16);
     --vis-bg: rgba(0, 0, 0, 0.5);
     --video-bg: #000;
-    --surface-hover: rgba(255, 255, 255, 0.08);
+    --surface-hover: rgba(255, 255, 255, 0.07);
     --surface-active: rgba(255, 255, 255, 0.12);
-    --surface-raised: rgba(255, 255, 255, 0.05);
-    --input-bg: rgba(0, 0, 0, 0.3);
-    --input-border: rgba(255, 255, 255, 0.12);
-    --overlay-bg: rgba(0, 0, 0, 0.8);
+    --surface-raised: rgba(255, 255, 255, 0.04);
+    --input-bg: rgba(7, 9, 12, 0.55);
+    --input-border: rgba(255, 255, 255, 0.10);
+    --overlay-bg: rgba(0, 0, 0, 0.55);
     --overlay-light: rgba(0, 0, 0, 0.4);
-    --shadow-color: rgba(0, 0, 0, 0.5);
-    --shadow-strong: rgba(0, 0, 0, 0.7);
-    --modal-bg: linear-gradient(180deg, rgba(32, 32, 38, 0.98) 0%, rgba(24, 24, 28, 0.98) 100%);
-    --modal-header-bg: rgba(0, 0, 0, 0.3);
-    --toast-bg: rgba(20, 20, 28, 0.95);
-    --tooltip-bg: rgba(15, 15, 20, 0.95);
-    --scrollbar-thumb: rgba(255, 255, 255, 0.15);
-    --scrollbar-thumb-hover: rgba(255, 255, 255, 0.25);
-    --success-color: #4caf50;
-    --error-color: #f44336;
-    --warning-color: #ff9800;
-    --info-color: #2196f3;
-    --inset-highlight: rgba(255, 255, 255, 0.08);
-    --glass-blur: 7px;
+    --shadow-color: rgba(0, 0, 0, 0.30);
+    --shadow-strong: rgba(0, 0, 0, 0.45);
+    --modal-bg: linear-gradient(180deg, rgba(16, 20, 27, 0.97) 0%, rgba(11, 14, 19, 0.97) 100%);
+    --modal-header-bg: rgba(7, 9, 12, 0.5);
+    --toast-bg: rgba(11, 14, 19, 0.92);
+    --tooltip-bg: rgba(11, 14, 19, 0.95);
+    --scrollbar-thumb: rgba(255, 255, 255, 0.10);
+    --scrollbar-thumb-hover: rgba(255, 255, 255, 0.20);
+    --success-color: #34d399;
+    --error-color: #f87171;
+    --warning-color: #fbbf24;
+    --info-color: #38bdf8;
+    --rose-color: #fb7185;
+    --violet-color: #c4b5fd;
+    --amber-color: #fbbf24;
+    --sky-color: #38bdf8;
+    --inset-highlight: rgba(255, 255, 255, 0.06);
+    --glass-blur: 22px;
     --clips-float-width: 340px;
     --clips-dock-width: 360px;
     --clips-collapsed-width: 46px;
