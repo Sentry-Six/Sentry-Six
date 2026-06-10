@@ -1742,7 +1742,7 @@ export async function checkFFmpegAvailability() {
                     statusText += ' [DEV: Fake No GPU]';
                 }
 
-                statusEl.innerHTML = `<span class="status-icon" style="color: #4caf50;">✓</span><span class="status-text">${statusText}</span>`;
+                statusEl.innerHTML = `<span class="status-icon" style="color: var(--success-color);">✓</span><span class="status-text">${statusText}</span>`;
                 if (startBtn) startBtn.disabled = false;
 
                 // Dashboard overlay requires GPU - show warning if no GPU
@@ -1755,9 +1755,9 @@ export async function checkFFmpegAvailability() {
             } else {
                 const isMac = navigator.platform.toLowerCase().includes('mac');
                 if (isMac) {
-                    statusEl.innerHTML = `<span class="status-icon" style="color: #f44336;">✗</span><span class="status-text">${t('ui.export.ffmpegRequiredMac')}</span>`;
+                    statusEl.innerHTML = `<span class="status-icon" style="color: var(--error-color);">✗</span><span class="status-text">${t('ui.export.ffmpegRequiredMac')}</span>`;
                 } else {
-                    statusEl.innerHTML = `<span class="status-icon" style="color: #f44336;">✗</span><span class="status-text">${t('ui.export.ffmpegRequiredWin')}</span>`;
+                    statusEl.innerHTML = `<span class="status-icon" style="color: var(--error-color);">✗</span><span class="status-text">${t('ui.export.ffmpegRequiredWin')}</span>`;
                 }
                 if (startBtn) startBtn.disabled = true;
                 if (dashboardCheckbox) {
@@ -1766,7 +1766,7 @@ export async function checkFFmpegAvailability() {
                 }
             }
         } else {
-            statusEl.innerHTML = `<span class="status-icon" style="color: #ff9800;">⚠</span><span class="status-text">${t('ui.export.notAvailable')}</span>`;
+            statusEl.innerHTML = `<span class="status-icon" style="color: var(--warning-color);">⚠</span><span class="status-text">${t('ui.export.notAvailable')}</span>`;
             if (startBtn) startBtn.disabled = true;
             if (dashboardCheckbox) {
                 dashboardCheckbox.disabled = true;
@@ -1774,7 +1774,7 @@ export async function checkFFmpegAvailability() {
             }
         }
     } catch (err) {
-        statusEl.innerHTML = `<span class="status-icon" style="color: #f44336;">✗</span><span class="status-text">${t('ui.export.ffmpegError')}</span>`;
+        statusEl.innerHTML = `<span class="status-icon" style="color: var(--error-color);">✗</span><span class="status-text">${t('ui.export.ffmpegError')}</span>`;
         if (startBtn) startBtn.disabled = true;
     }
 }

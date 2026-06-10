@@ -266,10 +266,10 @@ function makeMinimapPreview(contentEl) {
             const nativeVideo = depsRef?.getNativeVideo?.();
             const path = nativeVideo?.mapPath || [];
             if (path.length > 0) {
-                polyline = window.L.polyline(path, { color: '#00d4ff', weight: 3 }).addTo(map);
+                polyline = window.L.polyline(path, { color: '#5ee9a0', weight: 3 }).addTo(map);
                 map.fitBounds(polyline.getBounds(), { padding: [10, 10] });
                 marker = window.L.circleMarker(path[0], {
-                    radius: 5, color: '#fff', fillColor: '#00d4ff', fillOpacity: 1
+                    radius: 5, color: '#fff', fillColor: '#5ee9a0', fillOpacity: 1
                 }).addTo(map);
             } else {
                 map.setView([0, 0], 2);

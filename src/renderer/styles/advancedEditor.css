@@ -61,8 +61,8 @@
     align-items: center;
     gap: 12px;
     padding: 10px 22px;
-    background: rgba(0, 212, 255, 0.08);
-    border-bottom: 1px solid rgba(0, 212, 255, 0.18);
+    background: oklch(0.82 0.18 150 / 0.08);
+    border-bottom: 1px solid oklch(0.82 0.18 150 / 0.18);
     color: var(--text-color);
     font-size: 12.5px;
     line-height: 1.4;
@@ -72,7 +72,7 @@
 .ae-disclaimer.hidden { display: none; }
 
 .ae-disclaimer-icon {
-    color: #00d4ff;
+    color: var(--accent-color);
     font-size: 18px;
     flex-shrink: 0;
 }
@@ -121,7 +121,7 @@
     flex: 1;
     min-height: 0;
     background: rgba(0, 0, 0, 0.4);
-    border: 1px solid rgba(0, 212, 255, 0.15);
+    border: 1px solid var(--accent-hover);
     border-radius: 12px;
     padding: 16px;
     display: flex;
@@ -168,7 +168,7 @@
     width: 100%;
     height: 100%;
     background: #000;
-    border: 2px solid rgba(0, 212, 255, 0.25);
+    border: 2px solid oklch(0.82 0.18 150 / 0.25);
     border-radius: 6px;
     overflow: hidden;
 }
@@ -210,7 +210,7 @@
     transition: background 0.15s, box-shadow 0.15s;
 }
 .ae-play-btn:hover {
-    background: #1ae0ff;
+    background: var(--accent-solid-hover);
     box-shadow: 0 4px 16px var(--accent-glow);
 }
 .ae-play-btn .material-symbols-outlined { font-size: 20px; }
@@ -289,8 +289,8 @@
 .ae-tile {
     position: absolute;
     box-sizing: border-box;
-    background: rgba(0, 212, 255, 0.05);
-    border: 2px solid rgba(0, 212, 255, 0.4);
+    background: oklch(0.82 0.18 150 / 0.05);
+    border: 2px solid var(--accent-glow);
     border-radius: 6px;
     cursor: move;
     user-select: none;
@@ -302,7 +302,7 @@
 
 .ae-tile.selected {
     border-color: var(--accent-color);
-    box-shadow: 0 0 0 2px rgba(0, 212, 255, 0.2);
+    box-shadow: 0 0 0 2px oklch(0.82 0.18 150 / 0.2);
 }
 
 .ae-tile.dragging {
@@ -594,8 +594,8 @@
 }
 .dashboard-vis-detailed .dvd-blink-left.active,
 .dashboard-vis-detailed .dvd-blink-right.active {
-    color: #22C55E;
-    filter: drop-shadow(0 0 4px rgba(34, 197, 94, 0.55));
+    color: var(--success-color);
+    filter: drop-shadow(0 0 4px rgba(52, 211, 153, 0.55));
 }
 
 /* Autopilot row */
@@ -812,7 +812,7 @@
     display: block;
 }
 .dashboard-vis-tesla-mobile-data .dvm-arrow.on {
-    color: #22C55E;          /* green when blinker is engaged */
+    color: var(--success-color);          /* green when blinker is engaged */
 }
 
 .dashboard-vis-tesla-mobile-data .dvm-speed {

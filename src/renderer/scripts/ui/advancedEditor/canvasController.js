@@ -531,7 +531,7 @@ function showZOrderMenu(tile, clientX, clientY) {
         `left: ${clientX}px`,
         `top: ${clientY}px`,
         'background: rgba(20, 20, 25, 0.96)',
-        'border: 1px solid rgba(0, 212, 255, 0.35)',
+        'border: 1px solid oklch(0.82 0.18 150 / 0.35)',
         'border-radius: 6px',
         'padding: 4px 0',
         'min-width: 170px',
@@ -552,7 +552,7 @@ function showZOrderMenu(tile, clientX, clientY) {
         const btn = document.createElement('div');
         btn.textContent = it.label;
         btn.style.cssText = 'padding: 7px 14px; cursor: pointer; color: #fff;';
-        btn.addEventListener('mouseenter', () => { btn.style.background = 'rgba(0, 212, 255, 0.20)'; });
+        btn.addEventListener('mouseenter', () => { btn.style.background = 'oklch(0.82 0.18 150 / 0.20)'; });
         btn.addEventListener('mouseleave', () => { btn.style.background = 'transparent'; });
         btn.addEventListener('click', (e) => {
             e.preventDefault();
