@@ -14,6 +14,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   readDir: (dirPath) => ipcRenderer.invoke('fs:readDir', dirPath),
   readFile: (filePath) => ipcRenderer.invoke('fs:readFile', filePath),
   loadSentryUsbDrives: (filePath) => ipcRenderer.invoke('sentryUsb:loadAndGroup', filePath),
+  getSentryUsbDriveDetail: (driveId) => ipcRenderer.invoke('sentryUsb:getDriveDetail', driveId),
   exists: (filePath) => ipcRenderer.invoke('fs:exists', filePath),
   stat: (filePath) => ipcRenderer.invoke('fs:stat', filePath),
   showItemInFolder: (filePath) => ipcRenderer.invoke('fs:showItemInFolder', filePath),

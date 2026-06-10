@@ -2506,12 +2506,64 @@ ipcMain.handle('fs:readFile', async (_event, filePath) => {
 // The file can be >1GB (16k+ routes), which exceeds V8's max string length
 // (~512MB). We stream the JSON with stream-json so the whole file never lives
 // in memory as one string, then run the existing groupStoreDataIntoDrives
-// pipeline (ESM module, dynamic-imported) and ship only the drives array back
-// to the renderer.
+// pipeline (ESM module, dynamic-imported).
+//
+// IMPORTANT: the reply ships only LIGHT drives (stats, no per-point GPS data).
+// The full per-drive `points`/`fsdEvents` arrays for 800+ drives are hundreds
+// of MB; structured-clone serializing that over IPC blocks the main process
+// AND the renderer for minutes (frozen UI). The heavy fields stay cached here
+// and are fetched per-drive via sentryUsb:getDriveDetail when a drive is opened.
+let sentryUsbCache = { filePath: null, mtimeMs: 0, drives: null, routeCount: 0, routesLen: 0 };
+
+function makeLightSentryUsbDrives(drives) {
+  return drives.map(d => {
+    const { points, fsdEvents, ...light } = d;
+    return light;
+  });
+}
+
+// Cheap pre-scan: a raw substring scan of the file (IO-bound, seconds) beats a
+// second full JSON parse (CPU-bound, ~90s on a 400MB file) when the
+// drive-tags key isn't present at all.
+function fileContainsDriveTagsKey(filePath) {
+  return new Promise((resolve) => {
+    let settled = false;
+    const done = (v) => { if (!settled) { settled = true; resolve(v); } };
+    const stream = fs.createReadStream(filePath, { highWaterMark: 4 * 1024 * 1024 });
+    const re = /"drive_?tags"/i;
+    let tail = '';
+    stream.on('data', (chunk) => {
+      const s = tail + chunk.toString('latin1');
+      if (re.test(s)) { stream.destroy(); done(true); return; }
+      tail = s.slice(-16);
+    });
+    stream.on('end', () => done(false));
+    stream.on('close', () => done(false));
+    // On read error, claim the key exists so the caller falls back to the
+    // real parse (which will surface the error properly).
+    stream.on('error', () => done(true));
+  });
+}
+
 ipcMain.handle('sentryUsb:loadAndGroup', async (_event, filePath) => {
   try {
     if (!filePath) return { success: false, error: 'No file path provided' };
     if (!fs.existsSync(filePath)) return { success: false, error: 'File not found: ' + filePath };
+
+    // Serve from cache when the same unmodified file is requested again
+    // (e.g. a renderer reload) — re-parsing a 400MB+ file takes minutes.
+    const stat = fs.statSync(filePath);
+    if (sentryUsbCache.drives && sentryUsbCache.filePath === filePath && sentryUsbCache.mtimeMs === stat.mtimeMs) {
+      console.log('[SentryUSB] Serving drives from cache (file unchanged)');
+      return {
+        success: true,
+        drives: makeLightSentryUsbDrives(sentryUsbCache.drives),
+        driveCount: sentryUsbCache.drives.length,
+        routeCount: sentryUsbCache.routeCount,
+        routesLen: sentryUsbCache.routesLen,
+        topKeys: ['routes', 'driveTags'],
+      };
+    }
 
     const [
       { parser },
@@ -2531,7 +2583,7 @@ ipcMain.handle('sentryUsb:loadAndGroup', async (_event, filePath) => {
     const chain = chainMod.default ?? chainMod.chain;
     const { groupStoreDataIntoDrives } = grouperMod;
 
-    const fileSize = fs.statSync(filePath).size;
+    const fileSize = stat.size;
     console.log(`[SentryUSB] Stream-parsing routes from ${filePath} (${(fileSize / 1024 / 1024).toFixed(1)} MB)`);
     const t0 = Date.now();
     const routes = [];
@@ -2557,7 +2609,7 @@ ipcMain.handle('sentryUsb:loadAndGroup', async (_event, filePath) => {
 
     const t1 = Date.now();
     const driveTags = {};
-    {
+    if (await fileContainsDriveTagsKey(filePath)) {
       const pipeline = chain([
         fs.createReadStream(filePath),
         parser(),
@@ -2567,8 +2619,10 @@ ipcMain.handle('sentryUsb:loadAndGroup', async (_event, filePath) => {
       for await (const d of pipeline) {
         driveTags[d.key] = d.value;
       }
+      console.log(`[SentryUSB] Streamed driveTags (${Object.keys(driveTags).length} keys) in ${Date.now() - t1}ms`);
+    } else {
+      console.log(`[SentryUSB] No drive-tags key in file — skipped tags parse (scan took ${Date.now() - t1}ms)`);
     }
-    console.log(`[SentryUSB] Streamed driveTags (${Object.keys(driveTags).length} keys) in ${Date.now() - t1}ms`);
 
     const t2 = Date.now();
     const { drives, driveCount, routeCount } = groupStoreDataIntoDrives({
@@ -2577,9 +2631,11 @@ ipcMain.handle('sentryUsb:loadAndGroup', async (_event, filePath) => {
     });
     console.log(`[SentryUSB] Grouped into ${driveCount} drives in ${Date.now() - t2}ms`);
 
+    sentryUsbCache = { filePath, mtimeMs: stat.mtimeMs, drives, routeCount, routesLen: routes.length };
+
     return {
       success: true,
-      drives,
+      drives: makeLightSentryUsbDrives(drives),
       driveCount,
       routeCount,
       routesLen: routes.length,
@@ -2589,6 +2645,17 @@ ipcMain.handle('sentryUsb:loadAndGroup', async (_event, filePath) => {
     console.error('[SentryUSB] Load failed:', err);
     return { success: false, error: err?.message || String(err) };
   }
+});
+
+// Fetch one drive's heavy map data (GPS points + FSD events) from the cache.
+// Called lazily when the user opens a drive — a single drive is ~1MB, vs
+// shipping all drives' points up front which froze the app.
+ipcMain.handle('sentryUsb:getDriveDetail', async (_event, driveId) => {
+  const drives = sentryUsbCache.drives;
+  if (!drives) return { success: false, error: 'No drive data loaded' };
+  const drive = drives.find(d => d.id === driveId);
+  if (!drive) return { success: false, error: 'Drive not found: ' + driveId };
+  return { success: true, points: drive.points ?? [], fsdEvents: drive.fsdEvents ?? [] };
 });
 
 // Auto-update module (extracted to src/main/autoUpdate.js)

@@ -1526,6 +1526,21 @@ async function selectDriveCollection(drive) {
         return Math.max(0, t - startEpochMs);
     });
 
+    // Drive GPS points/FSD events are fetched lazily: the drive-list IPC reply
+    // omits them so loading 800+ drives doesn't ship hundreds of MB over IPC
+    // (structured-clone of that payload froze the whole app). One drive ≈ 1MB.
+    if (!drive.points && window.electronAPI?.getSentryUsbDriveDetail) {
+        try {
+            const detail = await window.electronAPI.getSentryUsbDriveDetail(drive.id);
+            if (detail?.success) {
+                drive.points = detail.points;
+                drive.fsdEvents = detail.fsdEvents;
+            }
+        } catch (err) {
+            console.warn('[SentryUSB] Failed to fetch drive detail:', err);
+        }
+    }
+
     // Convert full drive route to mapPath format for GPS map pre-population.
     // drive.points are 5-tuples: [lat, lng, 0, speedMps, autopilotActive(0|1)]
     const driveMapPath = (drive.points ?? []).map(p => ({
