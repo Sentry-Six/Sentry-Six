@@ -1,7 +1,7 @@
 /* === Bundled Fonts (Latin subset) === */
 @font-face {
-    font-family: 'Noto Sans';
-    src: url('./fonts/NotoSans-Latin.woff2') format('woff2');
+    font-family: 'Inter';
+    src: url('./fonts/inter-latin.woff2') format('woff2');
     font-weight: 100 900;
     font-style: normal;
     font-display: swap;
@@ -9,9 +9,9 @@
 }
 
 @font-face {
-    font-family: 'Noto Sans Mono';
-    src: url('./fonts/NotoSansMono-Latin.woff2') format('woff2');
-    font-weight: 100 900;
+    font-family: 'JetBrains Mono';
+    src: url('./fonts/jetbrains-mono-latin.woff2') format('woff2');
+    font-weight: 100 800;
     font-style: normal;
     font-display: swap;
     unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
@@ -75,8 +75,8 @@
     --clips-dock-width: 360px;
     --clips-collapsed-width: 46px;
     --left-panel-offset: 360px;
-    --font-sans: 'Noto Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    --font-mono: 'Noto Sans Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
     --font-icons: 'Material Symbols Outlined';
 }
 
@@ -152,7 +152,9 @@
 
 body {
     font-family: var(--font-sans);
+    font-feature-settings: 'ss01', 'cv11';
     background: var(--bg-gradient);
+    background-attachment: fixed;
     color: var(--text-color);
     height: 100vh;
     overflow: hidden;
@@ -161,6 +163,18 @@ body {
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
+}
+
+h1, h2, h3, h4, h5, h6 {
+    font-weight: 600;
+    letter-spacing: -0.02em;
+}
+
+.time-display,
+.speed-value,
+.speed-value-compact,
+.drive-stat {
+    font-variant-numeric: tabular-nums;
 }
 
 /* App Layout */
