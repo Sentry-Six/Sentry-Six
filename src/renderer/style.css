@@ -57,6 +57,11 @@
     --glass-saturate: 185%;
     --card-gradient: linear-gradient(180deg, #10141b 0%, #0b0e13 100%);
     --card-gradient-hover: linear-gradient(180deg, #161b24 0%, #10141b 100%);
+    /* Sentry Drive card material (white liquid glass gradient + specular rim) */
+    --card-bg: linear-gradient(150deg, rgba(255, 255, 255, 0.075), rgba(255, 255, 255, 0.03) 55%, rgba(255, 255, 255, 0.05));
+    --card-hover-bg: linear-gradient(150deg, rgba(255, 255, 255, 0.13), rgba(255, 255, 255, 0.05) 55%, rgba(255, 255, 255, 0.085));
+    --card-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22), inset 0 -1px 1px rgba(255, 255, 255, 0.05), 0 12px 34px rgba(0, 0, 0, 0.45);
+    --card-border: rgba(255, 255, 255, 0.12);
     --border-color: rgba(255, 255, 255, 0.10);
     --border-subtle: rgba(255, 255, 255, 0.06);
     --border-strong: rgba(255, 255, 255, 0.16);
@@ -570,6 +575,16 @@ canvas,
     border-left: none;
     border-top: none;
     border-bottom: none;
+    /* Sentry Drive ambient panel: green/violet glows over opaque slate */
+    background:
+        radial-gradient(660px 480px at 24% -8%, oklch(0.82 0.18 150 / 0.28), transparent 70%),
+        radial-gradient(560px 440px at 112% 4%, rgba(139, 92, 246, 0.22), transparent 66%),
+        radial-gradient(700px 560px at 50% 48%, oklch(0.82 0.18 150 / 0.07), transparent 70%),
+        radial-gradient(620px 500px at 12% 112%, rgba(139, 92, 246, 0.20), transparent 68%),
+        radial-gradient(540px 460px at 106% 108%, oklch(0.82 0.18 150 / 0.18), transparent 66%),
+        #0b0e13;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
 }
 
 .clips-mode-docked .video-container {
@@ -707,12 +722,26 @@ canvas,
 }
 
 .clip-browser-title-main {
-    font-size: 12px;
-    font-weight: 700;
-    letter-spacing: 0.6px;
-    text-transform: uppercase;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 18px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
     color: var(--text-color);
     white-space: nowrap;
+}
+
+.clip-browser-logo {
+    width: 30px;
+    height: 30px;
+    border-radius: 10px;
+    background: oklch(0.82 0.18 150 / 0.18);
+    color: var(--accent-color);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
 }
 
 .clip-browser-subtitle {
@@ -748,7 +777,8 @@ canvas,
     scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
 }
 
-.clip-browser-dayfilter select 5px;
+.clip-browser-dayfilter select::-webkit-scrollbar {
+    width: 5px;
 }
 
 .clip-browser-dayfilter select::-webkit-scrollbar-track {
@@ -1119,7 +1149,8 @@ canvas,
     scrollbar-color: var(--scrollbar-thumb) transparent;
 }
 
-.clip-list 5px;
+.clip-list::-webkit-scrollbar {
+    width: 5px;
 }
 
 .clip-list::-webkit-scrollbar-track {
@@ -1140,20 +1171,23 @@ canvas,
     display: grid;
     grid-template-columns: 112px 1fr;
     gap: 10px;
-    padding: 10px;
-    border-radius: 12px;
-    border: 1px solid var(--border-subtle);
-    background: var(--surface-raised);
+    padding: 12px;
+    border-radius: 18px;
+    border: 1px solid var(--card-border);
+    background: var(--card-bg);
+    box-shadow: var(--card-shadow);
     cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
 }
 
 .clip-item:hover {
-    background: var(--surface-raised-hover);
+    background: var(--card-hover-bg);
+    border-color: oklch(0.87 0.16 150 / 0.45);
 }
 
 .clip-item.selected {
-    outline: 2px solid oklch(0.82 0.18 150 / 0.55);
-    background: var(--accent-bg);
+    border-color: oklch(0.82 0.18 150 / 0.55);
+    background: linear-gradient(150deg, oklch(0.82 0.18 150 / 0.18), oklch(0.82 0.18 150 / 0.06) 60%, oklch(0.82 0.18 150 / 0.10));
 }
 
 .clip-meta {
@@ -3190,7 +3224,8 @@ body>.dashboard-vis-compact.draggable:not(.fixed-to-camera) {
     scrollbar-color: var(--scrollbar-thumb) transparent;
 }
 
-.modal-body 5px;
+.modal-body::-webkit-scrollbar {
+    width: 5px;
 }
 
 .modal-body::-webkit-scrollbar-track {
@@ -6424,7 +6459,8 @@ body>.dashboard-vis-compact.draggable:not(.fixed-to-camera) {
 }
 
 /* Scrollbar for chat messages */
-.support-chat-messages 5px;
+.support-chat-messages::-webkit-scrollbar {
+    width: 5px;
 }
 
 .support-chat-messages::-webkit-scrollbar-track {
@@ -6613,7 +6649,8 @@ body>.dashboard-vis-compact.draggable:not(.fixed-to-camera) {
     scrollbar-color: var(--scrollbar-thumb) transparent;
 }
 
-.settings-content 5px;
+.settings-content::-webkit-scrollbar {
+    width: 5px;
 }
 
 .settings-content::-webkit-scrollbar-track {
@@ -7451,9 +7488,9 @@ body>.dashboard-vis-compact.draggable:not(.fixed-to-camera) {
 }
 
 .clip-drive-tab.active {
-    color: #fff;
+    color: var(--accent-solid-hover);
     background: rgba(255, 255, 255, 0.14);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45), 0 2px 10px rgba(0, 0, 0, 0.25);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3), 0 2px 10px rgba(0, 0, 0, 0.25);
 }
 
 .tab-count {
@@ -7481,7 +7518,8 @@ body>.dashboard-vis-compact.draggable:not(.fixed-to-camera) {
     scrollbar-color: var(--scrollbar-thumb) transparent;
 }
 
-.drive-list 5px;
+.drive-list::-webkit-scrollbar {
+    width: 5px;
 }
 
 .drive-list::-webkit-scrollbar-track {
@@ -7546,38 +7584,44 @@ body>.dashboard-vis-compact.draggable:not(.fixed-to-camera) {
 
 /* Date group header */
 .drive-date-header {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: rgba(11, 14, 19, 0.72);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
     font-size: 10px;
     font-weight: 600;
     text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: var(--text-muted);
-    padding: 10px 8px 4px;
+    letter-spacing: 0.06em;
+    color: var(--text-faint);
+    padding: 10px 4px 6px;
 }
 
 .drive-date-header:first-child {
     padding-top: 4px;
 }
 
-/* Drive item */
+/* Drive item — Sentry Drive card recipe */
 .drive-item {
-    border-radius: 6px;
-    padding: 9px 10px;
-    margin-bottom: 4px;
+    border-radius: 18px;
+    padding: 12px;
+    margin-bottom: 8px;
     cursor: pointer;
-    border: 1px solid transparent;
-    border-left: 3px solid oklch(0.82 0.18 150 / 0.35);
-    background: var(--surface-raised, rgba(255, 255, 255, 0.03));
-    transition: background 0.1s, border-color 0.1s;
+    border: 1px solid var(--card-border);
+    background: var(--card-bg);
+    box-shadow: var(--card-shadow);
+    transition: background 0.15s, border-color 0.15s;
 }
 
 .drive-item:hover {
-    background: rgba(255, 255, 255, 0.06);
-    border-color: oklch(0.82 0.18 150 / 0.6);
+    background: var(--card-hover-bg);
+    border-color: oklch(0.87 0.16 150 / 0.45);
 }
 
 .drive-item.selected {
-    background: oklch(0.82 0.18 150 / 0.12);
-    border-color: var(--accent-color, var(--accent-color));
+    background: linear-gradient(150deg, oklch(0.82 0.18 150 / 0.18), oklch(0.82 0.18 150 / 0.06) 60%, oklch(0.82 0.18 150 / 0.10));
+    border-color: oklch(0.82 0.18 150 / 0.55);
 }
 
 .drive-item-time {
@@ -7596,11 +7640,17 @@ body>.dashboard-vis-compact.draggable:not(.fixed-to-camera) {
 }
 
 .drive-stat {
-    display: flex;
+    display: inline-flex;
     align-items: center;
     gap: 3px;
+    padding: 3px 8px;
+    border-radius: 999px;
     font-size: 11px;
-    color: var(--text-muted);
+    font-weight: 500;
+    color: var(--text-secondary);
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    white-space: nowrap;
 }
 
 .drive-stat svg {
@@ -7626,8 +7676,9 @@ body>.dashboard-vis-compact.draggable:not(.fixed-to-camera) {
 }
 
 .badge.drive-fsd-badge {
-    background: rgba(56, 189, 248, 0.15);
-    color: var(--sky-color);
+    background: rgba(16, 185, 129, 0.15);
+    color: var(--success-color);
+    border: 1px solid rgba(16, 185, 129, 0.22);
 }
 
 .badge.drive-tag-badge {
