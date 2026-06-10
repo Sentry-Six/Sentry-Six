@@ -29,3 +29,4 @@ coverage/
 
 # Release docs / skills / plans (should not be committed)
 docs/
+CLAUDE.md

@@ -5,7 +5,7 @@
 
 import { initKeybindSettings } from '../lib/keybinds.js';
 import { getCurrentLanguage, setLanguage, getAvailableLanguages, onLanguageChange, t } from '../lib/i18n.js';
-import { initFeatureBadges } from '../features/exportVideo.js';
+import { initFeatureBadges, FEATURE_BADGE_KEYS } from '../features/exportVideo.js';
 
 
 /**
@@ -245,25 +245,6 @@ export function initSettingsModal() {
                 window.updateCompactDashboardPositioning(isFixed);
             }
             settingsCompactDashboardFixed.blur();
-        };
-    }
-
-    // App theme (Dark/Light) setting
-    const settingsAppTheme = $('settingsAppTheme');
-    if (settingsAppTheme && window.electronAPI?.getSetting) {
-        window.electronAPI.getSetting('appTheme').then(savedTheme => {
-            const theme = savedTheme || 'dark';
-            settingsAppTheme.value = theme;
-            window.applyAppTheme?.(theme);
-        });
-
-        settingsAppTheme.onchange = async () => {
-            const theme = settingsAppTheme.value || 'dark';
-            if (window.electronAPI?.setSetting) {
-                await window.electronAPI.setSetting('appTheme', theme);
-            }
-            window.applyAppTheme?.(theme);
-            settingsAppTheme.blur();
         };
     }
 
@@ -1037,10 +1018,15 @@ export function initDevSettingsModal() {
 
     // Reset NEW Badges (show all)
     const devResetBadges = $('devResetBadges');
+    // Derive the unique set of badge setting keys from FEATURE_BADGE_KEYS so the
+    // dev toggles always cover every registered badge. Adding a new badge in
+    // exportVideo.js automatically extends both toggles below — no second list
+    // to keep in sync.
+    const getAllBadgeSettingKeys = () => [...new Set(Object.values(FEATURE_BADGE_KEYS))];
+
     if (devResetBadges) {
         devResetBadges.onclick = async () => {
-            const badgeKeys = ['featureSeen_detailedStyle', 'featureSeen_shareClip', 'featureSeen_clipNavPreview', 'featureSeen_minimapStaticMap'];
-            for (const key of badgeKeys) {
+            for (const key of getAllBadgeSettingKeys()) {
                 await window.electronAPI?.setSetting?.(key, false);
             }
             // Show badges immediately
@@ -1054,8 +1040,7 @@ export function initDevSettingsModal() {
     const devDismissBadges = $('devDismissBadges');
     if (devDismissBadges) {
         devDismissBadges.onclick = async () => {
-            const badgeKeys = ['featureSeen_detailedStyle', 'featureSeen_shareClip', 'featureSeen_clipNavPreview', 'featureSeen_minimapStaticMap'];
-            for (const key of badgeKeys) {
+            for (const key of getAllBadgeSettingKeys()) {
                 await window.electronAPI?.setSetting?.(key, true);
             }
             // Hide badges immediately

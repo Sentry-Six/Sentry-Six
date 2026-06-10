@@ -7,21 +7,13 @@
     <title>Sentry Studio</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans:wght@400;500;600;700&family=Noto+Sans+Mono:wght@400;700&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" />
     <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="styles/advancedEditor.css">
 </head>
 
 <body>
-    <!-- Startup loader: shown while main-process pre-cache (FFmpeg) + the initial
-         update-check telemetry API call are running. Hidden as soon as the update
-         check resolves (or is skipped, or the 15s safety timeout fires). -->
-    <div id="startupLoader" class="startup-loader">
-        <div class="loading-spinner"></div>
-        <div class="loading-text" data-i18n="ui.startup.checkingForUpdates">Checking for updates...</div>
-    </div>
-
     <div class="app-container">
         <!-- File Drop / Video Area -->
         <div class="video-container" id="videoContainer">
@@ -137,7 +129,11 @@
             <div id="clipBrowser" class="clip-browser">
                 <div class="clip-browser-header">
                     <div class="clip-browser-title">
-                        <div class="clip-browser-title-main" data-i18n="ui.clipBrowser.title">Clips</div>
+                        <div class="clip-browser-title-main">
+                            <span class="clip-browser-logo"><span
+                                    class="material-symbols-outlined mi-md">videocam</span></span>
+                            <span data-i18n="ui.clipBrowser.title">Clips</span>
+                        </div>
                         <div id="clipBrowserSubtitle" class="clip-browser-subtitle">Select a dashcam folder to browse
                         </div>
                         <div class="clip-browser-dayfilter" id="clipBrowserDayfilter">
@@ -196,6 +192,133 @@
                     </svg>
                 </button>
                 <div class="map-hint" data-i18n="ui.map.hint">Right-click drag to move</div>
+            </div>
+
+            <!-- Detailed Dashboard Template (hidden source for AE preview).
+                 Mirrors the layout produced by writeDetailedDashboardAss in
+                 src/assGenerator.js: a vertical 10-row themed panel with a
+                 left-side grey label + centered value on each row. Icons
+                 (steering wheel, blinker arrows) are reused from the floating
+                 widget for consistency across HTML previews. Cloned into AE
+                 tiles by overlayPreviews.makeDetailedDashboardPreview. -->
+            <div id="dashboardVisDetailed" class="dashboard-vis-detailed" style="display: none;" aria-hidden="true">
+                <div class="dvd-row dvd-row-header">
+                    <span class="dvd-label">Date/Time</span>
+                    <span class="dvd-value dvd-datetime">--/--/---- --:--:--</span>
+                </div>
+                <div class="dvd-row dvd-row-speed">
+                    <span class="dvd-label">Speed</span>
+                    <span class="dvd-value">
+                        <span class="dvd-speed-value">0</span>
+                        <span class="dvd-speed-unit">MPH</span>
+                    </span>
+                </div>
+                <div class="dvd-row dvd-row-gear">
+                    <span class="dvd-label">Gear</span>
+                    <span class="dvd-value dvd-gear-value">PARK</span>
+                </div>
+                <div class="dvd-row dvd-row-steering">
+                    <span class="dvd-label">Steering</span>
+                    <span class="dvd-value dvd-steering-cluster">
+                        <span class="dvd-steering-icon-wrap">
+                            <img class="dvd-steering-icon" src="../../assets/autosteer-icon.png" alt="Steering">
+                        </span>
+                        <span class="dvd-steering-angle">0°</span>
+                    </span>
+                </div>
+                <div class="dvd-row dvd-row-accel">
+                    <span class="dvd-label">Accelerator</span>
+                    <span class="dvd-value dvd-accel-cluster">
+                        <span class="dvd-accel-pct">0%</span>
+                        <div class="dvd-accel-bar"><div class="dvd-accel-fill"></div></div>
+                    </span>
+                </div>
+                <div class="dvd-row dvd-row-brake">
+                    <span class="dvd-label">Brake</span>
+                    <span class="dvd-value dvd-brake-state">OFF</span>
+                </div>
+                <div class="dvd-row dvd-row-blinkers">
+                    <span class="dvd-label">Blinkers</span>
+                    <span class="dvd-value dvd-blinker-cluster">
+                        <span class="dvd-blink-left">
+                            <svg viewBox="-100 -90 200 175" fill="currentColor">
+                                <path d="M-13.11,-33.71 C-15.61,-33.7 -16.06,-36.09 -15.15,-38.05 C-9.81,-49.52 -5.3,-59.32 -1.63,-67.45 C1.42,-74.21 -0.76,-78.22 -5.55,-83.46 C-5.8,-83.72 -6.07,-83.94 -6.38,-84.12 C-14.17,-88.49 -20.03,-84.98 -25.77,-79.01 C-36.67,-67.69 -45.88,-58.89 -57.03,-47.37 C-62.85,-41.36 -73.29,-30.89 -88.34,-15.96 C-91.84,-12.49 -95.74,-8.94 -97.13,-4.62 C-99.07,1.36 -96.56,6.15 -92.31,10.41 C-59.34,43.5 -38.6,64.39 -30.11,73.08 C-27.75,75.49 -26.47,76.81 -26.28,77.03 C-23.64,80 -20.08,83.56 -16.05,83.93 C-13.88,84.12 -11.77,84.13 -9.72,83.94 C-9.38,83.91 -9.05,83.83 -8.73,83.7 C-1.64,80.77 1.19,75.32 -0.25,67.36 C-0.32,66.99 -0.43,66.63 -0.58,66.29 C-5.37,55.61 -9.91,45.68 -14.2,36.51 C-15.9,32.89 -13.31,31.3 -10.28,31.29 C5.65,31.24 34.48,31.23 76.21,31.24 C83.28,31.24 87.73,30.78 89.56,29.85 C93.33,27.94 96.02,24.45 97.65,19.38 C97.74,19.08 97.79,18.76 97.79,18.44 L97.73,-20.92 C97.73,-21.05 97.71,-21.18 97.68,-21.31 C96.46,-26.68 93.59,-30.44 89.07,-32.6 C87.14,-33.53 83.84,-33.99 79.19,-33.98 C43.76,-33.92 13,-33.83 -13.11,-33.71Z"/>
+                            </svg>
+                        </span>
+                        <span class="dvd-blink-right">
+                            <svg viewBox="-100 -90 200 175" fill="currentColor">
+                                <path d="M13.11,-33.71 C15.61,-33.7 16.06,-36.09 15.15,-38.05 C9.81,-49.52 5.3,-59.32 1.63,-67.45 C-1.42,-74.21 0.76,-78.22 5.55,-83.46 C5.8,-83.72 6.07,-83.94 6.38,-84.12 C14.17,-88.49 20.03,-84.98 25.77,-79.01 C36.67,-67.69 45.88,-58.89 57.03,-47.37 C62.85,-41.36 73.29,-30.89 88.34,-15.96 C91.84,-12.49 95.74,-8.94 97.13,-4.62 C99.07,1.36 96.56,6.15 92.31,10.41 C59.34,43.5 38.6,64.39 30.11,73.08 C27.75,75.49 26.47,76.81 26.28,77.03 C23.64,80 20.08,83.56 16.05,83.93 C13.88,84.12 11.77,84.13 9.72,83.94 C9.38,83.91 9.05,83.83 8.73,83.7 C1.64,80.77 -1.19,75.32 0.25,67.36 C0.32,66.99 0.43,66.63 0.58,66.29 C5.37,55.61 9.91,45.68 14.2,36.51 C15.9,32.89 13.31,31.3 10.28,31.29 C-5.65,31.24 -34.48,31.23 -76.21,31.24 C-83.28,31.24 -87.73,30.78 -89.56,29.85 C-93.33,27.94 -96.02,24.45 -97.65,19.38 C-97.74,19.08 -97.79,18.76 -97.79,18.44 L-97.73,-20.92 C-97.73,-21.05 -97.71,-21.18 -97.68,-21.31 C-96.46,-26.68 -93.59,-30.44 -89.07,-32.6 C-87.14,-33.53 -83.84,-33.99 -79.19,-33.98 C-43.76,-33.92 -13,-33.83 13.11,-33.71Z"/>
+                            </svg>
+                        </span>
+                    </span>
+                </div>
+                <div class="dvd-row dvd-row-autopilot">
+                    <span class="dvd-label">Autopilot</span>
+                    <span class="dvd-value dvd-ap-state">OFF</span>
+                </div>
+                <div class="dvd-row dvd-row-gps">
+                    <span class="dvd-label">GPS</span>
+                    <span class="dvd-value dvd-gps-cluster">
+                        <span class="dvd-gps-coords">--, --</span>
+                        <span class="dvd-gps-heading">Heading --°</span>
+                    </span>
+                </div>
+                <div class="dvd-row dvd-row-gforce">
+                    <span class="dvd-label">G-Force</span>
+                    <span class="dvd-value dvd-gforce-cluster">
+                        <span class="dvd-gforce-lat">Lateral: +0.00 G</span>
+                        <span class="dvd-gforce-lon">Longitudinal: +0.00 G</span>
+                    </span>
+                </div>
+            </div>
+
+            <!-- Tesla Mobile date bar — top half of the writeTeslaMobileDashboardAss
+                 output. ASS render: centered "Day, Month D, YYYY  H:MM AM/PM"
+                 in white Segoe UI on #1A1A1A with a thin gray separator below.
+                 Cloned into AE tiles by overlayPreviews.makeTeslaMobileDatePreview. -->
+            <div id="dashboardVisTeslaMobileDate" class="dashboard-vis-tesla-mobile-date hidden" aria-hidden="true">
+                <div class="dvm-date-text">Sunday, January 1, 2026   12:00 PM</div>
+                <div class="dvm-date-separator"></div>
+            </div>
+
+            <!-- Tesla Mobile data bar — bottom half of the writeTeslaMobileDashboardAss
+                 output. ASS render: five circular icons in a horizontal row on
+                 #1A1A1A — brake | gear | (← speed AP →) | steering wheel | accel.
+                 Reuses the SAME image assets as the floating widget and compact
+                 dashboard (pedal_brake.png / pedal_acc.png / autosteer-icon.png /
+                 arrow.png) so visual identity stays consistent. CSS filters
+                 recolor the PNGs for state changes (active/inactive). Cloned into
+                 AE tiles by overlayPreviews.makeTeslaMobileDataPreview. -->
+            <div id="dashboardVisTeslaMobileData" class="dashboard-vis-tesla-mobile-data hidden" aria-hidden="true">
+                <div class="dvm-circle brake">
+                    <img class="dvm-brake-icon" src="../../assets/pedal_brake.png" alt="Brake">
+                </div>
+                <div class="dvm-circle gear">
+                    <span class="dvm-gear-letter">P</span>
+                </div>
+                <div class="dvm-center">
+                    <span class="dvm-arrow left">
+                        <svg viewBox="-100 -90 200 175" fill="currentColor">
+                            <path d="M-13.11,-33.71 C-15.61,-33.7 -16.06,-36.09 -15.15,-38.05 C-9.81,-49.52 -5.3,-59.32 -1.63,-67.45 C1.42,-74.21 -0.76,-78.22 -5.55,-83.46 C-5.8,-83.72 -6.07,-83.94 -6.38,-84.12 C-14.17,-88.49 -20.03,-84.98 -25.77,-79.01 C-36.67,-67.69 -45.88,-58.89 -57.03,-47.37 C-62.85,-41.36 -73.29,-30.89 -88.34,-15.96 C-91.84,-12.49 -95.74,-8.94 -97.13,-4.62 C-99.07,1.36 -96.56,6.15 -92.31,10.41 C-59.34,43.5 -38.6,64.39 -30.11,73.08 C-27.75,75.49 -26.47,76.81 -26.28,77.03 C-23.64,80 -20.08,83.56 -16.05,83.93 C-13.88,84.12 -11.77,84.13 -9.72,83.94 C-9.38,83.91 -9.05,83.83 -8.73,83.7 C-1.64,80.77 1.19,75.32 -0.25,67.36 C-0.32,66.99 -0.43,66.63 -0.58,66.29 C-5.37,55.61 -9.91,45.68 -14.2,36.51 C-15.9,32.89 -13.31,31.3 -10.28,31.29 C5.65,31.24 34.48,31.23 76.21,31.24 C83.28,31.24 87.73,30.78 89.56,29.85 C93.33,27.94 96.02,24.45 97.65,19.38 C97.74,19.08 97.79,18.76 97.79,18.44 L97.73,-20.92 C97.73,-21.05 97.71,-21.18 97.68,-21.31 C96.46,-26.68 93.59,-30.44 89.07,-32.6 C87.14,-33.53 83.84,-33.99 79.19,-33.98 C43.76,-33.92 13,-33.83 -13.11,-33.71Z"/>
+                        </svg>
+                    </span>
+                    <div class="dvm-speed">
+                        <span class="dvm-speed-num">0</span>
+                        <span class="dvm-speed-unit">MPH</span>
+                    </div>
+                    <span class="dvm-ap">OFF</span>
+                    <span class="dvm-arrow right">
+                        <svg viewBox="-100 -90 200 175" fill="currentColor">
+                            <path d="M13.11,-33.71 C15.61,-33.7 16.06,-36.09 15.15,-38.05 C9.81,-49.52 5.3,-59.32 1.63,-67.45 C-1.42,-74.21 0.76,-78.22 5.55,-83.46 C5.8,-83.72 6.07,-83.94 6.38,-84.12 C14.17,-88.49 20.03,-84.98 25.77,-79.01 C36.67,-67.69 45.88,-58.89 57.03,-47.37 C62.85,-41.36 73.29,-30.89 88.34,-15.96 C91.84,-12.49 95.74,-8.94 97.13,-4.62 C99.07,1.36 96.56,6.15 92.31,10.41 C59.34,43.5 38.6,64.39 30.11,73.08 C27.75,75.49 26.47,76.81 26.28,77.03 C23.64,80 20.08,83.56 16.05,83.93 C13.88,84.12 11.77,84.13 9.72,83.94 C9.38,83.91 9.05,83.83 8.73,83.7 C1.64,80.77 -1.19,75.32 0.25,67.36 C0.32,66.99 0.43,66.63 0.58,66.29 C5.37,55.61 9.91,45.68 14.2,36.51 C15.9,32.89 13.31,31.3 10.28,31.29 C-5.65,31.24 -34.48,31.23 -76.21,31.24 C-83.28,31.24 -87.73,30.78 -89.56,29.85 C-93.33,27.94 -96.02,24.45 -97.65,19.38 C-97.74,19.08 -97.79,18.76 -97.79,18.44 L-97.73,-20.92 C-97.73,-21.05 -97.71,-21.18 -97.68,-21.31 C-96.46,-26.68 -93.59,-30.44 -89.07,-32.6 C-87.14,-33.53 -83.84,-33.99 -79.19,-33.98 C-43.76,-33.92 -13,-33.83 13.11,-33.71Z"/>
+                        </svg>
+                    </span>
+                </div>
+                <div class="dvm-circle steering">
+                    <img class="dvm-steering-icon" src="../../assets/autosteer-icon.png" alt="Steering">
+                </div>
+                <div class="dvm-circle accel">
+                    <img class="dvm-accel-icon" src="../../assets/pedal_acc.png" alt="Accelerator">
+                </div>
             </div>
 
             <!-- Floating Visualization -->
@@ -266,14 +389,14 @@
                                 <line x1="30" y1="2" x2="30" y2="58" stroke="rgba(255,255,255,0.08)" stroke-width="1" />
                                 <line x1="2" y1="30" x2="58" y2="30" stroke="rgba(255,255,255,0.08)" stroke-width="1" />
                                 <!-- G-force dot with glow -->
-                                <circle id="gforceDot" cx="30" cy="30" r="4" fill="#3e9cbf">
+                                <circle id="gforceDot" cx="30" cy="30" r="4" fill="#5ee9a0">
                                     <animate attributeName="opacity" values="0.8;1;0.8" dur="1s"
                                         repeatCount="indefinite" />
                                 </circle>
                                 <!-- Trail dots (will be updated via JS) -->
-                                <circle id="gforceTrail1" cx="30" cy="30" r="2.5" fill="rgba(62,156,191,0.4)" />
-                                <circle id="gforceTrail2" cx="30" cy="30" r="2" fill="rgba(62,156,191,0.2)" />
-                                <circle id="gforceTrail3" cx="30" cy="30" r="1.5" fill="rgba(62,156,191,0.1)" />
+                                <circle id="gforceTrail1" cx="30" cy="30" r="2.5" fill="rgba(94,233,160,0.4)" />
+                                <circle id="gforceTrail2" cx="30" cy="30" r="2" fill="rgba(94,233,160,0.2)" />
+                                <circle id="gforceTrail3" cx="30" cy="30" r="1.5" fill="rgba(94,233,160,0.1)" />
                             </svg>
                             <div class="gforce-label">G</div>
                         </div>
@@ -478,6 +601,10 @@
                     <span data-i18n="ui.export.title">Export Video</span>
                 </h2>
                 <button id="closeExportModal" class="modal-close">&times;</button>
+            </div>
+            <div id="aeExportBanner" class="ae-export-banner hidden">
+                <span class="material-symbols-outlined mi-sm">tune</span>
+                <span>Using Advanced Editor layout — controls disabled until export finishes.</span>
             </div>
             <div class="modal-body modal-body-padded">
                 <!-- Export Range - Always visible -->
@@ -759,12 +886,44 @@
                                                     <option value="compact" selected data-i18n="ui.export.compact">
                                                         Compact
                                                     </option>
+                                                    <!-- Default is hidden until writeDefaultDashboardAss renders the
+                                                         floating-widget look (currently just wraps the Compact generator,
+                                                         so exports wouldn't match the preview). Reserved for a future release. -->
+                                                    <option value="default" hidden>Default (Floating)</option>
                                                     <option value="detailed" data-i18n="ui.export.detailed">Detailed
                                                         (Themed)</option>
                                                     <option value="tesla-mobile" data-i18n="ui.export.teslaMobile">Tesla
                                                         Mobile</option>
+                                                    <option value="tesla-screen-dash" data-i18n="ui.export.teslaScreenDash">Tesla
+                                                        Screen Dash</option>
                                                 </select>
                                             </div>
+                                        </div>
+                                        <div class="select-row" id="dashboardLabelScaleRow">
+                                            <div class="select-row-info">
+                                                <span class="select-row-label">Label Size</span>
+                                                <span class="select-row-desc">Row titles (e.g. SPEED, GEAR)</span>
+                                            </div>
+                                            <select id="dashboardLabelScale" class="settings-select">
+                                                <option value="0.75">Small</option>
+                                                <option value="1" selected>Medium</option>
+                                                <option value="1.25">Large</option>
+                                                <option value="1.5">Extra Large</option>
+                                                <option value="2">Huge</option>
+                                            </select>
+                                        </div>
+                                        <div class="select-row" id="dashboardValueScaleRow">
+                                            <div class="select-row-info">
+                                                <span class="select-row-label">Value Size</span>
+                                                <span class="select-row-desc">Numbers, icons, and main data</span>
+                                            </div>
+                                            <select id="dashboardValueScale" class="settings-select">
+                                                <option value="0.75">Small</option>
+                                                <option value="1" selected>Medium</option>
+                                                <option value="1.25">Large</option>
+                                                <option value="1.5">Extra Large</option>
+                                                <option value="2">Huge</option>
+                                            </select>
                                         </div>
                                         <div class="select-row" id="dashboardPositionRow">
                                             <div class="select-row-info">
@@ -1120,6 +1279,11 @@
             </div>
 
             <div class="modal-footer">
+                <button id="openAdvancedEditorBtn" class="btn btn-secondary">
+                    <span class="material-symbols-outlined mi-sm" style="vertical-align: middle; margin-right: 4px;">tune</span>
+                    Open in Advanced Editor
+                    <span class="feature-new-badge" id="advancedEditorNewBadge">NEW</span>
+                </button>
                 <button id="cancelExportBtn" class="btn btn-secondary" data-i18n="ui.export.cancel">Cancel</button>
                 <button id="startExportBtn" class="btn btn-primary" disabled
                     data-i18n="ui.export.exportBtn">Export</button>
@@ -1293,6 +1457,387 @@
         </div>
     </div>
 
+    <!-- Advanced Editor Modal -->
+    <div id="advancedEditorModal" class="modal hidden ae-modal">
+        <div class="modal-content ae-modal-content">
+            <div class="modal-header ae-header">
+                <h2>
+                    <span class="material-symbols-outlined mi-md">tune</span>
+                    <span>Advanced Editor</span>
+                    <span class="beta-tag">Beta</span>
+                </h2>
+                <div class="ae-header-actions">
+                    <button id="aeExportBtn" class="btn btn-primary"
+                        data-i18n="ui.export.exportBtn">Export</button>
+                    <button id="closeAdvancedEditorBtn" class="modal-close">&times;</button>
+                </div>
+            </div>
+
+            <!-- One-time disclaimer about overlay preview fidelity. Dismissal is
+                 persisted in settings (aeOverlayDisclaimerDismissed) so it only
+                 shows until the user acknowledges it. -->
+            <div id="aeOverlayDisclaimer" class="ae-disclaimer hidden" role="status">
+                <span class="material-symbols-outlined ae-disclaimer-icon">info</span>
+                <span class="ae-disclaimer-text">
+                    Overlay previews (dashboard, minimap, timestamp) show <strong>where</strong> elements will appear and <strong>how large</strong> they'll be on export. Their on-screen styling here is approximate — we're still polishing the preview to match the final export exactly.
+                </span>
+                <button id="aeOverlayDisclaimerDismiss" class="ae-disclaimer-dismiss" aria-label="Dismiss" title="Dismiss">&times;</button>
+            </div>
+
+            <div class="modal-body ae-body">
+                <!-- LEFT: Preview canvas + bottom timeline -->
+                <div class="ae-main">
+                    <div class="ae-canvas-wrap">
+                        <button id="aeResetLayoutBtn" class="ae-reset-layout-btn" title="Reset all cameras and tile positions to defaults">
+                            <span class="material-symbols-outlined mi-sm">refresh</span>
+                            <span>Reset Layout</span>
+                        </button>
+                        <div id="aeCanvas" class="ae-canvas">
+                            <div id="aeSnapGuideX" class="ae-snap-guide vertical hidden"></div>
+                            <div id="aeSnapGuideY" class="ae-snap-guide horizontal hidden"></div>
+                        </div>
+                    </div>
+
+                    <div class="ae-timeline">
+                        <button id="aePlayPauseBtn" class="ae-play-btn" title="Play / Pause (Space)">
+                            <span class="material-symbols-outlined">play_arrow</span>
+                        </button>
+                        <span id="aeCurrentTime" class="ae-time">00:00</span>
+                        <input id="aeScrubber" type="range" min="0" max="1000" value="0"
+                            step="1" class="ae-scrubber" />
+                        <span id="aeDuration" class="ae-time">00:00</span>
+                    </div>
+                </div>
+
+                <!-- RIGHT: Sidebar (reuses simple-modal collapsible sections) -->
+                <aside class="ae-sidebar">
+
+                    <!-- Cameras -->
+                    <div class="collapsible-section open">
+                        <div class="collapsible-header">
+                            <span class="collapsible-header-title">
+                                <span class="material-symbols-outlined mi-md">videocam</span>
+                                <span>Cameras</span>
+                            </span>
+                            <span class="material-symbols-outlined mi-sm">expand_more</span>
+                        </div>
+                        <div class="collapsible-body">
+                            <div class="collapsible-content">
+                                <div id="aeCameraToggles" class="option-grid option-grid-3">
+                                    <label class="option-card" data-camera="left_pillar">
+                                        <input type="checkbox" data-camera="left_pillar" checked>
+                                        <div class="option-card-info">
+                                            <span class="option-card-label" data-i18n="ui.cameras.leftPillar">Left Pillar</span>
+                                        </div>
+                                    </label>
+                                    <label class="option-card" data-camera="front">
+                                        <input type="checkbox" data-camera="front" checked>
+                                        <div class="option-card-info">
+                                            <span class="option-card-label" data-i18n="ui.cameras.front">Front</span>
+                                        </div>
+                                    </label>
+                                    <label class="option-card" data-camera="right_pillar">
+                                        <input type="checkbox" data-camera="right_pillar" checked>
+                                        <div class="option-card-info">
+                                            <span class="option-card-label" data-i18n="ui.cameras.rightPillar">Right Pillar</span>
+                                        </div>
+                                    </label>
+                                    <label class="option-card" data-camera="left_repeater">
+                                        <input type="checkbox" data-camera="left_repeater" checked>
+                                        <div class="option-card-info">
+                                            <span class="option-card-label" data-i18n="ui.cameras.leftRepeater">Left Repeater</span>
+                                        </div>
+                                    </label>
+                                    <label class="option-card" data-camera="back">
+                                        <input type="checkbox" data-camera="back" checked>
+                                        <div class="option-card-info">
+                                            <span class="option-card-label" data-i18n="ui.cameras.back">Back</span>
+                                        </div>
+                                    </label>
+                                    <label class="option-card" data-camera="right_repeater">
+                                        <input type="checkbox" data-camera="right_repeater" checked>
+                                        <div class="option-card-info">
+                                            <span class="option-card-label" data-i18n="ui.cameras.rightRepeater">Right Repeater</span>
+                                        </div>
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Quality -->
+                    <div class="collapsible-section open">
+                        <div class="collapsible-header">
+                            <span class="collapsible-header-title">
+                                <span class="material-symbols-outlined mi-md">star</span>
+                                <span data-i18n="ui.export.quality">Quality</span>
+                            </span>
+                            <span class="material-symbols-outlined mi-sm">expand_more</span>
+                        </div>
+                        <div class="collapsible-body">
+                            <div class="collapsible-content">
+                                <div class="option-grid">
+                                    <label class="option-card">
+                                        <input type="radio" name="aeExportQuality" value="mobile">
+                                        <div class="option-card-info">
+                                            <span class="option-card-label" data-i18n="ui.export.mobile">Mobile</span>
+                                            <span class="option-card-desc">484×314</span>
+                                        </div>
+                                    </label>
+                                    <label class="option-card">
+                                        <input type="radio" name="aeExportQuality" value="medium">
+                                        <div class="option-card-info">
+                                            <span class="option-card-label" data-i18n="ui.export.medium">Medium</span>
+                                            <span class="option-card-desc">724×469</span>
+                                        </div>
+                                    </label>
+                                    <label class="option-card">
+                                        <input type="radio" name="aeExportQuality" value="high" checked>
+                                        <div class="option-card-info">
+                                            <span class="option-card-label" data-i18n="ui.export.high">High</span>
+                                            <span class="option-card-desc">1086×704</span>
+                                        </div>
+                                    </label>
+                                    <label class="option-card">
+                                        <input type="radio" name="aeExportQuality" value="max">
+                                        <div class="option-card-info">
+                                            <span class="option-card-label" data-i18n="ui.export.maximum">Maximum</span>
+                                            <span class="option-card-desc">1448×938</span>
+                                        </div>
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Overlays -->
+                    <div class="collapsible-section open">
+                        <div class="collapsible-header">
+                            <span class="collapsible-header-title">
+                                <span class="material-symbols-outlined mi-md">add</span>
+                                <span data-i18n="ui.export.overlays">Overlays</span>
+                            </span>
+                            <span class="material-symbols-outlined mi-sm">expand_more</span>
+                        </div>
+                        <div class="collapsible-body">
+                            <div class="collapsible-content">
+                                <label class="toggle-row">
+                                    <div class="toggle-row-info">
+                                        <span class="toggle-row-label" data-i18n="ui.export.timestamp">Timestamp</span>
+                                        <span class="toggle-row-desc">Drag on canvas to position</span>
+                                    </div>
+                                    <div class="toggle-switch">
+                                        <input id="aeIncludeTimestamp" type="checkbox" checked>
+                                        <div class="toggle-switch-track">
+                                            <div class="toggle-switch-thumb"></div>
+                                        </div>
+                                    </div>
+                                </label>
+
+                                <label class="toggle-row">
+                                    <div class="toggle-row-info">
+                                        <span class="toggle-row-label" data-i18n="ui.export.dashboard">Dashboard</span>
+                                        <span class="toggle-row-desc">Drag on canvas to position</span>
+                                    </div>
+                                    <div class="toggle-switch">
+                                        <input id="aeIncludeDashboard" type="checkbox">
+                                        <div class="toggle-switch-track">
+                                            <div class="toggle-switch-thumb"></div>
+                                        </div>
+                                    </div>
+                                </label>
+                                <div id="aeDashboardOptions" class="hidden">
+                                    <div class="select-row">
+                                        <div class="select-row-info">
+                                            <span class="select-row-label" data-i18n="ui.export.style">Style</span>
+                                            <span class="select-row-desc" data-i18n="ui.export.styleDesc">Dashboard visual style</span>
+                                        </div>
+                                        <select id="aeDashboardStyle" class="settings-select">
+                                            <option value="compact" selected data-i18n="ui.export.compact">Compact</option>
+                                            <!-- Default is hidden until writeDefaultDashboardAss renders the
+                                                 floating-widget look (currently just wraps the Compact generator,
+                                                 so exports wouldn't match the preview). Reserved for a future release. -->
+                                            <option value="default" hidden>Default (Floating)</option>
+                                            <option value="detailed" data-i18n="ui.export.detailed">Detailed (Themed)</option>
+                                            <option value="tesla-mobile" data-i18n="ui.export.teslaMobile">Tesla Mobile</option>
+                                            <option value="tesla-screen-dash" data-i18n="ui.export.teslaScreenDash">Tesla Screen Dash</option>
+                                        </select>
+                                    </div>
+                                    <div class="select-row" id="aeDashboardLabelScaleRow">
+                                        <div class="select-row-info">
+                                            <span class="select-row-label">Label Size</span>
+                                            <span class="select-row-desc">Row titles (e.g. SPEED, GEAR)</span>
+                                        </div>
+                                        <select id="aeDashboardLabelScale" class="settings-select">
+                                            <option value="0.75">Small</option>
+                                            <option value="1" selected>Medium</option>
+                                            <option value="1.25">Large</option>
+                                            <option value="1.5">Extra Large</option>
+                                            <option value="2">Huge</option>
+                                        </select>
+                                    </div>
+                                    <div class="select-row" id="aeDashboardValueScaleRow">
+                                        <div class="select-row-info">
+                                            <span class="select-row-label">Value Size</span>
+                                            <span class="select-row-desc">Numbers, icons, and main data</span>
+                                        </div>
+                                        <select id="aeDashboardValueScale" class="settings-select">
+                                            <option value="0.75">Small</option>
+                                            <option value="1" selected>Medium</option>
+                                            <option value="1.25">Large</option>
+                                            <option value="1.5">Extra Large</option>
+                                            <option value="2">Huge</option>
+                                        </select>
+                                    </div>
+                                    <!-- Tesla Mobile only: independent scale for the
+                                         date-bar tile, since the date and the dashboard
+                                         data sit in their own tiles and the user may
+                                         want them sized differently. Hidden for all
+                                         other styles by refreshOptionVisibility(). -->
+                                    <div class="select-row hidden" id="aeDashboardDateLabelScaleRow">
+                                        <div class="select-row-info">
+                                            <span class="select-row-label">Date Label Size</span>
+                                            <span class="select-row-desc">Reserved — date bar has no labels</span>
+                                        </div>
+                                        <select id="aeDashboardDateLabelScale" class="settings-select">
+                                            <option value="0.75">Small</option>
+                                            <option value="1" selected>Medium</option>
+                                            <option value="1.25">Large</option>
+                                            <option value="1.5">Extra Large</option>
+                                            <option value="2">Huge</option>
+                                        </select>
+                                    </div>
+                                    <div class="select-row hidden" id="aeDashboardDateValueScaleRow">
+                                        <div class="select-row-info">
+                                            <span class="select-row-label">Date Bar Size</span>
+                                            <span class="select-row-desc">Tesla Mobile date text</span>
+                                        </div>
+                                        <select id="aeDashboardDateValueScale" class="settings-select">
+                                            <option value="0.75">Small</option>
+                                            <option value="1" selected>Medium</option>
+                                            <option value="1.25">Large</option>
+                                            <option value="1.5">Extra Large</option>
+                                            <option value="2">Huge</option>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <label class="toggle-row">
+                                    <div class="toggle-row-info">
+                                        <span class="toggle-row-label">
+                                            <span data-i18n="ui.export.minimap">GPS Minimap</span>
+                                            <span class="beta-tag">Beta</span>
+                                        </span>
+                                        <span class="toggle-row-desc">Drag on canvas to position</span>
+                                    </div>
+                                    <div class="toggle-switch">
+                                        <input id="aeIncludeMinimap" type="checkbox">
+                                        <div class="toggle-switch-track">
+                                            <div class="toggle-switch-thumb"></div>
+                                        </div>
+                                    </div>
+                                </label>
+                                <div id="aeMinimapOptions" class="hidden">
+                                    <div class="select-row">
+                                        <div class="select-row-info">
+                                            <span class="select-row-label" data-i18n="ui.export.minimapRenderMode">Render Mode</span>
+                                            <span class="select-row-desc" data-i18n="ui.export.minimapRenderModeDesc">Speed vs quality</span>
+                                        </div>
+                                        <select id="aeMinimapRenderMode" class="settings-select">
+                                            <option value="ass" selected data-i18n="ui.export.minimapStaticFast">Static Map (Fast)</option>
+                                            <option value="leaflet" data-i18n="ui.export.minimapLiveSlow">Live Map (Slow)</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Time-Lapse -->
+                    <div class="collapsible-section">
+                        <div class="collapsible-header">
+                            <span class="collapsible-header-title">
+                                <span class="material-symbols-outlined mi-md">schedule</span>
+                                <span data-i18n="ui.export.timelapse">Time-Lapse</span>
+                            </span>
+                            <span class="material-symbols-outlined mi-sm">expand_more</span>
+                        </div>
+                        <div class="collapsible-body">
+                            <div class="collapsible-content">
+                                <label class="toggle-row">
+                                    <div class="toggle-row-info">
+                                        <span class="toggle-row-label" data-i18n="ui.export.enableTimelapse">Enable Time-Lapse</span>
+                                        <span class="toggle-row-desc" data-i18n="ui.export.enableTimelapseDesc">Speed up footage for a condensed overview</span>
+                                    </div>
+                                    <div class="toggle-switch">
+                                        <input id="aeEnableTimelapse" type="checkbox">
+                                        <div class="toggle-switch-track">
+                                            <div class="toggle-switch-thumb"></div>
+                                        </div>
+                                    </div>
+                                </label>
+                                <div id="aeTimelapseOptions" class="hidden">
+                                    <div class="select-row">
+                                        <div class="select-row-info">
+                                            <span class="select-row-label" data-i18n="ui.export.timelapseSpeed">Speed</span>
+                                            <span class="select-row-desc" data-i18n="ui.export.timelapseSpeedDesc">Playback speed multiplier</span>
+                                        </div>
+                                        <select id="aeTimelapseSpeed" class="settings-select">
+                                            <option value="0.5">0.5x</option>
+                                            <option value="2">2x</option>
+                                            <option value="4">4x</option>
+                                            <option value="8" selected>8x</option>
+                                            <option value="16">16x</option>
+                                            <option value="32">32x</option>
+                                            <option value="64">64x</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Privacy -->
+                    <div class="collapsible-section">
+                        <div class="collapsible-header">
+                            <span class="collapsible-header-title">
+                                <span class="material-symbols-outlined mi-md">shield</span>
+                                <span data-i18n="ui.export.privacy">Privacy</span>
+                            </span>
+                            <span class="material-symbols-outlined mi-sm">expand_more</span>
+                        </div>
+                        <div class="collapsible-body">
+                            <div class="collapsible-content">
+                                <div class="blur-zone-controls">
+                                    <div class="blur-zone-add-row">
+                                        <select id="aeBlurZoneCameraSelect" class="settings-select">
+                                            <option value="back" data-i18n="ui.cameras.back">Back</option>
+                                            <option value="front" data-i18n="ui.cameras.front">Front</option>
+                                            <option value="left_repeater" data-i18n="ui.cameras.leftRepeater">Left Repeater</option>
+                                            <option value="right_repeater" data-i18n="ui.cameras.rightRepeater">Right Repeater</option>
+                                            <option value="left_pillar" data-i18n="ui.cameras.leftPillar">Left Pillar</option>
+                                            <option value="right_pillar" data-i18n="ui.cameras.rightPillar">Right Pillar</option>
+                                        </select>
+                                        <button id="aeAddBlurZoneBtn" class="btn btn-secondary btn-small"
+                                            data-i18n="ui.export.addZone">Add Blur Zone</button>
+                                    </div>
+                                    <div class="blur-zone-hint" data-i18n="ui.export.blurZoneHint">Redact license plates or sensitive info</div>
+                                </div>
+                                <div id="aeBlurZoneList" class="blur-zone-list"></div>
+                                <div id="aeBlurZoneStatus" class="info-box info-blue hidden">
+                                    <span class="info-box-icon"><span class="material-symbols-outlined">info</span></span>
+                                    <span id="aeBlurZoneStatusText"></span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                </aside>
+            </div>
+
+        </div>
+    </div>
+
     <!-- Settings Modal -->
     <div id="settingsModal" class="modal hidden">
         <div class="modal-content settings-modal">
@@ -1437,7 +1982,7 @@
                             <div class="slider-row">
                                 <span class="slider-row-label" data-i18n="ui.settings.glassBlur">Glass Blur</span>
                                 <div class="slider-row-control">
-                                    <input type="range" id="settingsGlassBlur" min="0" max="20" value="7" step="1">
+                                    <input type="range" id="settingsGlassBlur" min="0" max="30" value="7" step="1">
                                     <span id="glassBlurValue" class="slider-row-value">7px</span>
                                 </div>
                             </div>
@@ -1477,13 +2022,6 @@
                                     </div>
                                 </div>
                             </label>
-                            <div class="select-row">
-                                <span class="select-row-label" data-i18n="ui.settings.theme">Theme</span>
-                                <select id="settingsAppTheme" class="settings-select">
-                                    <option value="dark" selected data-i18n="ui.settings.themeDark">Dark</option>
-                                    <option value="light" data-i18n="ui.settings.themeLight">Light</option>
-                                </select>
-                            </div>
                             <div class="select-row">
                                 <span class="select-row-label" data-i18n="ui.settings.mapStyle">Map Style</span>
                                 <select id="settingsMapMode" class="settings-select">
@@ -1675,6 +2213,38 @@
                                     <input type="text" class="keybind-input" id="keybindPrevClip"
                                         data-action="prevClip" placeholder="—" readonly>
                                     <button class="keybind-clear" data-action="prevClip" title="Clear">✕</button>
+                                </div>
+                            </div>
+                            <div class="keybind-row-compact">
+                                <span class="keybind-label" data-i18n="ui.settings.speedUp">Increase Speed</span>
+                                <div class="keybind-input-wrapper">
+                                    <input type="text" class="keybind-input" id="keybindSpeedUp"
+                                        data-action="speedUp" placeholder="—" readonly>
+                                    <button class="keybind-clear" data-action="speedUp" title="Clear">✕</button>
+                                </div>
+                            </div>
+                            <div class="keybind-row-compact">
+                                <span class="keybind-label" data-i18n="ui.settings.speedDown">Decrease Speed</span>
+                                <div class="keybind-input-wrapper">
+                                    <input type="text" class="keybind-input" id="keybindSpeedDown"
+                                        data-action="speedDown" placeholder="—" readonly>
+                                    <button class="keybind-clear" data-action="speedDown" title="Clear">✕</button>
+                                </div>
+                            </div>
+                            <div class="keybind-row-compact">
+                                <span class="keybind-label" data-i18n="ui.settings.speedReset">Reset Speed (1x)</span>
+                                <div class="keybind-input-wrapper">
+                                    <input type="text" class="keybind-input" id="keybindSpeedReset"
+                                        data-action="speedReset" placeholder="—" readonly>
+                                    <button class="keybind-clear" data-action="speedReset" title="Clear">✕</button>
+                                </div>
+                            </div>
+                            <div class="keybind-row-compact">
+                                <span class="keybind-label" data-i18n="ui.settings.speedMax">Max Speed (4x)</span>
+                                <div class="keybind-input-wrapper">
+                                    <input type="text" class="keybind-input" id="keybindSpeedMax"
+                                        data-action="speedMax" placeholder="—" readonly>
+                                    <button class="keybind-clear" data-action="speedMax" title="Clear">✕</button>
                                 </div>
                             </div>
                         </div>
@@ -2065,7 +2635,7 @@
         <div class="modal-content update-modal">
             <div class="modal-header">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                    stroke-linecap="round" stroke-linejoin="round" style="color: #4caf50;">
+                    stroke-linecap="round" stroke-linejoin="round" style="color: var(--success-color);">
                     <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
                     <polyline points="7 10 12 15 17 10" />
                     <line x1="12" y1="15" x2="12" y2="3" />
@@ -2141,7 +2711,7 @@
             <div class="modal-body soft-tc-body">
                 <div class="soft-tc-content">
                     <div class="soft-tc-icon">
-                        <svg width="48" height="48" viewBox="0 0 24 24" fill="currentColor" style="color: #00d4ff;">
+                        <svg width="48" height="48" viewBox="0 0 24 24" fill="currentColor" style="color: var(--accent-color);">
                             <path
                                 d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm-2 16l-4-4 1.41-1.41L10 14.17l6.59-6.59L18 9l-8 8z" />
                         </svg>
@@ -2193,7 +2763,7 @@
         <div class="modal-content welcome-guide-modal">
             <div class="modal-header">
                 <h2>
-                    <svg class="modal-header-icon" viewBox="0 0 24 24" fill="currentColor" style="color: #00d4ff;">
+                    <svg class="modal-header-icon" viewBox="0 0 24 24" fill="currentColor" style="color: var(--accent-color);">
                         <path
                             d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z" />
                     </svg>
@@ -2422,7 +2992,7 @@
                                                     stroke-width="1" />
                                                 <line x1="2" y1="30" x2="58" y2="30" stroke="rgba(255,255,255,0.08)"
                                                     stroke-width="1" />
-                                                <circle cx="35" cy="25" r="4" fill="#3e9cbf" />
+                                                <circle cx="35" cy="25" r="4" fill="#5ee9a0" />
                                             </svg>
                                             <div class="gforce-label">G</div>
                                         </div>

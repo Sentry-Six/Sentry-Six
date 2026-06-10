@@ -162,7 +162,16 @@ async function loadExportOverlaySettings() {
             if (element.type === 'checkbox') {
                 element.checked = value === true;
             } else if (element.tagName === 'SELECT') {
-                element.value = value;
+                // Dashboard "default" style is hidden behind a feature gate
+                // (no real ASS renderer yet — exports would look like Compact).
+                // Fall back to Compact so users who saved Default in an earlier
+                // build don't see a blank dropdown.
+                if (elementId === 'dashboardStyle' && value === 'default') {
+                    element.value = 'compact';
+                    try { await window.electronAPI.setSetting(settingKey, 'compact'); } catch {}
+                } else {
+                    element.value = value;
+                }
             }
         } catch (err) {
             console.warn(`Failed to load export setting ${settingKey}:`, err);
@@ -278,7 +287,11 @@ function setupExportOverlaySaveHandlers() {
 // Feature NEW Badge Management
 // Badges disappear after first interaction, persisted in settings
 // ============================================================
-const FEATURE_BADGE_KEYS = {
+// Single source of truth for NEW badges. Exported so the dev settings panel
+// (settingsModal.js) can reset/dismiss all known badges without duplicating
+// the list. When adding a NEW badge, register it here AND wire a dismiss
+// trigger in initFeatureBadges() below.
+export const FEATURE_BADGE_KEYS = {
     overlaysNewBadge: 'featureSeen_teslaMobileStyle',
     styleNewBadge: 'featureSeen_teslaMobileStyle',
     shareClipNewBadge: 'featureSeen_shareClip',
@@ -288,12 +301,14 @@ const FEATURE_BADGE_KEYS = {
     prevClipNewDot: 'featureSeen_clipNavPreview',
     previewNewBadge: 'featureSeen_clipNavPreview',
     minimapRenderModeNewDot: 'featureSeen_minimapStaticMap',
-    minimapNewBadge: 'featureSeen_minimapStaticMap'
+    minimapNewBadge: 'featureSeen_minimapStaticMap',
+    advancedEditorNewBadge: 'featureSeen_advancedEditor'
 };
 
 /**
  * Update dashboard option rows based on selected style.
- * Tesla Mobile: full-width bar, only top/bottom position, no size selector.
+ * - Tesla Mobile: full-width bar, only top/bottom position, no size selector.
+ * - Tesla Screen Dash: in-car HUD with intrinsic positions, hide everything.
  */
 function updateDashboardStyleOptions(style) {
     const posRow = $('dashboardPositionRow');
@@ -304,10 +319,91 @@ function updateDashboardStyleOptions(style) {
         if (posRow) posRow.style.display = 'none';
         if (posTeslaRow) posTeslaRow.style.display = '';
         if (sizeRow) sizeRow.style.display = 'none';
+    } else if (style === 'tesla-screen-dash') {
+        if (posRow) posRow.style.display = 'none';
+        if (posTeslaRow) posTeslaRow.style.display = 'none';
+        if (sizeRow) sizeRow.style.display = 'none';
     } else {
         if (posRow) posRow.style.display = '';
         if (posTeslaRow) posTeslaRow.style.display = 'none';
         if (sizeRow) sizeRow.style.display = '';
+    }
+
+    // Label/Value Size visibility — Only Detailed has both. Compact and
+    // Default lack a meaningful label/value distinction so only Value Size
+    // is exposed for them.
+    const labelRow = $('dashboardLabelScaleRow');
+    const valueRow = $('dashboardValueScaleRow');
+    if (labelRow) labelRow.style.display = (style === 'detailed') ? '' : 'none';
+    if (valueRow) valueRow.style.display = '';
+
+    // Default-style Value Size is JS-capped at 1.0 in the AE preview because
+    // the floating-widget panel can't grow past its tile fit, so options above
+    // Medium are no-ops. Hide them for Default and snap the current value
+    // down if needed so what's selected matches what's actually applied.
+    syncValueScaleOptionsForStyle('dashboardValueScale', style);
+}
+
+function syncValueScaleOptionsForStyle(selectId, style) {
+    const select = document.getElementById(selectId);
+    if (!select) return;
+    const maxScale = (style === 'default') ? 1 : Infinity;
+    for (const opt of select.options) {
+        const v = parseFloat(opt.value);
+        opt.hidden = Number.isFinite(v) && v > maxScale;
+    }
+    const cur = parseFloat(select.value);
+    if (Number.isFinite(cur) && cur > maxScale) {
+        select.value = String(maxScale);
+        if (window.electronAPI?.setSetting) {
+            window.electronAPI.setSetting('exportDashboardValueScale', maxScale)
+                .catch(err => console.warn('persist snapped value scale failed', err));
+        }
+    }
+}
+
+/**
+ * Auto-configure the GPS minimap the first time the user picks Tesla Screen Dash.
+ * The Tesla Dash look needs the satellite tile + heading arrow in the top-right —
+ * we toggle on the existing minimap with a Tesla-style preset (dark, small,
+ * top-right). Runs ONCE; if the user later disables the minimap, we respect that.
+ */
+async function autoConfigureTeslaScreenDashMinimap() {
+    if (!window.electronAPI?.getSetting || !window.electronAPI?.setSetting) return;
+    try {
+        const alreadyConfigured = await window.electronAPI.getSetting('featureSeen_teslaScreenDash_autoConfigured');
+        if (alreadyConfigured) return;
+
+        const minimapToggle = $('includeMinimap');
+        const minimapPosition = $('minimapPosition');
+        const minimapSize = $('minimapSize');
+        const minimapDarkMode = $('minimapDarkMode');
+        const minimapRenderMode = $('minimapRenderMode');
+
+        if (minimapToggle && !minimapToggle.checked) {
+            minimapToggle.checked = true;
+            minimapToggle.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+        if (minimapPosition) {
+            minimapPosition.value = 'top-right';
+            minimapPosition.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+        if (minimapSize) {
+            minimapSize.value = 'small';
+            minimapSize.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+        if (minimapDarkMode && !minimapDarkMode.checked) {
+            minimapDarkMode.checked = true;
+            minimapDarkMode.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+        if (minimapRenderMode) {
+            minimapRenderMode.value = 'ass';
+            minimapRenderMode.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+
+        await window.electronAPI.setSetting('featureSeen_teslaScreenDash_autoConfigured', true);
+    } catch (err) {
+        console.warn('[teslaScreenDash] auto-config failed:', err);
     }
 }
 
@@ -347,6 +443,9 @@ export async function initFeatureBadges() {
                 dismissFeatureBadge('styleNewBadge');
                 dismissFeatureBadge('overlaysNewBadge');
                 updateDashboardStyleOptions(styleSelect.value);
+                if (styleSelect.value === 'tesla-screen-dash') {
+                    autoConfigureTeslaScreenDashMinimap();
+                }
             });
             // Apply initial state
             updateDashboardStyleOptions(styleSelect.value);
@@ -380,6 +479,12 @@ export async function initFeatureBadges() {
                 dismissFeatureBadge('minimapRenderModeNewDot');
                 dismissFeatureBadge('minimapNewBadge');
             });
+        }
+
+        // Advanced Editor launcher - dismiss the NEW badge on first open
+        const openAdvancedEditorBtn = $('openAdvancedEditorBtn');
+        if (openAdvancedEditorBtn) {
+            openAdvancedEditorBtn.addEventListener('click', () => dismissFeatureBadge('advancedEditorNewBadge'));
         }
 
         // Use event delegation for settings-modal badges (may not be initialized when export modal opens)
@@ -704,6 +809,26 @@ export function updateExportButtonState() {
     if (exportBtn) exportBtn.disabled = !hasCollection;
 }
 
+// Lock or unlock the simple export modal for AE-driven exports. Locks the
+// entire modal body (all sections) via `inert` + a dimmed class, and shows
+// a banner indicating the layout came from the Advanced Editor. Idempotent
+// and safe to call when the modal isn't visible.
+export function setSimpleModalAeMode(on) {
+    const modal = document.getElementById('exportModal');
+    const banner = document.getElementById('aeExportBanner');
+    const body = modal?.querySelector('.modal-body');
+    if (!modal || !body) return;
+    if (on) {
+        modal.classList.add('ae-export-mode');
+        body.inert = true;
+        banner?.classList.remove('hidden');
+    } else {
+        modal.classList.remove('ae-export-mode');
+        body.inert = false;
+        banner?.classList.add('hidden');
+    }
+}
+
 /**
  * Open the export modal
  */
@@ -979,7 +1104,7 @@ function hideFloatingProgress() {
  * @param {string|Object} message - Either a plain string or { key: string, params?: Object }
  * @returns {string} The translated message
  */
-function translateMessage(message) {
+export function translateMessage(message) {
     if (!message) return '';
     if (typeof message === 'string') return message;
     if (typeof message === 'object' && message.key) {
@@ -1056,7 +1181,7 @@ async function captureVideoSnapshot(timeSec, videoElement) {
  * @param {HTMLElement} editorModal - The editor modal element
  * @param {number|null} editIndex - Index of existing zone to edit, or null for new zone
  */
-async function openBlurZoneEditorForCamera(snapshotCamera, editorModal, editIndex = null) {
+export async function openBlurZoneEditorForCamera(snapshotCamera, editorModal, editIndex = null) {
     const state = getState?.();
     const nativeVideo = getNativeVideo?.();
 
@@ -1617,7 +1742,7 @@ export async function checkFFmpegAvailability() {
                     statusText += ' [DEV: Fake No GPU]';
                 }
 
-                statusEl.innerHTML = `<span class="status-icon" style="color: #4caf50;">✓</span><span class="status-text">${statusText}</span>`;
+                statusEl.innerHTML = `<span class="status-icon" style="color: var(--success-color);">✓</span><span class="status-text">${statusText}</span>`;
                 if (startBtn) startBtn.disabled = false;
 
                 // Dashboard overlay requires GPU - show warning if no GPU
@@ -1630,9 +1755,9 @@ export async function checkFFmpegAvailability() {
             } else {
                 const isMac = navigator.platform.toLowerCase().includes('mac');
                 if (isMac) {
-                    statusEl.innerHTML = `<span class="status-icon" style="color: #f44336;">✗</span><span class="status-text">${t('ui.export.ffmpegRequiredMac')}</span>`;
+                    statusEl.innerHTML = `<span class="status-icon" style="color: var(--error-color);">✗</span><span class="status-text">${t('ui.export.ffmpegRequiredMac')}</span>`;
                 } else {
-                    statusEl.innerHTML = `<span class="status-icon" style="color: #f44336;">✗</span><span class="status-text">${t('ui.export.ffmpegRequiredWin')}</span>`;
+                    statusEl.innerHTML = `<span class="status-icon" style="color: var(--error-color);">✗</span><span class="status-text">${t('ui.export.ffmpegRequiredWin')}</span>`;
                 }
                 if (startBtn) startBtn.disabled = true;
                 if (dashboardCheckbox) {
@@ -1641,7 +1766,7 @@ export async function checkFFmpegAvailability() {
                 }
             }
         } else {
-            statusEl.innerHTML = `<span class="status-icon" style="color: #ff9800;">⚠</span><span class="status-text">${t('ui.export.notAvailable')}</span>`;
+            statusEl.innerHTML = `<span class="status-icon" style="color: var(--warning-color);">⚠</span><span class="status-text">${t('ui.export.notAvailable')}</span>`;
             if (startBtn) startBtn.disabled = true;
             if (dashboardCheckbox) {
                 dashboardCheckbox.disabled = true;
@@ -1649,7 +1774,7 @@ export async function checkFFmpegAvailability() {
             }
         }
     } catch (err) {
-        statusEl.innerHTML = `<span class="status-icon" style="color: #f44336;">✗</span><span class="status-text">${t('ui.export.ffmpegError')}</span>`;
+        statusEl.innerHTML = `<span class="status-icon" style="color: var(--error-color);">✗</span><span class="status-text">${t('ui.export.ffmpegError')}</span>`;
         if (startBtn) startBtn.disabled = true;
     }
 }
@@ -2092,6 +2217,18 @@ export async function startExport() {
                 if (exportState.modalMinimized) {
                     updateFloatingProgress(progress.message, progress.percentage);
                 }
+            } else if (progress.type === 'downscaled') {
+                // AE-only: the bbox exceeded the encoder-safe ceiling and the
+                // main process scaled the layout down. Tell the user — the
+                // export still succeeds, just at a lower output resolution.
+                const o = progress.original;
+                const s = progress.scaled;
+                notify(
+                    `Advanced Editor layout was too large for safe encoding ` +
+                    `(${o.w}×${o.h}). Output resolution was reduced to ` +
+                    `${s.w}×${s.h} to ensure the export succeeds.`,
+                    { type: 'warn', duration: 8000 }
+                );
             } else if (progress.type === 'complete') {
                 exportState.isExporting = false;
                 exportState.currentExportId = null;
@@ -2370,7 +2507,7 @@ function updateMaxQualityForSharing(sharingEnabled) {
 /**
  * Show the export completion panel (replaces native confirm dialog)
  */
-function showExportCompletePanel(outputPath, message) {
+export function showExportCompletePanel(outputPath, message) {
     const completePanel = $('exportCompletePanel');
     const modalBody = completePanel?.closest('.modal-content')?.querySelector('.modal-body');
     const modalFooter = completePanel?.closest('.modal-content')?.querySelector('.modal-footer');
@@ -2384,6 +2521,10 @@ function showExportCompletePanel(outputPath, message) {
     const shareError = $('shareError');
 
     if (!completePanel) return;
+
+    // Re-enable the simple modal body if an AE-driven export had locked it.
+    // No-op for regular (simple-modal-driven) exports.
+    setSimpleModalAeMode(false);
 
     // Get file size for display
     const fileSizeText = message || 'Export completed successfully';

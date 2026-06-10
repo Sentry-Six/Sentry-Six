@@ -48,6 +48,45 @@
       ]
     },
     {
+      "version": "2026.22.28",
+      "date": "2026-05-26",
+      "title": "Advanced Editor & Faster Startup",
+      "changes": [
+        {
+          "type": "feature",
+          "description": "Editor: Added the Advanced Editor — a canvas-based multi-camera layout where you can freely position and resize each camera tile and overlay (timestamp, dashboard, minimap), with native aspect-locked resize, snap-to-edge guides, and per-element scale controls. Exports honor the layout exactly, with the export canvas aspect ratio driven by what you arrange."
+        },
+        {
+          "type": "feature",
+          "description": "Export: Added the Tesla Screen Dash dashboard overlay style — a top-right HUD that mimics the in-car driving display, with PRND, large speed readout, MPH/KPH unit, Self-Driving / Manual label, a vertical regen/accel bar, and a wall-clock readout. Auto-configures a small dark minimap in the top-right corner on first use."
+        },
+        {
+          "type": "feature",
+          "description": "Playback: Added bindable keyboard shortcuts for playback speed — Speed Up, Speed Down, Reset to 1x, and Max (4x). Assign keys in Settings → Keyboard Shortcuts; no defaults set."
+        },
+        {
+          "type": "fix",
+          "description": "SentryUSB: Drive-data.json files larger than 512 MB now load correctly. The renderer previously hit V8's max string length when reading 1 GB+ files; parsing now streams in the main process and only the small grouped-drives result crosses IPC."
+        },
+        {
+          "type": "fix",
+          "description": "Export: Advanced Editor exports now work reliably across all encoders (NVENC, AMF, QuickSync, VAAPI, VideoToolbox, and libx264). Output is always padded to a 16-pixel multiple (was previously GPU-only), and overlarge AE layouts auto-downscale to fit the encoder ceiling with a user-visible toast instead of hard-failing."
+        },
+        {
+          "type": "improvement",
+          "description": "Startup: Removed the 'Checking for updates…' overlay on launch. FFmpeg detection now runs asynchronously (no main-thread freeze) and the update check runs silently in the background — the app is interactive immediately on launch."
+        },
+        {
+          "type": "improvement",
+          "description": "Drives tab: Now shows a loading spinner with progress while a large drive-data.json is being streamed and grouped, instead of looking like 'No drive data loaded' the whole time."
+        },
+        {
+          "type": "improvement",
+          "description": "SentryUSB: Picking the same drive-data.json multiple times (e.g., re-selecting in Settings while the startup auto-load is still in flight) no longer kicks off parallel parses — duplicate loads of the same file reuse the in-flight promise."
+        }
+      ]
+    },
+    {
       "version": "2026.17.27",
       "date": "2026-04-24",
       "title": "Linux Support & UX Polish",

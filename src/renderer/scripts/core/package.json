@@ -1,0 +1,4 @@
+{
+  "type": "module",
+  "//": "Marks this directory's .js files as ESM so the main process can dynamic-import driveGrouper.js. The renderer already treats them as ESM via <script type=\"module\"> — this file is for Node's module resolution only."
+}
