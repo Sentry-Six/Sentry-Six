@@ -6,6 +6,7 @@
   "scripts": {
     "start": "electron .",
     "dev": "electron .",
+    "test": "jest",
     "build": "electron-builder --publish never",
     "build:win": "electron-builder --win --publish never",
     "build:mac": "electron-builder --mac --publish never",
@@ -24,7 +25,8 @@
   "type": "commonjs",
   "devDependencies": {
     "electron": "^39.2.7",
-    "electron-builder": "^26.6.0"
+    "electron-builder": "^26.6.0",
+    "jest": "^30.4.2"
   },
   "dependencies": {
     "electron-updater": "^6.1.7",

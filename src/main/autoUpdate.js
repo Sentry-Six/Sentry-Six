@@ -381,9 +381,20 @@ function registerAutoUpdateIpc(deps) {
     }
   });
 
+  // quitAndInstall throws if no update was actually downloaded, which would
+  // leave the app running with no way to exit — fall back to a plain quit.
+  function quitAndInstallOrExit() {
+    try {
+      autoUpdater.quitAndInstall(false, true);
+    } catch (err) {
+      console.error('[UPDATE] quitAndInstall failed, quitting normally:', err.message);
+      app.quit();
+    }
+  }
+
   ipcMain.handle('update:installAndRestart', async () => {
     if (autoUpdater) {
-      autoUpdater.quitAndInstall(false, true);
+      quitAndInstallOrExit();
     } else {
       app.quit();
     }
@@ -392,7 +403,7 @@ function registerAutoUpdateIpc(deps) {
   ipcMain.handle('update:exit', async () => {
     if (app.isPackaged && autoUpdater) {
       // Both platforms apply the downloaded update via Squirrel on quit.
-      autoUpdater.quitAndInstall(false, true);
+      quitAndInstallOrExit();
     } else {
       app.quit();
     }
@@ -445,9 +456,7 @@ function registerAutoUpdateIpc(deps) {
     try {
       console.log(`[UPDATE] Dev-triggered pre-release install: ${tag}`);
 
-      // Remember originals so we can restore after the download. Using
-      // `once` wrappers means we don't accumulate listeners across
-      // repeated dev installs in the same session.
+      // Remember originals so we can restore after the download.
       const originalAllowPrerelease = autoUpdater.allowPrerelease;
       const originalAllowDowngrade = autoUpdater.allowDowngrade;
 
@@ -460,21 +469,41 @@ function registerAutoUpdateIpc(deps) {
         releaseType: 'prerelease'
       });
 
-      const restore = () => {
-        autoUpdater.allowPrerelease = originalAllowPrerelease;
-        autoUpdater.allowDowngrade = originalAllowDowngrade;
-      };
-      autoUpdater.once('error', restore);
-      autoUpdater.once('update-downloaded', () => {
-        restore();
+      // cleanup() must undo everything the prerelease attempt changed —
+      // flags, feed, and BOTH event listeners. Removing the sibling listener
+      // matters: a stale update-downloaded listener left behind by a failed
+      // attempt would force quitAndInstall in the middle of a later normal
+      // update in the same session.
+      const onError = () => cleanup();
+      const onDownloaded = () => {
+        cleanup();
         // Both platforms apply the downloaded update via Squirrel on quit.
         // Same quitAndInstall signature used by the normal update flow.
         autoUpdater.quitAndInstall(false, true);
-      });
+      };
+      const cleanup = () => {
+        autoUpdater.allowPrerelease = originalAllowPrerelease;
+        autoUpdater.allowDowngrade = originalAllowDowngrade;
+        autoUpdater.setFeedURL({
+          provider: 'github',
+          owner: UPDATE_CONFIG.owner,
+          repo: UPDATE_CONFIG.repo,
+          releaseType: 'release'
+        });
+        autoUpdater.removeListener('error', onError);
+        autoUpdater.removeListener('update-downloaded', onDownloaded);
+      };
+      autoUpdater.once('error', onError);
+      autoUpdater.once('update-downloaded', onDownloaded);
 
-      await autoUpdater.checkForUpdates();
-      await autoUpdater.downloadUpdate();
-      return { success: true, downloading: true };
+      try {
+        await autoUpdater.checkForUpdates();
+        await autoUpdater.downloadUpdate();
+        return { success: true, downloading: true };
+      } catch (err) {
+        cleanup();
+        throw err;
+      }
     } catch (err) {
       console.error('[UPDATE] Pre-release install failed:', err.message);
       return { success: false, error: err.message };
