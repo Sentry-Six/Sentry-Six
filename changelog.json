@@ -3,8 +3,40 @@
     {
       "version": "2026.24.29",
       "date": "2026-06-10",
-      "title": "Export Reliability & Performance",
+      "title": "Liquid Glass Redesign, Export Reliability & Performance",
       "changes": [
+        {
+          "type": "feature",
+          "description": "Theme: Complete Liquid Glass redesign matching the SentryCloud / Sentry Drive look — translucent frosted panels with specular edges, an ambient green glow behind the UI, the SentryCloud green accent replacing cyan throughout, and new Inter + JetBrains Mono typography. The light theme has been retired; the app is now dark-only."
+        },
+        {
+          "type": "feature",
+          "description": "Theme: The Glass Blur slider in Settings now drives every glass surface live — the sidebar, dashboard and map widgets, all modals (Settings, Export, Advanced Editor, changelog, and more), toasts, and the export progress pill — with its range extended to 30px for a fully frosted look."
+        },
+        {
+          "type": "feature",
+          "description": "Drives: Drive cards redesigned to match Sentry Drive — departure and arrival times joined by a route track with origin/destination pins, real street and place names for where each drive started and ended (resolved via OpenStreetMap, cached on disk, fetched only for cards on screen), a red disengagement line, and pill chips for distance, duration, FSD percentage, and available footage."
+        },
+        {
+          "type": "feature",
+          "description": "Sidebar: The classic sidebar now wears Sentry Drive's ambient panel backdrop, and both sidebars use its glass card styling for clips and drives, with sticky date headers that footage scrolls beneath."
+        },
+        {
+          "type": "fix",
+          "description": "Drives: Loading a large drive-data.json no longer freezes the app when parsing finishes. The entire GPS dataset previously crossed between processes in one enormous message; the drive list now receives lightweight stats and each drive's full route loads on demand when you open it."
+        },
+        {
+          "type": "fix",
+          "description": "Drives: The window stays smooth and draggable while drive data loads — parsing and grouping now run on worker threads instead of the app's main process, and the result is handed over zero-copy."
+        },
+        {
+          "type": "fix",
+          "description": "Sidebar: Resizing the classic sidebar is no longer laggy with large clip or drive lists. Width updates are batched to one per frame and off-screen cards skip layout entirely, which also makes long lists scroll and render faster."
+        },
+        {
+          "type": "improvement",
+          "description": "Drives: Drive-data.json files load roughly 35% faster (the drive-tags pass runs in parallel on another CPU core), and re-opening the same unchanged file — including after a window reload — is instant instead of re-parsing for minutes."
+        },
         {
           "type": "fix",
           "description": "Export: Fixed exports failing with 'code 4294967274' on unusual custom layouts. Camera tiles spread far apart could demand an output video larger than any encoder accepts; the export now uniformly scales the whole composition down to fit (max 8192px per side) instead of failing, and invalid layout data falls back to the standard grid."
