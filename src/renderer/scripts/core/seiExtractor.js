@@ -67,34 +67,66 @@ async function extractSeiFromFile(file) {
     return extractSeiFromBuffer(buffer);
 }
 
+// Bounded LRU cache of parsed telemetry, keyed by source file identity.
+// Without it, every segment switch re-reads and re-parses the whole MP4
+// (seconds per clip). Each cached clip is roughly 0.5-1MB of SEI objects;
+// the hard cap keeps the cache to a few MB no matter how long the session
+// runs. Nothing mutates the cached arrays after extraction, so entries can
+// be returned by reference.
+const SEI_CACHE_MAX = 8;
+const seiCache = new Map();
+
+function seiCacheKey(entry) {
+    if (entry?.file?.isElectronFile && entry.file?.path) return entry.file.path;
+    const f = entry?.file;
+    if (f instanceof File) return `${f.name}|${f.size}|${f.lastModified}`;
+    return null;
+}
+
 /**
  * Extract SEI telemetry from an entry (handles both File objects and Electron paths)
+ * Results are cached (bounded LRU) so revisiting a recent segment is instant.
  * @param {Object} entry - Clip entry with file property
  * @param {string} seiType - SEI type identifier
  * @returns {Promise<{seiData: Array, mapPath: Array}>}
  */
 export async function extractSeiFromEntry(entry, seiType) {
     if (!entry) return { seiData: [], mapPath: [] };
-    
+
+    const cacheKey = seiCacheKey(entry);
+    if (cacheKey && seiCache.has(cacheKey)) {
+        const hit = seiCache.get(cacheKey);
+        // Refresh LRU order
+        seiCache.delete(cacheKey);
+        seiCache.set(cacheKey, hit);
+        return hit;
+    }
+
+    let result = { seiData: [], mapPath: [] };
+
     // If it's an Electron file with path, fetch via file:// protocol
     if (entry.file?.isElectronFile && entry.file?.path) {
         try {
             const fileUrl = filePathToUrl(entry.file.path);
             const response = await fetch(fileUrl);
             const buffer = await response.arrayBuffer();
-            return extractSeiFromBuffer(buffer);
+            result = await extractSeiFromBuffer(buffer);
         } catch (err) {
             console.warn('Failed to extract SEI from Electron file:', err);
-            return { seiData: [], mapPath: [] };
+            return { seiData: [], mapPath: [] }; // don't cache transient read failures
+        }
+    } else if (entry.file && entry.file instanceof File) {
+        // Regular File object
+        result = await extractSeiFromFile(entry.file);
+    }
+
+    if (cacheKey) {
+        seiCache.set(cacheKey, result);
+        if (seiCache.size > SEI_CACHE_MAX) {
+            seiCache.delete(seiCache.keys().next().value);
         }
     }
-    
-    // Regular File object
-    if (entry.file && entry.file instanceof File) {
-        return extractSeiFromFile(entry.file);
-    }
-    
-    return { seiData: [], mapPath: [] };
+    return result;
 }
 
 /**

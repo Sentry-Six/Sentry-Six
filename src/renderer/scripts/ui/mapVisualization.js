@@ -8,9 +8,14 @@
 
 // Map state
 let mapMarker = null;
+let mapMarkerArrowImg = null; // Cached arrow <img> inside the marker icon
 let currentMapArrowRotation = 0;
 let currentMapBearing = 0; // Map rotation for heading-up mode
 let zoomListenerAttached = false;
+// Last rendered position/bearing/size — updateMapMarker runs at 60Hz, and
+// Leaflet setView/setLatLng plus container transform writes are wasted work
+// while the vehicle sits still (most Sentry footage)
+let lastMarkerFrameKey = null;
 
 // Orientation mode: 'heading-up' or 'north-up'
 let mapOrientation = 'heading-up';
@@ -178,6 +183,8 @@ export function updateMapMarker(sei, hasValidGps) {
             if (mapMarker) {
                 mapMarker.remove();
                 mapMarker = null;
+                mapMarkerArrowImg = null;
+                lastMarkerFrameKey = null;
             }
             return;
         }
@@ -190,6 +197,25 @@ export function updateMapMarker(sei, hasValidGps) {
         if (bearingDelta > 180) bearingDelta -= 360;
         if (bearingDelta < -180) bearingDelta += 360;
         currentMapBearing += bearingDelta;
+
+        // Attach zoom listener once to rescale arrow on zoom change
+        if (!zoomListenerAttached) {
+            map.on('zoomend', () => rebuildMarkerIcon(map));
+            zoomListenerAttached = true;
+        }
+
+        const arrowSize = getArrowSizeForZoom(map.getZoom());
+        const halfArrow = Math.round(arrowSize / 2);
+
+        // In both modes the arrow img rotates by currentMapBearing:
+        //   heading-up: counter-rotates against container rotation → points up
+        //   north-up: shows actual heading direction
+        const arrowRotation = currentMapBearing;
+
+        // Nothing visibly changed since last frame — skip all Leaflet/DOM work
+        const frameKey = `${lat.toFixed(6)},${lon.toFixed(6)},${currentMapBearing.toFixed(1)},${arrowSize},${mapOrientation}`;
+        if (mapMarker && frameKey === lastMarkerFrameKey) return;
+        lastMarkerFrameKey = frameKey;
 
         const mapContainer = map.getContainer();
 
@@ -208,20 +234,6 @@ export function updateMapMarker(sei, hasValidGps) {
             }
         }
 
-        // Attach zoom listener once to rescale arrow on zoom change
-        if (!zoomListenerAttached) {
-            map.on('zoomend', () => rebuildMarkerIcon(map));
-            zoomListenerAttached = true;
-        }
-
-        const arrowSize = getArrowSizeForZoom(map.getZoom());
-        const halfArrow = Math.round(arrowSize / 2);
-
-        // In both modes the arrow img rotates by currentMapBearing:
-        //   heading-up: counter-rotates against container rotation → points up
-        //   north-up: shows actual heading direction
-        const arrowRotation = currentMapBearing;
-
         if (!mapMarker) {
             const arrowIcon = L.divIcon({
                 className: 'arrow-marker-icon',
@@ -231,17 +243,18 @@ export function updateMapMarker(sei, hasValidGps) {
             });
 
             mapMarker = L.marker(latlng, { icon: arrowIcon }).addTo(map);
+            mapMarkerArrowImg = mapMarker._icon?.querySelector('img') || null;
         } else {
             mapMarker.setLatLng(latlng);
-            // Update arrow rotation and size
-            const iconEl = mapMarker._icon;
-            if (iconEl) {
-                const img = iconEl.querySelector('img');
-                if (img) {
-                    img.style.width = `${arrowSize}px`;
-                    img.style.height = `${arrowSize}px`;
-                    img.style.transform = `rotate(${arrowRotation}deg)`;
-                }
+            // Update arrow rotation and size (img element cached — re-query
+            // only if the icon element was rebuilt, e.g. after setIcon)
+            if (!mapMarkerArrowImg || !mapMarkerArrowImg.isConnected) {
+                mapMarkerArrowImg = mapMarker._icon?.querySelector('img') || null;
+            }
+            if (mapMarkerArrowImg) {
+                mapMarkerArrowImg.style.width = `${arrowSize}px`;
+                mapMarkerArrowImg.style.height = `${arrowSize}px`;
+                mapMarkerArrowImg.style.transform = `rotate(${arrowRotation}deg)`;
             }
         }
 
@@ -257,6 +270,8 @@ export function updateMapMarker(sei, hasValidGps) {
     } else if (mapMarker) {
         mapMarker.remove();
         mapMarker = null;
+        mapMarkerArrowImg = null;
+        lastMarkerFrameKey = null;
     }
 }
 
@@ -268,6 +283,8 @@ export function clearMapMarker() {
         mapMarker.remove();
         mapMarker = null;
     }
+    mapMarkerArrowImg = null;
+    lastMarkerFrameKey = null;
     currentMapArrowRotation = 0;
     currentMapBearing = 0;
     window._mapCurrentMarkerLatLng = null;

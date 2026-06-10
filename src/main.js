@@ -281,6 +281,11 @@ async function performVideoExport(event, exportId, exportData, ffmpegPath) {
     sendProgress(2, { key: 'ui.export.analyzingSegments' });
 
     const durationSec = (endTimeMs - startTimeMs) / 1000;
+    // An empty/invalid range produces an FFmpeg run that emits zero frames and
+    // either fails with a cryptic encoder error or "succeeds" with a 0-byte file.
+    if (!Number.isFinite(durationSec) || durationSec <= 0.05) {
+      throw new Error('Export range is empty — move the start/end markers apart and try again');
+    }
     const selectedCameras = new Set(cameras || CAMERA_ORDER);
 
     // Find overlapping segments
@@ -467,59 +472,99 @@ async function performVideoExport(event, exportId, exportData, ffmpegPath) {
     // Calculate output dimensions
     let totalW, totalH, cols, rows;
     let baseInputIdx = null;
+    // Custom-layout geometry, computed once here and consumed by the filter
+    // builder below. Stays null when layoutData is missing or unusable, in
+    // which case the standard grid layout is used.
+    let customLayout = null;
 
-    if (layoutData && layoutData.cameras && Object.keys(layoutData.cameras).length > 0) {
-      // Use custom layout - map canvas positions to video coordinates
-      const cameraLayouts = layoutData.cameras;
+    if (layoutData && layoutData.cameras && typeof layoutData.cameras === 'object') {
+      // Custom layout - map canvas card positions to video coordinates.
+      // Geometry comes from the renderer's drag-and-drop canvas and is
+      // untrusted: stale state or extreme layouts can carry non-finite values
+      // or spread cards so far apart that the bounding box exceeds what any
+      // encoder accepts (odd or oversized dimensions both kill the encoder
+      // with "Invalid argument" before a single frame is written).
+      const isValidRect = (r) => r &&
+        Number.isFinite(r.x) && Number.isFinite(r.y) &&
+        Number.isFinite(r.width) && Number.isFinite(r.height) &&
+        r.width > 0 && r.height > 0;
 
-      // Get card dimensions from layout (all cards have the same size)
-      // This is the size of each card on the canvas
-      const firstLayout = cameraLayouts[Object.keys(cameraLayouts)[0]];
-      const cardWidth = firstLayout?.width || 200;
-      const cardHeight = firstLayout?.height || 112;
+      const entries = activeCamerasForGrid
+        .filter(c => isValidRect(layoutData.cameras[c]))
+        .map(c => ({ camera: c, rect: layoutData.cameras[c] }));
 
-      // Scale factors: map canvas card size to native camera size
-      // Each card on the canvas represents one camera at native size (w x h)
-      const scaleX = w / cardWidth; // Map card width to camera width
-      const scaleY = h / cardHeight; // Map card height to camera height
+      if (entries.length > 0) {
+        // All cards share one size in the editor; the first valid card maps
+        // canvas pixels to native camera pixels.
+        const cardWidth = entries[0].rect.width;
+        const cardHeight = entries[0].rect.height;
+        const scaleX = w / cardWidth;
+        const scaleY = h / cardHeight;
 
-      // Calculate bounding box: find min position and max position + camera size
-      let minX = Infinity, minY = Infinity;
-      let maxRight = -Infinity, maxBottom = -Infinity;
+        // Bounding box in video coordinates at full camera resolution
+        let minX = Infinity, minY = Infinity, maxRight = -Infinity, maxBottom = -Infinity;
+        for (const { rect } of entries) {
+          const videoX = rect.x * scaleX;
+          const videoY = rect.y * scaleY;
+          minX = Math.min(minX, videoX);
+          minY = Math.min(minY, videoY);
+          maxRight = Math.max(maxRight, videoX + w);
+          maxBottom = Math.max(maxBottom, videoY + h);
+        }
 
-      for (const camera of activeCamerasForGrid) {
-        const layout = cameraLayouts[camera];
-        if (!layout) continue;
+        // Cap the canvas. Spread-out layouts multiply the output resolution;
+        // libx264 hard-fails past 16384px and the encode is impractically slow
+        // and memory-hungry well before that. Downscale the whole composition
+        // uniformly instead of failing — the layout is preserved, only the
+        // pixel budget shrinks.
+        const MAX_CANVAS_DIM = 8192;
+        const rawW = maxRight - minX;
+        const rawH = maxBottom - minY;
+        const capScale = Math.min(1, MAX_CANVAS_DIM / rawW, MAX_CANVAS_DIM / rawH);
+        if (capScale < 1) {
+          console.warn(`[LAYOUT] Custom layout canvas ${Math.ceil(rawW)}x${Math.ceil(rawH)} exceeds ${MAX_CANVAS_DIM}px, downscaling composition by ${capScale.toFixed(3)}`);
+        }
 
-        // Position in video coordinates (scale from canvas)
-        const videoX = layout.x * scaleX;
-        const videoY = layout.y * scaleY;
+        const camW = Math.max(2, makeEven(w * capScale));
+        const camH = Math.max(2, makeEven(h * capScale));
 
-        // Camera ends at position + native size
-        const cameraRight = videoX + w;
-        const cameraBottom = videoY + h;
+        // Per-camera placements, offset so the canvas starts at 0,0
+        const placements = entries.map(({ camera, rect }) => ({
+          camera,
+          x: Math.round((rect.x * scaleX - minX) * capScale),
+          y: Math.round((rect.y * scaleY - minY) * capScale)
+        }));
 
-        if (videoX < minX) minX = videoX;
-        if (videoY < minY) minY = videoY;
-        if (cameraRight > maxRight) maxRight = cameraRight;
-        if (cameraBottom > maxBottom) maxBottom = cameraBottom;
+        // Canvas size derived from the rounded placements so every camera is
+        // guaranteed to fit, padded up to even for the encoders.
+        totalW = makeEven(Math.max(...placements.map(p => p.x)) + camW);
+        totalH = makeEven(Math.max(...placements.map(p => p.y)) + camH);
+
+        // Non-overlapping tiles compose with a single xstack pass, which
+        // benchmarks ~2x faster than chaining one full-canvas overlay per
+        // camera (each overlay re-touches the whole canvas serially).
+        // Overlapping tiles keep the overlay chain so stacking order works.
+        const tilesOverlap = placements.some((a, i) => placements.some((b, j) => j > i &&
+          a.x < b.x + camW && b.x < a.x + camW &&
+          a.y < b.y + camH && b.y < a.y + camH));
+        const useXstack = !tilesOverlap;
+
+        customLayout = { placements, camW, camH, useXstack };
+        cols = 0; rows = 0; // Not used for custom layout
+        console.log(`📐 Custom layout: ${totalW}x${totalH} (cameras at ${camW}x${camH}, card ${cardWidth}x${cardHeight}, scale ${scaleX.toFixed(3)}x/${scaleY.toFixed(3)}y, cap ${capScale.toFixed(3)}, compose ${useXstack ? 'xstack' : 'overlay'})`);
+
+        // The overlay chain needs a black base canvas input; xstack fills
+        // empty regions itself via fill=black.
+        if (!useXstack) {
+          baseInputIdx = inputs.length + 1;
+          cmd.push('-f', 'lavfi', '-i', `color=c=black:s=${totalW}x${totalH}:r=${FPS}:d=${durationSec}`);
+        }
+      } else if (Object.keys(layoutData.cameras).length > 0) {
+        console.warn('[LAYOUT] Ignoring custom layout: no valid card geometry for the selected cameras, falling back to grid');
       }
+    }
 
-      // Total output size is from 0 to max (we'll offset positions to start at 0)
-      totalW = Math.ceil(maxRight - minX);
-      totalH = Math.ceil(maxBottom - minY);
-
-      // Ensure even dimensions for video encoding
-      totalW = totalW + (totalW % 2);
-      totalH = totalH + (totalH % 2);
-
-      cols = 0; rows = 0; // Not used for custom layout
-      console.log(`📐 Custom layout: ${totalW}x${totalH} (cameras at native ${w}x${h}, card ${cardWidth}x${cardHeight}, scale ${scaleX.toFixed(3)}x/${scaleY.toFixed(3)}y)`);
-
-      // Add base canvas input for custom layout (after black source)
-      baseInputIdx = inputs.length + 1;
-      cmd.push('-f', 'lavfi', '-i', `color=c=black:s=${totalW}x${totalH}:r=${FPS}:d=${durationSec}`);
-    } else {
+    if (!customLayout) {
       // Grid layout - calculate grid dimensions and total output resolution
       const numStreams = activeCamerasForGrid.length;
       if (numStreams <= 1) { cols = 1; rows = 1; }
@@ -842,59 +887,27 @@ async function performVideoExport(event, exportId, exportData, ffmpegPath) {
     const filters = [];
     const streamTags = [];
 
-    if (layoutData && layoutData.cameras && Object.keys(layoutData.cameras).length > 0) {
-      // Custom layout using overlay filters (base canvas already added as input)
-      // Cameras use native size (w x h), only positioning comes from layout
-
-      const cameraLayouts = layoutData.cameras;
-
-      // Get card dimensions from layout (all cards have the same size)
-      const firstLayout = cameraLayouts[Object.keys(cameraLayouts)[0]];
-      const cardWidth = firstLayout?.width || 200;
-      const cardHeight = firstLayout?.height || 112;
-
-      // Calculate scale factors: map canvas card size to native camera size
-      const scaleX = w / cardWidth;
-      const scaleY = h / cardHeight;
-
-      // Find minimum positions to offset all cameras (so output starts at 0,0)
-      let minX = Infinity, minY = Infinity;
-      for (const camera of activeCamerasForGrid) {
-        const layout = cameraLayouts[camera];
-        if (!layout) continue;
-        const videoX = layout.x * scaleX;
-        const videoY = layout.y * scaleY;
-        if (videoX < minX) minX = videoX;
-        if (videoY < minY) minY = videoY;
-      }
+    if (customLayout) {
+      // Custom layout using overlay filters (base canvas already added as input).
+      // Geometry was sanitized and capped when the canvas size was computed.
+      const { placements, camW, camH } = customLayout;
 
       const cameraStreams = [];
 
-      for (let i = 0; i < activeCamerasForGrid.length; i++) {
-        const camera = activeCamerasForGrid[i];
-        const layout = cameraLayouts[camera];
-        if (!layout) continue;
+      for (let i = 0; i < placements.length; i++) {
+        const { camera, x, y } = placements[i];
 
         const inputIdx = cameraInputMap.get(camera);
         const hasVideo = inputIdx !== undefined;
         const srcIdx = hasVideo ? inputIdx : blackInputIdx;
         const isMirrored = mirrorCameras && ['back', 'left_repeater', 'right_repeater'].includes(camera);
 
-        // Scale camera to native size (w x h) - exactly like old grid code
-        // Ensure even dimensions
-        const finalW = w + (w % 2);
-        const finalH = h + (h % 2);
-
-        // Calculate position from canvas layout (scale and offset)
-        const x = Math.round((layout.x * scaleX) - minX);
-        const y = Math.round((layout.y * scaleY) - minY);
-
         // Use smoother frame rate conversion
         // Normalize timestamps, convert frame rate, mirror if needed, scale to target size
         let chain = `[${srcIdx}:v]setpts=PTS-STARTPTS`;
         chain += `,fps=${FPS}:round=near`; // Smooth frame rate conversion
         if (hasVideo && isMirrored) chain += ',hflip';
-        chain += `,scale=${finalW}:${finalH}:force_original_aspect_ratio=disable:flags=lanczos,setsar=1[v${i}]`;
+        chain += `,scale=${camW}:${camH}:force_original_aspect_ratio=disable:flags=lanczos,setsar=1[v${i}]`;
 
         filters.push(chain);
         const streamTag = `[v${i}]`;
@@ -904,24 +917,29 @@ async function performVideoExport(event, exportId, exportData, ffmpegPath) {
       // Apply blur zones to individual camera streams BEFORE grid composition
       const blurResult = await applyBlurZonesToStreams({
         blurZones, blurType, streams: cameraStreams, streamTags: null,
-        cameraW: w + (w % 2), cameraH: h + (h % 2),
+        cameraW: camW, cameraH: camH,
         filters, cmd, tempFiles, inputCount: inputs.length,
         extraOffset: baseInputIdx !== null ? 1 : 0, exportId, FPS
       });
       if (blurResult) blurFailed = true;
 
-      // Chain overlays: start with base, overlay each camera in order
-      let currentTag = `[${baseInputIdx}:v]`;
-      for (let i = 0; i < cameraStreams.length; i++) {
-        const stream = cameraStreams[i];
-        const nextTag = i === cameraStreams.length - 1 ? '[grid]' : `[overlay${i}]`;
-        filters.push(`${currentTag}${stream.tag}overlay=${stream.x}:${stream.y}:format=auto${nextTag}`);
-        currentTag = nextTag;
-      }
-
-      // If no cameras, just copy base to grid
-      if (cameraStreams.length === 0) {
-        filters.push(`[${baseInputIdx}:v]copy[grid]`);
+      if (customLayout.useXstack) {
+        // Single compositing pass; gaps between tiles are filled black
+        if (cameraStreams.length === 1) {
+          filters.push(`${cameraStreams[0].tag}copy[grid]`);
+        } else {
+          const layoutSpec = cameraStreams.map(s => `${s.x}_${s.y}`).join('|');
+          filters.push(`${cameraStreams.map(s => s.tag).join('')}xstack=inputs=${cameraStreams.length}:layout=${layoutSpec}:fill=black[grid]`);
+        }
+      } else {
+        // Chain overlays: start with base, overlay each camera in order
+        let currentTag = `[${baseInputIdx}:v]`;
+        for (let i = 0; i < cameraStreams.length; i++) {
+          const stream = cameraStreams[i];
+          const nextTag = i === cameraStreams.length - 1 ? '[grid]' : `[overlay${i}]`;
+          filters.push(`${currentTag}${stream.tag}overlay=${stream.x}:${stream.y}:format=auto${nextTag}`);
+          currentTag = nextTag;
+        }
       }
 
     } else {
@@ -973,8 +991,11 @@ async function performVideoExport(event, exportId, exportData, ffmpegPath) {
     const h264MaxRes = 4096;
     const hevcMaxRes = 8192;
 
-    // Check HEVC encoder for high resolutions (Maximum quality often exceeds H.264 limits)
-    const hevcGpu = detectHEVCEncoder(ffmpegPath);
+    // Check HEVC encoder only when it could actually be used (H.264 GPU limits
+    // exceeded) — first detection spawns a test encode, so don't pay that cost
+    // on exports that will never pick HEVC.
+    const needsHevc = !mobileExport && gpu && (totalW > h264MaxRes || totalH > h264MaxRes);
+    const hevcGpu = needsHevc ? detectHEVCEncoder(ffmpegPath) : null;
 
     // Determine best encoder: prefer H.264 GPU, fall back to HEVC GPU for high res, then CPU
     let useGpu = false;
@@ -1152,7 +1173,12 @@ async function performVideoExport(event, exportId, exportData, ffmpegPath) {
     {
       const lastIdx = filters.length - 1;
       filters[lastIdx] = filters[lastIdx].replace('[out]', '[pre_norm]');
-      const padExpr = useGpu ? ',pad=ceil(iw/16)*16:ceil(ih/16)*16:0:0:color=0x1A1A1A' : '';
+      // CPU path still pads to even: yuv420p encoders reject odd dimensions
+      // outright ("Invalid argument" before the first frame), so this is the
+      // last line of defense regardless of what the upstream graph produced.
+      const padExpr = useGpu
+        ? ',pad=ceil(iw/16)*16:ceil(ih/16)*16:0:0:color=0x1A1A1A'
+        : ',pad=ceil(iw/2)*2:ceil(ih/2)*2:0:0:color=0x1A1A1A';
       filters.push(`[pre_norm]format=yuv420p${padExpr}[out]`);
     }
 
@@ -1242,10 +1268,19 @@ async function performVideoExport(event, exportId, exportData, ffmpegPath) {
         } else if (gpu && (totalW > h264MaxRes || totalH > h264MaxRes)) {
           console.log(`[WARN] Resolution ${totalW}×${totalH} exceeds GPU limits, using CPU encoder`);
         }
-        const maxThreads = Math.min(4, Math.floor(os.cpus().length / 2));
+        // Use the cores, bounded by a RAM budget: each x264 frame thread
+        // buffers in-flight frames (~7.5 bytes/pixel measured at 16 vs 48
+        // threads), so wide-open threading on a Max-quality canvas can push a
+        // low-RAM machine into swapping — slower than fewer threads. On
+        // machines with headroom this resolves to ~all cores (measured +24%
+        // over a fixed 16-thread cap on a 32-thread box).
+        const coreCap = Math.max(4, os.cpus().length - 2);
+        const perThreadBytes = totalW * totalH * 7.5;
+        const ramCap = Math.max(4, Math.floor((os.freemem() * 0.25) / perThreadBytes));
+        const maxThreads = Math.min(coreCap, ramCap, 32);
         args.push('-c:v', 'libx264', '-preset', mobileExport ? 'faster' : 'fast', '-crf', crf.toString());
         args.push('-threads', maxThreads.toString());
-        args.push('-x264-params', `threads=${maxThreads}:thread-input=1:thread-lookahead=2`);
+        args.push('-x264-params', `threads=${maxThreads}:thread-input=1`);
       }
 
       args.push('-t', outputDurationSec.toString());
@@ -1335,7 +1370,7 @@ async function performVideoExport(event, exportId, exportData, ffmpegPath) {
             return;
           }
 
-          console.error('FFmpeg error:', stderr.slice(-500));
+          console.error(`FFmpeg error (canvas ${totalW}x${totalH}, encoder ${retriedWithCpu || !useGpu ? 'cpu' : activeEncoder?.codec}):`, stderr.slice(-500));
           const errLower = stderr.toLowerCase();
           const isEncoderInitFailure =
             errLower.includes('could not open encoder') ||
@@ -1373,7 +1408,10 @@ async function performVideoExport(event, exportId, exportData, ffmpegPath) {
             sendComplete(false, { key: 'ui.export.exportFailedPathNotFound' });
           } else if (errLower.includes('read-only file system')) {
             sendComplete(false, { key: 'ui.export.exportFailedReadOnly' });
-          } else if (isEncoderInitFailure) {
+          } else if (isEncoderInitFailure && useGpu && !retriedWithCpu) {
+            // Only blame the GPU when a GPU encoder actually failed; after the
+            // CPU retry also fails the cause is upstream (filter graph produced
+            // no frames), and the GPU message would send users down the wrong path.
             sendComplete(false, { key: 'ui.export.exportFailedGpuEncoderInit' });
           } else if (errLower.includes('invalid argument') && (errLower.includes('error opening output file') || errLower.includes('no such file') || errLower.includes('filename'))) {
             sendComplete(false, { key: 'ui.export.exportFailedInvalidPath' });
@@ -2237,10 +2275,11 @@ ipcMain.handle('fs:stat', async (_event, filePath) => {
   }
 });
 
-// Read file contents (for event.json)
+// Read file contents (for event.json). Async so a folder full of events
+// doesn't serialize blocking reads through the main-process event loop.
 ipcMain.handle('fs:readFile', async (_event, filePath) => {
   try {
-    return fs.readFileSync(filePath, 'utf8');
+    return await fs.promises.readFile(filePath, 'utf8');
   } catch (err) {
     console.error('Error reading file:', err);
     throw err;

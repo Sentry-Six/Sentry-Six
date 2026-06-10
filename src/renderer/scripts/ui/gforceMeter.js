@@ -11,6 +11,11 @@ const GFORCE_HISTORY_MAX = 3;
 // G-Force trail history (stores last few positions)
 const gforceHistory = [];
 
+// Last rendered position — this runs at 60Hz, so skip the 8 SVG attribute
+// writes + class/text updates whenever the value hasn't visibly moved
+// (constant while parked/cruising, which is most of Sentry footage)
+let lastRenderKey = null;
+
 // DOM element references (lazily cached)
 let gforceDot = null;
 let gforceTrail1 = null;
@@ -55,6 +60,11 @@ export function updateGForceMeter(sei) {
     // Y: positive = down (braking causes forward force, shown as down)
     const dotX = 30 + (clampedGX * GFORCE_SCALE);
     const dotY = 30 - (clampedGY * GFORCE_SCALE); // Invert Y so acceleration shows up
+
+    // Sub-0.1px movement is invisible at this meter size — skip the DOM work
+    const renderKey = `${dotX.toFixed(1)},${dotY.toFixed(1)}`;
+    if (renderKey === lastRenderKey) return;
+    lastRenderKey = renderKey;
 
     // Update trail history
     gforceHistory.unshift({ x: dotX, y: dotY });
@@ -113,6 +123,7 @@ export function updateGForceMeter(sei) {
  */
 export function resetGForceMeter() {
     getElements();
+    lastRenderKey = null;
     if (gforceDot) {
         gforceDot.setAttribute('cx', 30);
         gforceDot.setAttribute('cy', 30);

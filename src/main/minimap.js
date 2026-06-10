@@ -424,11 +424,17 @@ async function renderMinimapFrameByTime(minimapWindow, timestampMs, width, heigh
 
 // Pre-render minimap overlay to a temp video file
 async function preRenderMinimap(exportId, seiData, mapPath, startTimeMs, endTimeMs, minimapWidth, minimapHeight, ffmpegPath, sendProgress, cancelledExports, darkMode = false) {
-  // Full 36fps for smooth output - but optimized with:
+  // Capture at 12fps instead of the video's 36fps: every frame is a separate
+  // BrowserWindow capturePage round-trip, which dominates export time on long
+  // clips (a 5-minute clip is ~10,800 captures at 36fps). The overlay filter
+  // syncs by timestamp and holds each minimap frame until the next one, so a
+  // 12fps corner map on a 36fps video just updates its marker 12x/second —
+  // visually equivalent at minimap size for a 3x faster pre-render.
+  // Still optimized with:
   // 1. Locked map view (no tile updates after initial load)
   // 2. Interpolated GPS positions for smooth movement
   // 3. Only marker CSS transforms (GPU accelerated)
-  const FPS = 36;
+  const FPS = 12;
   const durationSec = (endTimeMs - startTimeMs) / 1000;
   const totalFrames = Math.ceil(durationSec * FPS);
   
@@ -505,7 +511,7 @@ async function preRenderMinimap(exportId, seiData, mapPath, startTimeMs, endTime
       const pngBuffer = await renderMinimapFrameByTime(minimapWindow, frameTimeMs, minimapWidth, minimapHeight);
       ffmpegProcess.stdin.write(pngBuffer);
       
-      if (frame % 36 === 0 || frame === totalFrames - 1) {
+      if (frame % FPS === 0 || frame === totalFrames - 1) {
         const pct = Math.round((frame / totalFrames) * 100);
         sendProgress(pct, `Pre-rendering minimap... ${pct}%`);
       }

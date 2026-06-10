@@ -1765,6 +1765,13 @@ export async function startExport() {
     const startTimeMs = (Math.min(startPct, endPct) / 100) * totalSec * 1000;
     const endTimeMs = (Math.max(startPct, endPct) / 100) * totalSec * 1000;
 
+    // Coincident markers produce a zero-length export that FFmpeg either fails
+    // on or writes as an empty file — catch it before any heavy work starts
+    if (endTimeMs - startTimeMs < 100) {
+        notify(t('ui.export.exportRangeTooShort') || 'Export range is too short — move the start and end markers apart', { type: 'warn' });
+        return;
+    }
+
     // Calculate filename from the clip's actual start time (accounting for trim markers)
     const exportGroups = state.collection.active?.groups || [];
     const firstTsKey = exportGroups[0]?.timestampKey || '';

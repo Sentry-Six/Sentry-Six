@@ -7,6 +7,10 @@
 let compassNeedle = null;
 let compassValue = null;
 
+// Last rendered heading — called at 60Hz, and SVG transform writes trigger
+// repaints even when the value is identical (e.g. driving straight)
+let lastHeading = null;
+
 function getElements() {
     if (!compassNeedle) {
         compassNeedle = document.getElementById('compassNeedle');
@@ -28,7 +32,12 @@ export function updateCompass(sei) {
     
     // Normalize to 0-360 range
     heading = ((heading % 360) + 360) % 360;
-    
+
+    // Skip the DOM writes when the needle wouldn't visibly move
+    const rounded = Math.round(heading * 10) / 10;
+    if (rounded === lastHeading) return;
+    lastHeading = rounded;
+
     // Rotate the needle - heading 0° = North (pointing up)
     compassNeedle.setAttribute('transform', `rotate(${heading} 30 30)`);
     
@@ -47,6 +56,7 @@ export function updateCompass(sei) {
  */
 export function resetCompass() {
     getElements();
+    lastHeading = null;
     if (compassNeedle) compassNeedle.setAttribute('transform', 'rotate(0 30 30)');
     if (compassValue) compassValue.textContent = '--';
 }

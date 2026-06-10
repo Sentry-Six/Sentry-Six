@@ -8,6 +8,7 @@ let steeringPosition = 0;      // Current displayed angle
 let steeringTarget = 0;        // Target angle from SEI data
 let steeringAnimationId = null;
 let lastSteeringTime = 0;
+let lastAppliedAngle = null;   // Last angle written to the DOM (skip sub-0.1° rewrites)
 
 // DOM element references
 let steeringIcon = null;
@@ -58,30 +59,33 @@ function animateSteeringWheel() {
     const playbackRate = getPlaybackRate();
     const factor = 1 - Math.exp(-STEERING_TRACKING_SPEED * playbackRate * dt);
     steeringPosition += (steeringTarget - steeringPosition) * factor;
-    
-    // Apply to DOM
-    if (steeringIcon) {
-        steeringIcon.style.transform = `rotate(${steeringPosition}deg)`;
-    }
-    if (steeringIconCompact) {
-        steeringIconCompact.style.transform = `rotate(${steeringPosition}deg)`;
-    }
+
+    // Apply to DOM, skipping rewrites for sub-0.1° movement (invisible at
+    // icon size, but each style write still costs a style recalc)
+    applySteeringAngle(steeringPosition);
 
     // Check if we're settled (very close to target)
     if (Math.abs(steeringTarget - steeringPosition) < 0.05) {
         steeringPosition = steeringTarget;
-        if (steeringIcon) {
-            steeringIcon.style.transform = `rotate(${steeringPosition}deg)`;
-        }
-        if (steeringIconCompact) {
-            steeringIconCompact.style.transform = `rotate(${steeringPosition}deg)`;
-        }
+        applySteeringAngle(steeringPosition);
         steeringAnimationId = null;
         return;
     }
     
     // Continue animation
     steeringAnimationId = requestAnimationFrame(animateSteeringWheel);
+}
+
+function applySteeringAngle(angle) {
+    const rounded = Math.round(angle * 10) / 10;
+    if (rounded === lastAppliedAngle) return;
+    lastAppliedAngle = rounded;
+    if (steeringIcon) {
+        steeringIcon.style.transform = `rotate(${rounded}deg)`;
+    }
+    if (steeringIconCompact) {
+        steeringIconCompact.style.transform = `rotate(${rounded}deg)`;
+    }
 }
 
 /**
@@ -101,6 +105,7 @@ export function resetSteeringWheel() {
     stopSteeringAnimation();
     steeringPosition = 0;
     steeringTarget = 0;
+    lastAppliedAngle = null;
     if (!steeringIcon) {
         steeringIcon = document.getElementById('steeringIcon');
     }

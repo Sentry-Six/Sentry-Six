@@ -3359,19 +3359,27 @@ function updateCameraSelect(group) {
 
 async function ingestSentryEventJson(eventAssetsByKey) {
     if (!eventAssetsByKey || eventAssetsByKey.size === 0) return;
-    let needsRender = false;
+    // Read every event.json in parallel — sequential awaits cost one IPC
+    // round-trip per event, which adds up fast on folders with many events.
+    const reads = [];
     for (const [key, assets] of eventAssetsByKey.entries()) {
         if (!assets?.jsonFile) continue;
+        // Handle both browser File objects and Electron path objects
+        const readPromise = (assets.jsonFile.isElectronFile && assets.jsonFile.path)
+            ? window.electronAPI.readFile(assets.jsonFile.path)
+            : assets.jsonFile.text();
+        reads.push(readPromise.then(
+            text => ({ key, text }),
+            err => ({ key, err })
+        ));
+    }
+    let needsRender = false;
+    for (const { key, text, err } of await Promise.all(reads)) {
+        if (err) {
+            console.warn(`Error reading event.json for ${key}:`, err);
+            continue;
+        }
         try {
-            let text;
-            // Handle both browser File objects and Electron path objects
-            if (assets.jsonFile.isElectronFile && assets.jsonFile.path) {
-                // Electron file - read using fs
-                text = await window.electronAPI.readFile(assets.jsonFile.path);
-            } else {
-                // Browser File object
-                text = await assets.jsonFile.text();
-            }
             const meta = JSON.parse(text);
             eventMetaByKey.set(key, meta);
             // Attach meta to all groups in the same Sentry event folder
@@ -3726,6 +3734,12 @@ async function showCollectionAtMs(ms) {
 function updateVisualization(sei) {
     if (!sei) return;
 
+    // This runs at ~60Hz during playback — skip all DOM work when the user
+    // has hidden both overlays it feeds.
+    const dashOn = !!state?.ui?.dashboardEnabled;
+    const mapOn = !!state?.ui?.mapEnabled;
+    if (!dashOn && !mapOn) return;
+
     // Helper to get field value (supports both naming conventions)
     const get = (camel, snake) => sei[camel] ?? sei[snake];
 
@@ -3851,7 +3865,9 @@ function updateVisualization(sei) {
     // Compass Update
     updateCompass(sei);
 
-    updateMapMarker(sei, hasValidGps);
+    // Leaflet work (marker, pan, container transform) is not free even when
+    // the map panel is display:none — skip it entirely while hidden.
+    if (mapOn) updateMapMarker(sei, hasValidGps);
 }
 
 // Toggle Extra Data - prevent all event bubbling to avoid interfering with playback
