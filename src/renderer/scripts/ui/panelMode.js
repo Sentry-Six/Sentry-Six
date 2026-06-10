@@ -159,16 +159,29 @@ export function createClipsPanelMode({ map, clipsCollapseBtn } = {}) {
       e.preventDefault();
     });
 
+    // Apply at most one width per animation frame. mousemove fires faster
+    // than the display refreshes (125Hz+ mice), and every --clips-dock-width
+    // write relayouts the whole sidebar AND the video grid — unthrottled
+    // drags do that several times per frame and visibly drop frames.
+    let pendingWidth = null;
+    let resizeRaf = 0;
     document.addEventListener('mousemove', (e) => {
       if (!isResizing) return;
       const delta = e.clientX - startX;
-      const newWidth = startWidth + delta;
-      applySidebarWidth(Math.max(MIN_SIDEBAR_WIDTH, Math.min(MAX_SIDEBAR_WIDTH, newWidth)));
+      pendingWidth = Math.max(MIN_SIDEBAR_WIDTH, Math.min(MAX_SIDEBAR_WIDTH, startWidth + delta));
+      if (!resizeRaf) {
+        resizeRaf = requestAnimationFrame(() => {
+          resizeRaf = 0;
+          if (isResizing && pendingWidth !== null) applySidebarWidth(pendingWidth);
+        });
+      }
     });
 
     document.addEventListener('mouseup', () => {
       if (!isResizing) return;
       isResizing = false;
+      if (resizeRaf) { cancelAnimationFrame(resizeRaf); resizeRaf = 0; }
+      if (pendingWidth !== null) { applySidebarWidth(pendingWidth); pendingWidth = null; }
       document.body.style.cursor = '';
       document.body.style.userSelect = '';
       // Save the final width

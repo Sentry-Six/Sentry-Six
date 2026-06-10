@@ -1177,6 +1177,9 @@ canvas,
     box-shadow: var(--card-shadow);
     cursor: pointer;
     transition: border-color 0.15s, background 0.15s;
+    /* Skip layout/paint for off-screen cards (long clip lists) */
+    content-visibility: auto;
+    contain-intrinsic-size: auto 104px;
 }
 
 .clip-item:hover {
@@ -7620,6 +7623,10 @@ body>.dashboard-vis-compact.draggable:not(.fixed-to-camera) {
     background: var(--card-bg);
     box-shadow: var(--card-shadow);
     transition: background 0.15s, border-color 0.15s;
+    /* Skip layout/paint for off-screen cards — with 800+ drives loaded,
+       resizing the sidebar would otherwise relayout every card per frame */
+    content-visibility: auto;
+    contain-intrinsic-size: auto 150px;
 }
 
 .drive-item:hover {
