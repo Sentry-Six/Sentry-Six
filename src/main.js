@@ -2522,29 +2522,6 @@ function makeLightSentryUsbDrives(drives) {
   });
 }
 
-// Cheap pre-scan: a raw substring scan of the file (IO-bound, seconds) beats a
-// second full JSON parse (CPU-bound, ~90s on a 400MB file) when the
-// drive-tags key isn't present at all.
-function fileContainsDriveTagsKey(filePath) {
-  return new Promise((resolve) => {
-    let settled = false;
-    const done = (v) => { if (!settled) { settled = true; resolve(v); } };
-    const stream = fs.createReadStream(filePath, { highWaterMark: 4 * 1024 * 1024 });
-    const re = /"drive_?tags"/i;
-    let tail = '';
-    stream.on('data', (chunk) => {
-      const s = tail + chunk.toString('latin1');
-      if (re.test(s)) { stream.destroy(); done(true); return; }
-      tail = s.slice(-16);
-    });
-    stream.on('end', () => done(false));
-    stream.on('close', () => done(false));
-    // On read error, claim the key exists so the caller falls back to the
-    // real parse (which will surface the error properly).
-    stream.on('error', () => done(true));
-  });
-}
-
 ipcMain.handle('sentryUsb:loadAndGroup', async (_event, filePath) => {
   try {
     if (!filePath) return { success: false, error: 'No file path provided' };
@@ -2569,14 +2546,12 @@ ipcMain.handle('sentryUsb:loadAndGroup', async (_event, filePath) => {
       { parser },
       { pick },
       { streamArray },
-      { streamObject },
       chainMod,
       grouperMod,
     ] = await Promise.all([
       import('stream-json'),
       import('stream-json/filters/pick.js'),
       import('stream-json/streamers/stream-array.js'),
-      import('stream-json/streamers/stream-object.js'),
       import('stream-chain'),
       import('./renderer/scripts/core/driveGrouper.js'),
     ]);
@@ -2584,8 +2559,39 @@ ipcMain.handle('sentryUsb:loadAndGroup', async (_event, filePath) => {
     const { groupStoreDataIntoDrives } = grouperMod;
 
     const fileSize = stat.size;
-    console.log(`[SentryUSB] Stream-parsing routes from ${filePath} (${(fileSize / 1024 / 1024).toFixed(1)} MB)`);
+    console.log(`[SentryUSB] Stream-parsing ${filePath} (${(fileSize / 1024 / 1024).toFixed(1)} MB)`);
     const t0 = Date.now();
+
+    // Parse drive tags in a WORKER THREAD concurrently with the routes pass
+    // below. JSON tokenizing is CPU-bound (~5MB/s), so running the second
+    // pass sequentially used to add ~90s on a 400MB file; in parallel on
+    // another core it finishes inside the routes-pass window. Tags are
+    // cosmetic — any worker failure resolves to {} instead of failing the load.
+    const tagsPromise = new Promise((resolve) => {
+      try {
+        const { Worker } = require('worker_threads');
+        const worker = new Worker(path.join(__dirname, 'main', 'driveTagsWorker.js'), {
+          workerData: { filePath },
+        });
+        worker.once('message', (msg) => {
+          if (msg?.ok) {
+            console.log(`[SentryUSB] Tags worker: ${Object.keys(msg.driveTags).length} drive tags in ${Date.now() - t0}ms`);
+            resolve(msg.driveTags);
+          } else {
+            console.warn('[SentryUSB] Tags worker failed:', msg?.error);
+            resolve({});
+          }
+        });
+        worker.once('error', (err) => {
+          console.warn('[SentryUSB] Tags worker error:', err?.message || err);
+          resolve({});
+        });
+      } catch (err) {
+        console.warn('[SentryUSB] Could not start tags worker:', err?.message || err);
+        resolve({});
+      }
+    });
+
     const routes = [];
     {
       const pipeline = chain([
@@ -2607,22 +2613,7 @@ ipcMain.handle('sentryUsb:loadAndGroup', async (_event, filePath) => {
     }
     console.log(`[SentryUSB] Streamed ${routes.length} routes in ${Date.now() - t0}ms`);
 
-    const t1 = Date.now();
-    const driveTags = {};
-    if (await fileContainsDriveTagsKey(filePath)) {
-      const pipeline = chain([
-        fs.createReadStream(filePath),
-        parser(),
-        pick({ filter: /^drive[_]?tags$/i }),
-        streamObject(),
-      ]);
-      for await (const d of pipeline) {
-        driveTags[d.key] = d.value;
-      }
-      console.log(`[SentryUSB] Streamed driveTags (${Object.keys(driveTags).length} keys) in ${Date.now() - t1}ms`);
-    } else {
-      console.log(`[SentryUSB] No drive-tags key in file — skipped tags parse (scan took ${Date.now() - t1}ms)`);
-    }
+    const driveTags = await tagsPromise;
 
     const t2 = Date.now();
     const { drives, driveCount, routeCount } = groupStoreDataIntoDrives({
