@@ -598,6 +598,11 @@ function buildDrive(id, routes, driveTags) {
         accelPushCount,
         tags: Array.isArray(tags) ? tags : [],
         routeTimestampKeys,
+        // First/last GPS coordinate — kept in the light IPC payload so the
+        // drive list can reverse-geocode Departed/Arrived labels without
+        // shipping the full points array.
+        startPoint: flatPoints.length > 0 ? [flatPoints[0][0], flatPoints[0][1]] : null,
+        endPoint: flatPoints.length > 0 ? [flatPoints[flatPoints.length - 1][0], flatPoints[flatPoints.length - 1][1]] : null,
         points: downsample(flatPoints, 3000),
         fsdEvents,
     };

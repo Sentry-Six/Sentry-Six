@@ -4,7 +4,7 @@
  */
 
 import { escapeHtml } from '../lib/utils.js';
-import { formatDriveDuration, formatDriveDistance } from './driveGrouper.js';
+import { formatDriveDistance } from './driveGrouper.js';
 
 // Injected dependencies
 let getState = null;
@@ -110,74 +110,74 @@ export function renderDriveList() {
 
 /**
  * Create a single drive list item element.
+ * Mirrors Sentry Drive's list card: journey times with origin/destination
+ * pins, Departed/Arrived labels, reverse-geocoded place names, a red
+ * disengagement row, and pill chips (distance, duration, FSD, footage).
  */
 function createDriveItem(drive, hasClips, useMetric) {
     const item = document.createElement('div');
     item.className = 'drive-item';
     item.dataset.driveId = String(drive.id);
 
-    const durationStr = formatDriveDuration(drive.durationMs);
+    const startTime = formatDriveTimeMs(drive.startMs);
+    const endTime = formatDriveTimeMs(drive.endMs);
+    const durStr = formatJourneyDuration(drive.durationMs);
     const distanceStr = formatDriveDistance(drive, useMetric);
-    const timeRange = `${formatDriveTimeMs(drive.startMs)} – ${formatDriveTimeMs(drive.endMs)}`;
-    const clipCount = `${drive.clipCount} clip${drive.clipCount !== 1 ? 's' : ''}`;
     const showStats = getShowDriveStats?.() ?? true;
 
-    // Footage badge
-    const footageBadge = hasClips
-        ? `<span class="badge drive-footage-badge" title="Footage available">Footage</span>`
+    // Place name if already resolved, else GPS coords as a fallback until
+    // reverse-geocoding fills it in (see applyDriveLocations).
+    const startPlace = drive._startName || gpsLabel(drive.startPoint);
+    const endPlace = drive._endName || gpsLabel(drive.endPoint);
+
+    const disengagements = drive.fsdDisengagements ?? 0;
+    const disengageHtml = disengagements > 0
+        ? `<div class="drive-diseng"><span class="material-symbols-outlined">warning</span>${disengagements} disengagement${disengagements !== 1 ? 's' : ''}</div>`
         : '';
 
-    // FSD badge with percentage
-    const fsdBadge = drive.hasFsd
-        ? `<span class="badge drive-fsd-badge" title="${Math.round(drive.fsdPercent)}% of clips with FSD active">FSD ${Math.round(drive.fsdPercent)}%</span>`
+    // FSD chip tone matches Sentry Drive: green >= 95%, accent 50-94%, slate below
+    const fsd = drive.fsdPercent ?? 0;
+    const fsdTone = fsd >= 95 ? 'drive-chip--green' : fsd >= 50 ? 'drive-chip--accent' : 'drive-chip--slate';
+    const fsdChip = drive.hasFsd
+        ? `<span class="drive-chip ${fsdTone}"><span class="material-symbols-outlined">auto_awesome</span>FSD ${fsd}%</span>`
         : '';
 
-    // Tag badges (max 3)
-    const tagBadges = drive.tags.slice(0, 3).map(tag =>
-        `<span class="badge drive-tag-badge">${escapeHtml(tag)}</span>`
+    const footageChip = hasClips
+        ? `<span class="drive-chip drive-chip--green" title="Footage available — click to play"><span class="material-symbols-outlined">videocam</span>Footage</span>`
+        : '';
+
+    const accelChip = showStats && drive.accelPushCount > 0
+        ? `<span class="drive-chip drive-chip--slate" title="Accelerator overrides while FSD active"><span class="material-symbols-outlined">bolt</span>${drive.accelPushCount}</span>`
+        : '';
+
+    const tagPills = (drive.tags ?? []).map(tag =>
+        `<span class="tag-pill">${escapeHtml(tag)}</span>`
     ).join('');
-
-    // Accel pushes + FSD disengagements (shown when stats toggle is on)
-    const accelStat = showStats && drive.accelPushCount > 0
-        ? `<span class="drive-stat drive-stat-muted" title="Accelerator overrides while FSD active">
-               <svg viewBox="0 0 24 24" width="11" height="11" fill="currentColor" stroke="none">
-                   <path d="M11 21h-1l1-7H7.5c-.88 0-.33-.75-.31-.78C8.27 10.87 10.42 7.28 13 3h1l-1 7h3.5c.49 0 .56.33.47.51L11 21z"/>
-               </svg>
-               ${drive.accelPushCount}
-           </span>`
-        : '';
-    const disengageStat = showStats && drive.fsdDisengagements > 0
-        ? `<span class="drive-stat drive-stat-muted" title="FSD disengagements">
-               <svg viewBox="0 0 24 24" width="11" height="11" fill="currentColor" stroke="none">
-                   <path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/>
-               </svg>
-               ${drive.fsdDisengagements}
-           </span>`
-        : '';
+    const tagsRow = tagPills ? `<div class="drive-tags">${tagPills}</div>` : '';
 
     item.innerHTML = `
-        <div class="drive-item-main">
-            <div class="drive-item-time">${escapeHtml(timeRange)}</div>
-            <div class="drive-item-stats">
-                <span class="drive-stat">
-                    <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2">
-                        <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
-                    </svg>
-                    ${escapeHtml(durationStr)}
-                </span>
-                <span class="drive-stat">
-                    <svg viewBox="0 0 24 24" width="11" height="11" fill="currentColor" stroke="none">
-                        <path d="M12 2L4.5 20.3l.5.2L12 17l7 3.5.5-.2z"/>
-                    </svg>
-                    ${escapeHtml(distanceStr)}
-                </span>
-                <span class="drive-stat drive-stat-muted">${escapeHtml(clipCount)}</span>
-                ${accelStat}${disengageStat}
+        <div class="drive-journey">
+            <div class="journey-times">
+                <span class="jt-time">${escapeHtml(startTime)}</span>
+                <span class="journey-track"><span class="jt-pin jt-pin--origin"></span><span class="jt-dash"></span><span class="jt-pin jt-pin--dest"></span></span>
+                <span class="jt-time">${escapeHtml(endTime)}</span>
             </div>
-            <div class="drive-item-badges">
-                ${footageBadge}${fsdBadge}${tagBadges}
+            <div class="journey-labels">
+                <span class="jt-label">Departed</span>
+                <span class="jt-label">Arrived</span>
+            </div>
+            <div class="journey-locs">
+                <span class="ep-place ep-place--start" data-ep="origin">${escapeHtml(startPlace)}</span>
+                <span class="ep-place ep-place--end" data-ep="dest">${escapeHtml(endPlace)}</span>
             </div>
         </div>
+        ${disengageHtml}
+        <div class="drive-chips">
+            <span class="drive-chip"><span class="material-symbols-outlined">straighten</span>${escapeHtml(distanceStr)}</span>
+            <span class="drive-chip"><span class="material-symbols-outlined">schedule</span>${escapeHtml(durStr)}</span>
+            ${fsdChip}${footageChip}${accelChip}
+        </div>
+        ${tagsRow}
     `;
 
     item.onclick = () => {
@@ -186,7 +186,70 @@ function createDriveItem(drive, hasClips, useMetric) {
         onDriveSelected?.(drive);
     };
 
+    // Resolve Departed/Arrived place names lazily when the card scrolls into
+    // view — geocoding all 800+ drives up front would queue ~30 minutes of
+    // rate-limited Nominatim lookups.
+    item._drive = drive;
+    observeForGeocoding(item);
+
     return item;
+}
+
+/** Duration in Sentry Drive's list format: "17 min" or "1h 2m". */
+function formatJourneyDuration(ms) {
+    const totalMin = Math.floor(ms / 60000);
+    const h = Math.floor(totalMin / 60);
+    const m = totalMin % 60;
+    return h > 0 ? `${h}h ${m}m` : `${m} min`;
+}
+
+/** Coordinate fallback label shown until reverse geocoding resolves. */
+function gpsLabel(point) {
+    return Array.isArray(point) ? `${point[0].toFixed(4)}, ${point[1].toFixed(4)}` : '';
+}
+
+function setEndpointLabel(item, role, name) {
+    const place = item.querySelector(`.ep-place[data-ep="${role}"]`);
+    if (place) place.textContent = name;
+}
+
+/**
+ * Resolve start/end place names into the location line under each
+ * Departed/Arrived header. Names cache on the drive object so re-renders
+ * apply instantly; the main process caches across sessions (geocode.cjs).
+ */
+function applyDriveLocations(item, drive) {
+    const api = window.electronAPI;
+    const resolve = (role) => {
+        const cacheKey = role === 'origin' ? '_startName' : '_endName';
+        if (drive[cacheKey]) { setEndpointLabel(item, role, drive[cacheKey]); return; }
+        const c = role === 'origin' ? drive.startPoint : drive.endPoint;
+        if (!Array.isArray(c) || !api?.reverseGeocode) return;
+        api.reverseGeocode({ lat: c[0], lng: c[1] }).then((res) => {
+            const name = res && res.label;
+            if (!name) return;
+            drive[cacheKey] = name;
+            if (item.isConnected) setEndpointLabel(item, role, name);
+        }).catch(() => {});
+    };
+    resolve('origin');
+    resolve('dest');
+}
+
+// Geocode only cards near the viewport (Nominatim allows 1 req/s).
+let geocodeObserver = null;
+function observeForGeocoding(item) {
+    if (!window.electronAPI?.reverseGeocode) return;
+    if (!geocodeObserver) {
+        geocodeObserver = new IntersectionObserver((entries) => {
+            for (const e of entries) {
+                if (!e.isIntersecting) continue;
+                geocodeObserver.unobserve(e.target);
+                if (e.target._drive) applyDriveLocations(e.target, e.target._drive);
+            }
+        }, { root: driveList, rootMargin: '300px' });
+    }
+    geocodeObserver.observe(item);
 }
 
 /**

@@ -153,8 +153,7 @@ h1, h2, h3, h4, h5, h6 {
 
 .time-display,
 .speed-value,
-.speed-value-compact,
-.drive-stat {
+.speed-value-compact {
     font-variant-numeric: tabular-nums;
 }
 
@@ -7610,6 +7609,9 @@ body>.dashboard-vis-compact.draggable:not(.fixed-to-camera) {
 
 /* Drive item — Sentry Drive card recipe */
 .drive-item {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
     border-radius: 18px;
     padding: 12px;
     margin-bottom: 8px;
@@ -7630,22 +7632,122 @@ body>.dashboard-vis-compact.draggable:not(.fixed-to-camera) {
     border-color: oklch(0.82 0.18 150 / 0.55);
 }
 
-.drive-item-time {
-    font-size: 12px;
-    font-weight: 500;
-    color: var(--text-color);
-    margin-bottom: 4px;
+/* Journey block: times row with origin/destination pins, Departed/Arrived
+   labels, and place names — mirrors Sentry Drive's drive-journey */
+.drive-journey {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
 }
 
-.drive-item-stats {
+.journey-times {
     display: flex;
     align-items: center;
-    gap: 10px;
-    flex-wrap: wrap;
-    margin-bottom: 5px;
+    gap: 8px;
 }
 
-.drive-stat {
+.jt-time {
+    flex: 0 0 auto;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-color);
+    font-variant-numeric: tabular-nums;
+    line-height: 1.1;
+}
+
+.journey-track {
+    flex: 1 1 auto;
+    min-width: 16px;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.jt-pin {
+    flex: 0 0 auto;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+}
+
+.jt-pin--origin {
+    box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.3);
+}
+
+.jt-pin--dest {
+    background: var(--accent-color);
+    box-shadow: 0 0 0 2px oklch(0.82 0.18 150 / 0.3);
+}
+
+.jt-dash {
+    flex: 1 1 auto;
+    height: 0;
+    border-top: 1px dashed rgba(255, 255, 255, 0.22);
+}
+
+.journey-labels {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-faint);
+}
+
+.journey-labels .jt-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    min-width: 0;
+}
+
+.journey-locs {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.journey-locs .ep-place {
+    flex: 0 1 auto;
+    max-width: 62%;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--text-color);
+    line-height: 1.25;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.journey-locs .ep-place--end {
+    text-align: right;
+}
+
+/* Red disengagement row */
+.drive-diseng {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11px;
+    font-weight: 500;
+    color: rgba(248, 113, 113, 0.9);
+}
+
+.drive-diseng .material-symbols-outlined {
+    font-size: 13px;
+}
+
+/* Pill chips: distance, duration, FSD, footage */
+.drive-chips {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+}
+
+.drive-chip {
     display: inline-flex;
     align-items: center;
     gap: 3px;
@@ -7653,42 +7755,51 @@ body>.dashboard-vis-compact.draggable:not(.fixed-to-camera) {
     border-radius: 999px;
     font-size: 11px;
     font-weight: 500;
+    font-variant-numeric: tabular-nums;
     color: var(--text-secondary);
     background: rgba(255, 255, 255, 0.05);
     border: 1px solid rgba(255, 255, 255, 0.08);
     white-space: nowrap;
 }
 
-.drive-stat svg {
-    opacity: 0.6;
-    flex-shrink: 0;
+.drive-chip .material-symbols-outlined {
+    font-size: 12px;
 }
 
-.drive-stat-muted {
-    color: rgba(255, 255, 255, 0.3);
-    font-size: 10px;
+.drive-chip--green {
+    background: rgba(16, 185, 129, 0.15);
+    color: #34d399;
+    border-color: rgba(16, 185, 129, 0.22);
 }
 
-.drive-item-badges {
+.drive-chip--accent {
+    background: oklch(0.82 0.18 150 / 0.15);
+    color: var(--accent-color);
+    border-color: oklch(0.82 0.18 150 / 0.22);
+}
+
+.drive-chip--slate {
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--text-muted);
+    border-color: rgba(255, 255, 255, 0.1);
+}
+
+/* Tag pills */
+.drive-tags {
     display: flex;
     flex-wrap: wrap;
     gap: 4px;
 }
 
-/* Drive-specific badge colors */
-.badge.drive-footage-badge {
-    background: rgba(52, 211, 153, 0.2);
-    color: var(--success-color);
-}
-
-.badge.drive-fsd-badge {
-    background: rgba(16, 185, 129, 0.15);
-    color: var(--success-color);
-    border: 1px solid rgba(16, 185, 129, 0.22);
-}
-
-.badge.drive-tag-badge {
-    background: rgba(196, 181, 253, 0.2);
+.tag-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 10px;
+    font-weight: 600;
+    background: rgba(196, 181, 253, 0.15);
     color: var(--violet-color);
 }
 

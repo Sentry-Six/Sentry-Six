@@ -2638,6 +2638,25 @@ ipcMain.handle('sentryUsb:loadAndGroup', async (_event, filePath) => {
   }
 });
 
+// Reverse-geocode a coordinate into a short place label for the drive list's
+// Departed/Arrived lines. Runs through src/main/geocode.cjs (ported from
+// Sentry Drive): Nominatim with a proper User-Agent, 1 req/s throttle, and a
+// persistent disk cache so each unique spot is looked up once.
+let _geocodeInited = false;
+ipcMain.handle('geo:reverseGeocode', async (_event, { lat, lng } = {}) => {
+  try {
+    const geocode = require('./main/geocode.cjs');
+    if (!_geocodeInited) {
+      geocode.init(path.join(app.getPath('userData'), 'geocode-cache.json'));
+      _geocodeInited = true;
+    }
+    return { label: await geocode.reverseGeocode(lat, lng) };
+  } catch (err) {
+    console.warn('[Geocode] reverse lookup failed:', err?.message || err);
+    return { label: null };
+  }
+});
+
 // Fetch one drive's heavy map data (GPS points + FSD events) from the cache.
 // Called lazily when the user opens a drive — a single drive is ~1MB, vs
 // shipping all drives' points up front which froze the app.
