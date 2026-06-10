@@ -2504,20 +2504,25 @@ ipcMain.handle('fs:readFile', async (_event, filePath) => {
 
 // Stream-parse a SentryUSB drive-data.json file and return the grouped drives.
 // The file can be >1GB (16k+ routes), which exceeds V8's max string length
-// (~512MB). We stream the JSON with stream-json so the whole file never lives
-// in memory as one string, then run the existing groupStoreDataIntoDrives
-// pipeline (ESM module, dynamic-imported).
+// (~512MB), so it is streamed with stream-json.
+//
+// ALL heavy work happens in worker threads (driveLoadWorker.js for
+// routes+grouping, driveTagsWorker.js for tags, concurrently): the parse is
+// CPU-bound for ~2 minutes on a 400MB file, and when it ran on the main
+// process the window couldn't be dragged smoothly the whole time (a busy
+// main process can't pump OS window messages).
 //
 // IMPORTANT: the reply ships only LIGHT drives (stats, no per-point GPS data).
-// The full per-drive `points`/`fsdEvents` arrays for 800+ drives are hundreds
-// of MB; structured-clone serializing that over IPC blocks the main process
-// AND the renderer for minutes (frozen UI). The heavy fields stay cached here
-// and are fetched per-drive via sentryUsb:getDriveDetail when a drive is opened.
+// The full per-drive points for 800+ drives are hundreds of MB; structured-
+// clone serializing that over IPC blocks the main process AND the renderer
+// for minutes (frozen UI). Points arrive from the worker as transferable
+// Float64Array buffers (zero-copy), stay cached here, and are inflated
+// per-drive via sentryUsb:getDriveDetail when a drive is opened.
 let sentryUsbCache = { filePath: null, mtimeMs: 0, drives: null, routeCount: 0, routesLen: 0 };
 
 function makeLightSentryUsbDrives(drives) {
   return drives.map(d => {
-    const { points, fsdEvents, ...light } = d;
+    const { points, pointsBuf, fsdEvents, ...light } = d;
     return light;
   });
 }
@@ -2542,34 +2547,15 @@ ipcMain.handle('sentryUsb:loadAndGroup', async (_event, filePath) => {
       };
     }
 
-    const [
-      { parser },
-      { pick },
-      { streamArray },
-      chainMod,
-      grouperMod,
-    ] = await Promise.all([
-      import('stream-json'),
-      import('stream-json/filters/pick.js'),
-      import('stream-json/streamers/stream-array.js'),
-      import('stream-chain'),
-      import('./renderer/scripts/core/driveGrouper.js'),
-    ]);
-    const chain = chainMod.default ?? chainMod.chain;
-    const { groupStoreDataIntoDrives } = grouperMod;
-
+    const { Worker } = require('worker_threads');
     const fileSize = stat.size;
     console.log(`[SentryUSB] Stream-parsing ${filePath} (${(fileSize / 1024 / 1024).toFixed(1)} MB)`);
     const t0 = Date.now();
 
-    // Parse drive tags in a WORKER THREAD concurrently with the routes pass
-    // below. JSON tokenizing is CPU-bound (~5MB/s), so running the second
-    // pass sequentially used to add ~90s on a 400MB file; in parallel on
-    // another core it finishes inside the routes-pass window. Tags are
-    // cosmetic — any worker failure resolves to {} instead of failing the load.
+    // Parse drive tags concurrently on another core. Tags are cosmetic —
+    // any worker failure resolves to {} instead of failing the load.
     const tagsPromise = new Promise((resolve) => {
       try {
-        const { Worker } = require('worker_threads');
         const worker = new Worker(path.join(__dirname, 'main', 'driveTagsWorker.js'), {
           workerData: { filePath },
         });
@@ -2592,44 +2578,58 @@ ipcMain.handle('sentryUsb:loadAndGroup', async (_event, filePath) => {
       }
     });
 
-    const routes = [];
-    {
-      const pipeline = chain([
-        fs.createReadStream(filePath),
-        parser(),
-        pick({ filter: /^routes$/i }),
-        streamArray(),
-      ]);
-      // Consume with for-await to avoid any chain-vs-flowing-mode quirks.
-      // Log progress so it's obvious when streaming is in-flight on a slow disk.
-      let lastLog = Date.now();
-      for await (const d of pipeline) {
-        routes.push(d.value);
-        if (routes.length % 1000 === 0 || Date.now() - lastLog > 2000) {
-          console.log(`[SentryUSB]   ...${routes.length} routes parsed (${((Date.now() - t0) / 1000).toFixed(1)}s)`);
-          lastLog = Date.now();
+    // Routes parse + grouping in the load worker. The main process only
+    // relays progress logs and forwards the tags result when it arrives.
+    const result = await new Promise((resolve, reject) => {
+      let settled = false;
+      const done = (fn, v) => { if (!settled) { settled = true; fn(v); } };
+      let worker;
+      try {
+        worker = new Worker(path.join(__dirname, 'main', 'driveLoadWorker.js'), {
+          workerData: { filePath },
+        });
+      } catch (err) { reject(err); return; }
+
+      worker.on('message', (msg) => {
+        switch (msg?.type) {
+          case 'progress':
+            console.log(`[SentryUSB]   ...${msg.count} routes parsed (${(msg.elapsedMs / 1000).toFixed(1)}s)`);
+            break;
+          case 'routesDone':
+            console.log(`[SentryUSB] Streamed ${msg.count} routes in ${msg.elapsedMs}ms`);
+            break;
+          case 'done':
+            done(resolve, msg);
+            break;
+          case 'error':
+            done(reject, new Error(msg.error));
+            break;
         }
-      }
-    }
-    console.log(`[SentryUSB] Streamed ${routes.length} routes in ${Date.now() - t0}ms`);
+      });
+      worker.on('error', (err) => done(reject, err));
+      worker.on('exit', (code) => done(reject, new Error('Drive load worker exited early (code ' + code + ')')));
 
-    const driveTags = await tagsPromise;
-
-    const t2 = Date.now();
-    const { drives, driveCount, routeCount } = groupStoreDataIntoDrives({
-      Routes: routes,
-      DriveTags: driveTags,
+      tagsPromise.then((tags) => {
+        try { worker.postMessage({ type: 'driveTags', driveTags: tags }); } catch {}
+      });
     });
-    console.log(`[SentryUSB] Grouped into ${driveCount} drives in ${Date.now() - t2}ms`);
 
-    sentryUsbCache = { filePath, mtimeMs: stat.mtimeMs, drives, routeCount, routesLen: routes.length };
+    console.log(`[SentryUSB] Grouped into ${result.driveCount} drives in ${result.groupMs}ms (total ${Date.now() - t0}ms)`);
+
+    sentryUsbCache = {
+      filePath,
+      mtimeMs: stat.mtimeMs,
+      drives: result.drives,
+      routeCount: result.routeCount,
+      routesLen: result.routesLen,
+    };
 
     return {
       success: true,
-      drives: makeLightSentryUsbDrives(drives),
-      driveCount,
-      routeCount,
-      routesLen: routes.length,
+      drives: makeLightSentryUsbDrives(result.drives),
+      driveCount: result.driveCount,
+      routeCount: result.routeCount,
+      routesLen: result.routesLen,
       topKeys: ['routes', 'driveTags'],
     };
   } catch (err) {
@@ -2659,13 +2659,24 @@ ipcMain.handle('geo:reverseGeocode', async (_event, { lat, lng } = {}) => {
 
 // Fetch one drive's heavy map data (GPS points + FSD events) from the cache.
 // Called lazily when the user opens a drive — a single drive is ~1MB, vs
-// shipping all drives' points up front which froze the app.
+// shipping all drives' points up front which froze the app. Points are
+// cached as a flat Float64Array (5 values per point) and inflated here.
 ipcMain.handle('sentryUsb:getDriveDetail', async (_event, driveId) => {
   const drives = sentryUsbCache.drives;
   if (!drives) return { success: false, error: 'No drive data loaded' };
   const drive = drives.find(d => d.id === driveId);
   if (!drive) return { success: false, error: 'Drive not found: ' + driveId };
-  return { success: true, points: drive.points ?? [], fsdEvents: drive.fsdEvents ?? [] };
+
+  let points = drive.points ?? [];
+  if (points.length === 0 && drive.pointsBuf && drive.pointsBuf.length >= 5) {
+    const buf = drive.pointsBuf;
+    const n = Math.floor(buf.length / 5);
+    points = new Array(n);
+    for (let i = 0, o = 0; i < n; i++, o += 5) {
+      points[i] = [buf[o], buf[o + 1], buf[o + 2], buf[o + 3], buf[o + 4]];
+    }
+  }
+  return { success: true, points, fsdEvents: drive.fsdEvents ?? [] };
 });
 
 // Auto-update module (extracted to src/main/autoUpdate.js)
