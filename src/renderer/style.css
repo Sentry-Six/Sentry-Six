@@ -457,9 +457,9 @@ canvas,
     left: 20px;
     width: min(var(--clips-float-width), calc(100% - 40px));
     max-height: calc(100% - 100px);
-    background: rgba(255, 255, 255, 0.055);
-    backdrop-filter: blur(26px) saturate(180%);
-    -webkit-backdrop-filter: blur(26px) saturate(180%);
+    background: rgba(7, 9, 12, 0.85);
+    backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
     border-radius: 24px;
     border: 1px solid var(--border-color);
     box-shadow:
