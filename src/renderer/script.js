@@ -798,12 +798,6 @@ let useMetric = false; // Will be loaded from settings
             if (metricToggle) metricToggle.checked = useMetric;
             if (speedUnit) speedUnit.textContent = useMetric ? 'KM/H' : 'MPH';
         });
-        window.electronAPI.getSetting('appTheme').then(saved => {
-            const theme = saved || 'dark';
-            if (window.applyAppTheme) {
-                window.applyAppTheme(theme);
-            }
-        });
         window.electronAPI.getSetting('accelPedMode').then(saved => {
             const mode = saved || 'iconbar';
             if (window.updateAccelPedMode) {
@@ -862,16 +856,6 @@ let useMetric = false; // Will be loaded from settings
             if (defaultDash) defaultDash.classList.remove('hidden');
         }
         updateDashboardVisibility();
-    };
-    
-    // Global function to apply app theme (dark/light)
-    window.applyAppTheme = (theme) => {
-        const root = document.documentElement;
-        if (theme === 'light') {
-            root.setAttribute('data-theme', 'light');
-        } else {
-            root.removeAttribute('data-theme');
-        }
     };
     
     // Global function to update accelerator pedal display mode for all dashboards

@@ -248,25 +248,6 @@ export function initSettingsModal() {
         };
     }
 
-    // App theme (Dark/Light) setting
-    const settingsAppTheme = $('settingsAppTheme');
-    if (settingsAppTheme && window.electronAPI?.getSetting) {
-        window.electronAPI.getSetting('appTheme').then(savedTheme => {
-            const theme = savedTheme || 'dark';
-            settingsAppTheme.value = theme;
-            window.applyAppTheme?.(theme);
-        });
-
-        settingsAppTheme.onchange = async () => {
-            const theme = settingsAppTheme.value || 'dark';
-            if (window.electronAPI?.setSetting) {
-                await window.electronAPI.setSetting('appTheme', theme);
-            }
-            window.applyAppTheme?.(theme);
-            settingsAppTheme.blur();
-        };
-    }
-
     // Accelerator pedal display mode setting
     const settingsAccelPedMode = $('settingsAccelPedMode');
     if (settingsAccelPedMode && window.electronAPI?.getSetting) {
