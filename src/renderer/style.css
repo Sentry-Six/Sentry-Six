@@ -457,13 +457,15 @@ canvas,
     left: 20px;
     width: min(var(--clips-float-width), calc(100% - 40px));
     max-height: calc(100% - 100px);
-    background: var(--panel-bg-gradient);
+    background: rgba(255, 255, 255, 0.055);
+    backdrop-filter: blur(26px) saturate(180%);
+    -webkit-backdrop-filter: blur(26px) saturate(180%);
     border-radius: 24px;
-    border: 1px solid var(--border-strong);
+    border: 1px solid var(--border-color);
     box-shadow:
-        0 8px 32px var(--shadow-color),
-        0 2px 8px var(--shadow-color),
-        inset 0 1px 1px var(--inset-highlight);
+        inset 0 1px 0 rgba(255, 255, 255, 0.06),
+        inset 0 -1px 1px rgba(255, 255, 255, 0.05),
+        0 12px 34px rgba(0, 0, 0, 0.45);
     z-index: 90;
     overflow: hidden;
     display: flex;
@@ -746,8 +748,7 @@ canvas,
     scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
 }
 
-.clip-browser-dayfilter select::-webkit-scrollbar {
-    width: 6px;
+.clip-browser-dayfilter select 5px;
 }
 
 .clip-browser-dayfilter select::-webkit-scrollbar-track {
@@ -986,14 +987,15 @@ canvas,
 }
 
 .btn-danger {
-    background: linear-gradient(135deg, var(--error-color) 0%, var(--error-color) 100%);
-    color: white;
-    border: none;
+    background: rgba(248, 113, 113, 0.10);
+    color: #fca5a5;
+    border: 1px solid rgba(248, 113, 113, 0.25);
     font-weight: 600;
 }
 
 .btn-danger:hover {
-    background: linear-gradient(135deg, #f87171 0%, var(--error-color) 100%);
+    background: rgba(248, 113, 113, 0.22);
+    border-color: rgba(248, 113, 113, 0.4);
 }
 
 .btn-danger:disabled {
@@ -1117,8 +1119,7 @@ canvas,
     scrollbar-color: var(--scrollbar-thumb) transparent;
 }
 
-.clip-list::-webkit-scrollbar {
-    width: 6px;
+.clip-list 5px;
 }
 
 .clip-list::-webkit-scrollbar-track {
@@ -1152,6 +1153,7 @@ canvas,
 
 .clip-item.selected {
     outline: 2px solid oklch(0.82 0.18 150 / 0.55);
+    background: var(--accent-bg);
 }
 
 .clip-meta {
@@ -1274,22 +1276,19 @@ canvas,
     user-select: none;
 }
 
-/* Floating Visualization - Liquid Glass (iOS 26 Style) */
+/* Floating Visualization - Liquid Glass */
 .dashboard-vis,
 .map-vis {
     position: absolute;
-    background: linear-gradient(180deg,
-            rgba(45, 45, 50, 0.25) 0%,
-            rgba(35, 35, 40, 0.20) 50%,
-            rgba(28, 28, 32, 0.25) 100%);
-    backdrop-filter: blur(var(--glass-blur)) saturate(100%);
-    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(100%);
+    background: var(--panel-bg-gradient);
+    backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
     border-radius: 24px;
-    border: 1px solid rgba(255, 255, 255, 0.12);
+    border: 1px solid var(--glass-border);
     box-shadow:
-        0 8px 32px rgba(0, 0, 0, 0.4),
-        0 2px 8px rgba(0, 0, 0, 0.2),
-        inset 0 1px 1px rgba(255, 255, 255, 0.08);
+        inset 0 1px 0 rgba(255, 255, 255, 0.06),
+        inset 0 -1px 1px rgba(255, 255, 255, 0.05),
+        0 12px 34px rgba(0, 0, 0, 0.45);
     z-index: 100;
     overflow: hidden;
     display: none;
@@ -1743,7 +1742,7 @@ body>.dashboard-vis-compact.draggable:not(.fixed-to-camera) {
     right: 10px;
     width: 32px;
     height: 32px;
-    background: rgba(30, 30, 35, 0.85);
+    background: rgba(11, 14, 19, 0.85);
     border: 1px solid rgba(255, 255, 255, 0.15);
     border-radius: 8px;
     color: var(--text-secondary);
@@ -1762,7 +1761,7 @@ body>.dashboard-vis-compact.draggable:not(.fixed-to-camera) {
 }
 
 .map-recenter-btn:hover {
-    background: rgba(50, 50, 60, 0.95);
+    background: rgba(22, 27, 36, 0.95);
     color: rgba(255, 255, 255, 1);
     border-color: var(--text-faint);
 }
@@ -1778,7 +1777,7 @@ body>.dashboard-vis-compact.draggable:not(.fixed-to-camera) {
     right: 48px;
     width: 32px;
     height: 32px;
-    background: rgba(30, 30, 35, 0.85);
+    background: rgba(11, 14, 19, 0.85);
     border: 1px solid rgba(255, 255, 255, 0.15);
     border-radius: 8px;
     color: var(--text-secondary);
@@ -1802,7 +1801,7 @@ body>.dashboard-vis-compact.draggable:not(.fixed-to-camera) {
 }
 
 .map-orientation-btn:hover {
-    background: rgba(50, 50, 60, 0.95);
+    background: rgba(22, 27, 36, 0.95);
     color: rgba(255, 255, 255, 1);
     border-color: var(--text-faint);
 }
@@ -2367,12 +2366,9 @@ body>.dashboard-vis-compact.draggable:not(.fixed-to-camera) {
 /* Controls Bar - Liquid Glass (matches floating panels) */
 .controls {
     height: 60px;
-    background: linear-gradient(180deg,
-            rgba(45, 45, 50, 0.25) 0%,
-            rgba(35, 35, 40, 0.20) 50%,
-            rgba(28, 28, 32, 0.25) 100%);
-    backdrop-filter: blur(4px) saturate(100%);
-    -webkit-backdrop-filter: blur(4px) saturate(100%);
+    background: var(--panel-bg-gradient);
+    backdrop-filter: blur(16px) saturate(var(--glass-saturate));
+    -webkit-backdrop-filter: blur(16px) saturate(var(--glass-saturate));
     border-top: 1px solid var(--border-color);
     display: flex;
     align-items: center;
@@ -2466,11 +2462,12 @@ body>.dashboard-vis-compact.draggable:not(.fixed-to-camera) {
     pointer-events: auto;
     max-width: min(520px, calc(100vw - 32px));
     padding: 10px 12px;
-    border-radius: 12px;
+    border-radius: 14px;
     background: var(--toast-bg);
     border: 1px solid var(--border-color);
-    box-shadow: 0 10px 30px var(--shadow-color);
-    backdrop-filter: blur(10px);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 10px 30px var(--shadow-color);
+    backdrop-filter: blur(16px) saturate(180%);
+    -webkit-backdrop-filter: blur(16px) saturate(180%);
     color: var(--text-color);
     font-size: 12px;
     line-height: 1.35;
@@ -2553,12 +2550,12 @@ body>.dashboard-vis-compact.draggable:not(.fixed-to-camera) {
     align-items: center;
     gap: 12px;
     padding: 10px 14px;
-    background: linear-gradient(180deg, rgba(25, 25, 35, 0.92) 0%, rgba(18, 18, 28, 0.95) 100%);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    border-radius: 12px;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(0, 0, 0, 0.2);
+    background: linear-gradient(180deg, rgba(16, 20, 27, 0.92) 0%, rgba(11, 14, 19, 0.95) 100%);
+    backdrop-filter: blur(16px) saturate(180%);
+    -webkit-backdrop-filter: blur(16px) saturate(180%);
+    border: 1px solid var(--border-color);
+    border-radius: 14px;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 4px 20px rgba(0, 0, 0, 0.4);
 }
 
 .export-floating-icon {
@@ -3089,7 +3086,7 @@ body>.dashboard-vis-compact.draggable:not(.fixed-to-camera) {
     position: fixed;
     inset: 0;
     background: var(--overlay-bg);
-    backdrop-filter: blur(12px);
+    backdrop-filter: blur(4px);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -3193,8 +3190,7 @@ body>.dashboard-vis-compact.draggable:not(.fixed-to-camera) {
     scrollbar-color: var(--scrollbar-thumb) transparent;
 }
 
-.modal-body::-webkit-scrollbar {
-    width: 6px;
+.modal-body 5px;
 }
 
 .modal-body::-webkit-scrollbar-track {
@@ -3435,9 +3431,9 @@ body>.dashboard-vis-compact.draggable:not(.fixed-to-camera) {
 .toggle-switch-track {
     position: absolute;
     inset: 0;
-    background: rgba(255, 255, 255, 0.12);
+    background: rgba(255, 255, 255, 0.1);
     border-radius: 11px;
-    transition: background 0.2s;
+    transition: background 0.25s ease;
     cursor: pointer;
 }
 
@@ -3447,19 +3443,25 @@ body>.dashboard-vis-compact.draggable:not(.fixed-to-camera) {
     left: 2px;
     width: 18px;
     height: 18px;
-    background: rgba(255, 255, 255, 0.8);
+    background: rgba(255, 255, 255, 0.5);
     border-radius: 50%;
-    transition: transform 0.2s, background 0.2s;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+    transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1), background 0.25s ease;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
 }
 
 .toggle-switch input:checked+.toggle-switch-track {
-    background: var(--accent-color);
+    background: oklch(0.82 0.18 150 / 0.35);
 }
 
 .toggle-switch input:checked+.toggle-switch-track .toggle-switch-thumb {
     transform: translateX(18px);
-    background: #fff;
+    background: var(--accent-color);
+    box-shadow: 0 0 8px var(--accent-glow), 0 1px 4px rgba(0, 0, 0, 0.3);
+}
+
+.toggle-switch input:focus-visible+.toggle-switch-track {
+    outline: 2px solid oklch(0.82 0.18 150 / 0.5);
+    outline-offset: 2px;
 }
 
 /* Compact Slider Row */
@@ -3914,8 +3916,8 @@ body>.dashboard-vis-compact.draggable:not(.fixed-to-camera) {
     border-radius: 20px;
     backdrop-filter: blur(20px) saturate(180%);
     background: linear-gradient(165deg,
-            rgba(30, 30, 40, 0.95) 0%,
-            rgba(20, 20, 28, 0.98) 100%);
+            rgba(16, 20, 27, 0.95) 0%,
+            rgba(11, 14, 19, 0.98) 100%);
 }
 
 /* Two-column export layout */
@@ -4183,7 +4185,7 @@ body>.dashboard-vis-compact.draggable:not(.fixed-to-camera) {
 .export-progress-sticky {
     position: sticky;
     bottom: -16px;
-    background: linear-gradient(180deg, rgba(30, 34, 39, 0.95) 0%, rgba(30, 34, 39, 1) 100%);
+    background: linear-gradient(180deg, rgba(16, 20, 27, 0.95) 0%, rgba(16, 20, 27, 1) 100%);
     padding: 16px 20px;
     margin: 16px -20px -16px -20px;
     padding-bottom: 16px;
@@ -4244,23 +4246,24 @@ body>.dashboard-vis-compact.draggable:not(.fixed-to-camera) {
 }
 
 .btn-primary {
-    background: color-mix(in srgb, var(--accent-color) 80%, transparent);
-    color: #fff;
-    border-color: color-mix(in srgb, var(--accent-color) 90%, transparent);
+    background: var(--accent-color);
+    color: #07090c;
+    border-color: transparent;
 }
 
 .btn-primary:not(:disabled):hover {
-    background: var(--accent-color);
+    background: var(--accent-solid-hover);
 }
 
 .btn-secondary {
-    background: var(--surface-hover);
+    background: var(--glass-bg);
     color: var(--text-color);
-    border-color: var(--border-strong);
+    border-color: var(--border-color);
 }
 
 .btn-secondary:not(:disabled):hover {
-    background: var(--surface-active);
+    background: var(--surface-hover);
+    border-color: var(--border-strong);
 }
 
 /* Old update modal styles removed - see new styles at end of file */
@@ -5913,7 +5916,7 @@ body>.dashboard-vis-compact.draggable:not(.fixed-to-camera) {
 
 /* Settings preview */
 .welcome-preview-settings {
-    background: linear-gradient(180deg, rgba(32, 32, 38, 0.98) 0%, rgba(24, 24, 28, 0.98) 100%);
+    background: linear-gradient(180deg, rgba(16, 20, 27, 0.98) 0%, rgba(11, 14, 19, 0.98) 100%);
     border-radius: 12px;
     animation: none;
 }
@@ -5929,8 +5932,8 @@ body>.dashboard-vis-compact.draggable:not(.fixed-to-camera) {
     height: 500px;
     max-height: calc(100vh - 100px);
     background: linear-gradient(165deg,
-            rgba(25, 25, 35, 0.98) 0%,
-            rgba(15, 15, 22, 0.99) 100%);
+            rgba(16, 20, 27, 0.98) 0%,
+            rgba(7, 9, 12, 0.99) 100%);
     backdrop-filter: blur(20px) saturate(180%);
     -webkit-backdrop-filter: blur(20px) saturate(180%);
     border: 1px solid var(--accent-hover);
@@ -6421,8 +6424,7 @@ body>.dashboard-vis-compact.draggable:not(.fixed-to-camera) {
 }
 
 /* Scrollbar for chat messages */
-.support-chat-messages::-webkit-scrollbar {
-    width: 6px;
+.support-chat-messages 5px;
 }
 
 .support-chat-messages::-webkit-scrollbar-track {
@@ -6430,12 +6432,12 @@ body>.dashboard-vis-compact.draggable:not(.fixed-to-camera) {
 }
 
 .support-chat-messages::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.2);
+    background: var(--scrollbar-thumb);
     border-radius: 3px;
 }
 
 .support-chat-messages::-webkit-scrollbar-thumb:hover {
-    background: rgba(255, 255, 255, 0.3);
+    background: var(--scrollbar-thumb-hover);
 }
 
 /* Closed ticket UI */
@@ -6611,8 +6613,7 @@ body>.dashboard-vis-compact.draggable:not(.fixed-to-camera) {
     scrollbar-color: var(--scrollbar-thumb) transparent;
 }
 
-.settings-content::-webkit-scrollbar {
-    width: 6px;
+.settings-content 5px;
 }
 
 .settings-content::-webkit-scrollbar-track {
@@ -6768,7 +6769,7 @@ body>.dashboard-vis-compact.draggable:not(.fixed-to-camera) {
 
 .settings-modal .toggle-switch input:checked+.toggle-switch-track,
 .dev-modal .toggle-switch input:checked+.toggle-switch-track {
-    background: var(--settings-accent);
+    background: oklch(0.82 0.18 150 / 0.35);
     box-shadow: 0 0 12px var(--settings-accent-glow);
 }
 
@@ -7074,10 +7075,10 @@ body>.dashboard-vis-compact.draggable:not(.fixed-to-camera) {
 /* Accordion container */
 .settings-accordion {
     border: 1px solid var(--border-subtle);
-    border-radius: 12px;
+    border-radius: 14px;
     margin-bottom: 8px;
     overflow: hidden;
-    background: var(--input-bg);
+    background: var(--glass-bg);
     transition: all 0.2s ease;
 }
 
@@ -7386,7 +7387,7 @@ body>.dashboard-vis-compact.draggable:not(.fixed-to-camera) {
 /* Fast Custom Tooltips - JS-based, appended to body to escape all stacking contexts */
 .tooltip-popup {
     position: fixed;
-    background: rgba(20, 20, 30, 0.95);
+    background: var(--tooltip-bg);
     color: var(--text-color);
     font-size: 11px;
     font-weight: 500;
@@ -7413,25 +7414,31 @@ body>.dashboard-vis-compact.draggable:not(.fixed-to-camera) {
    SentryUSB Drives Panel
    ===================================================================== */
 
-/* Tab bar between Clips and Drives */
+/* Tab bar between Clips and Drives — liquid pill tabs */
 .clip-drive-tab-bar {
     display: flex;
-    border-bottom: 1px solid var(--border-color);
-    background: var(--surface);
+    gap: 2px;
+    padding: 3px;
+    margin: 6px 8px 0;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    backdrop-filter: blur(16px) saturate(180%);
+    -webkit-backdrop-filter: blur(16px) saturate(180%);
     flex-shrink: 0;
 }
 
 .clip-drive-tab {
     flex: 1;
-    padding: 7px 10px;
+    padding: 6px 10px;
     font-size: 11px;
     font-weight: 500;
-    color: var(--text-muted);
+    color: var(--text-faint);
     background: transparent;
     border: none;
-    border-bottom: 2px solid transparent;
+    border-radius: 9px;
     cursor: pointer;
-    transition: color 0.15s, border-color 0.15s;
+    transition: all 0.2s ease;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -7439,25 +7446,28 @@ body>.dashboard-vis-compact.draggable:not(.fixed-to-camera) {
 }
 
 .clip-drive-tab:hover {
-    color: var(--text-color);
+    color: var(--text-secondary);
+    background: rgba(255, 255, 255, 0.06);
 }
 
 .clip-drive-tab.active {
-    color: var(--accent-color, var(--accent-color));
-    border-bottom-color: var(--accent-color, var(--accent-color));
+    color: #fff;
+    background: rgba(255, 255, 255, 0.14);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45), 0 2px 10px rgba(0, 0, 0, 0.25);
 }
 
 .tab-count {
     font-size: 10px;
     background: var(--surface-raised);
-    border-radius: 8px;
-    padding: 1px 5px;
+    border-radius: 999px;
+    padding: 1px 6px;
     color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
 }
 
 .clip-drive-tab.active .tab-count {
     background: oklch(0.82 0.18 150 / 0.15);
-    color: var(--accent-color, var(--accent-color));
+    color: var(--accent-color);
 }
 
 /* Drive list container - mirrors .clip-list */
@@ -7471,8 +7481,7 @@ body>.dashboard-vis-compact.draggable:not(.fixed-to-camera) {
     scrollbar-color: var(--scrollbar-thumb) transparent;
 }
 
-.drive-list::-webkit-scrollbar {
-    width: 6px;
+.drive-list 5px;
 }
 
 .drive-list::-webkit-scrollbar-track {
@@ -7617,7 +7626,7 @@ body>.dashboard-vis-compact.draggable:not(.fixed-to-camera) {
 }
 
 .badge.drive-fsd-badge {
-    background: oklch(0.82 0.18 150 / 0.2);
+    background: rgba(56, 189, 248, 0.15);
     color: var(--sky-color);
 }
 
