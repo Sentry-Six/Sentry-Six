@@ -1,6 +1,53 @@
 {
   "versions": [
     {
+      "version": "2026.24.29",
+      "date": "2026-06-10",
+      "title": "Export Reliability & Performance",
+      "changes": [
+        {
+          "type": "fix",
+          "description": "Export: Fixed exports failing with 'code 4294967274' on unusual custom layouts. Camera tiles spread far apart could demand an output video larger than any encoder accepts; the export now uniformly scales the whole composition down to fit (max 8192px per side) instead of failing, and invalid layout data falls back to the standard grid."
+        },
+        {
+          "type": "fix",
+          "description": "Export: Output dimensions are now always padded to even values on the CPU encoder path too (previously GPU-only got 16-pixel alignment), eliminating a class of 'Invalid argument' encoder startup failures."
+        },
+        {
+          "type": "fix",
+          "description": "Export: Selecting a zero-length range (start and end markers at the same spot) now shows a clear warning instead of failing cryptically or writing an empty file."
+        },
+        {
+          "type": "fix",
+          "description": "Export: Error messages no longer blame the GPU encoder when the failure happened elsewhere, and failure logs now include the canvas size and active encoder to make support reports easier to diagnose."
+        },
+        {
+          "type": "improvement",
+          "description": "Export: Custom multi-camera layouts now composite in a single pass when tiles don't overlap. Measured on a 4-camera High export: GPU exports went from 2.1x to 3.5x realtime, CPU exports from 1.2x to 2.2x realtime."
+        },
+        {
+          "type": "improvement",
+          "description": "Export: CPU encoding now picks its thread count adaptively from CPU cores, available RAM, and canvas size, replacing the old fixed 4-thread cap. Many-core machines encode dramatically faster; low-RAM machines are still protected from swapping."
+        },
+        {
+          "type": "improvement",
+          "description": "Export: The Live Map (Slow) minimap now pre-renders at 12fps instead of 36fps - about 3x faster for that stage with no visible difference at minimap size."
+        },
+        {
+          "type": "improvement",
+          "description": "Playback: Dashboard, G-force meter, compass, map, and steering wheel overlays now skip redundant screen updates when values haven't visibly changed, cutting CPU usage during playback - especially on parked Sentry footage. Overlays you've hidden no longer do any work at all."
+        },
+        {
+          "type": "improvement",
+          "description": "Playback: Telemetry from recently viewed clips is cached (capped at 8 clips, a few MB of RAM), so jumping back to a recent segment shows speed and GPS data instantly instead of re-reading the whole video file."
+        },
+        {
+          "type": "improvement",
+          "description": "Clips: Event metadata files now load in parallel and no longer block the app process, so folders with many Sentry events populate their badges noticeably faster."
+        }
+      ]
+    },
+    {
       "version": "2026.17.27",
       "date": "2026-04-24",
       "title": "Linux Support & UX Polish",
