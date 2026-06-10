@@ -15,7 +15,8 @@
     background: var(--modal-bg);
     border: 1px solid var(--border-color);
     border-radius: 20px;
-    backdrop-filter: blur(20px) saturate(180%);
+    backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
     /* `overflow: visible` overrides .modal-content's `overflow: hidden`,
        which was blocking <select> popups from rendering at viewport level. */
     overflow: visible;

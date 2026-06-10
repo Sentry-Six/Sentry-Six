@@ -76,7 +76,7 @@
     --overlay-light: rgba(0, 0, 0, 0.4);
     --shadow-color: rgba(0, 0, 0, 0.30);
     --shadow-strong: rgba(0, 0, 0, 0.45);
-    --modal-bg: linear-gradient(180deg, rgba(16, 20, 27, 0.97) 0%, rgba(11, 14, 19, 0.97) 100%);
+    --modal-bg: linear-gradient(180deg, rgba(16, 20, 27, 0.85) 0%, rgba(7, 9, 12, 0.88) 100%);
     --modal-header-bg: rgba(7, 9, 12, 0.5);
     --toast-bg: rgba(11, 14, 19, 0.92);
     --tooltip-bg: rgba(11, 14, 19, 0.95);
@@ -2500,8 +2500,8 @@ body>.dashboard-vis-compact.draggable:not(.fixed-to-camera) {
     background: var(--toast-bg);
     border: 1px solid var(--border-color);
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 10px 30px var(--shadow-color);
-    backdrop-filter: blur(16px) saturate(180%);
-    -webkit-backdrop-filter: blur(16px) saturate(180%);
+    backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
     color: var(--text-color);
     font-size: 12px;
     line-height: 1.35;
@@ -2585,8 +2585,8 @@ body>.dashboard-vis-compact.draggable:not(.fixed-to-camera) {
     gap: 12px;
     padding: 10px 14px;
     background: linear-gradient(180deg, rgba(16, 20, 27, 0.92) 0%, rgba(11, 14, 19, 0.95) 100%);
-    backdrop-filter: blur(16px) saturate(180%);
-    -webkit-backdrop-filter: blur(16px) saturate(180%);
+    backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
     border: 1px solid var(--border-color);
     border-radius: 14px;
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 4px 20px rgba(0, 0, 0, 0.4);
@@ -3145,6 +3145,8 @@ body>.dashboard-vis-compact.draggable:not(.fixed-to-camera) {
 
 .modal-content {
     background: var(--modal-bg);
+    backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
     border: 1px solid var(--border-color);
     border-radius: 20px;
     box-shadow:
@@ -3949,10 +3951,11 @@ body>.dashboard-vis-compact.draggable:not(.fixed-to-camera) {
     --export-accent-soft: var(--accent-hover);
     max-width: 920px;
     border-radius: 20px;
-    backdrop-filter: blur(20px) saturate(180%);
+    backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
     background: linear-gradient(165deg,
-            rgba(16, 20, 27, 0.95) 0%,
-            rgba(11, 14, 19, 0.98) 100%);
+            rgba(16, 20, 27, 0.85) 0%,
+            rgba(7, 9, 12, 0.88) 100%);
 }
 
 /* Two-column export layout */
@@ -4586,7 +4589,7 @@ body>.dashboard-vis-compact.draggable:not(.fixed-to-camera) {
 .shared-clips-modal {
     max-width: 520px;
     border-radius: 20px;
-    backdrop-filter: blur(20px) saturate(180%);
+    backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
     background: var(--modal-bg);
 }
 
@@ -4846,7 +4849,7 @@ body>.dashboard-vis-compact.draggable:not(.fixed-to-camera) {
     --update-accent-soft: var(--accent-hover);
     max-width: 440px;
     border-radius: 24px;
-    backdrop-filter: blur(20px) saturate(180%);
+    backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
     background: var(--modal-bg);
 }
 
@@ -5164,7 +5167,7 @@ body>.dashboard-vis-compact.draggable:not(.fixed-to-camera) {
     --tc-accent-soft: var(--accent-hover);
     max-width: 480px;
     border-radius: 24px;
-    backdrop-filter: blur(20px) saturate(180%);
+    backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
     background: var(--modal-bg);
 }
 
@@ -5482,7 +5485,7 @@ body>.dashboard-vis-compact.draggable:not(.fixed-to-camera) {
     --changelog-accent-soft: var(--accent-hover);
     max-width: 560px;
     border-radius: 24px;
-    backdrop-filter: blur(20px) saturate(180%);
+    backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
     background: var(--modal-bg);
 }
 
@@ -5553,7 +5556,7 @@ body>.dashboard-vis-compact.draggable:not(.fixed-to-camera) {
     --guide-accent-soft: var(--accent-hover);
     max-width: 600px;
     border-radius: 24px;
-    backdrop-filter: blur(20px) saturate(180%);
+    backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
     background: var(--modal-bg);
 }
 
@@ -5967,10 +5970,10 @@ body>.dashboard-vis-compact.draggable:not(.fixed-to-camera) {
     height: 500px;
     max-height: calc(100vh - 100px);
     background: linear-gradient(165deg,
-            rgba(16, 20, 27, 0.98) 0%,
-            rgba(7, 9, 12, 0.99) 100%);
-    backdrop-filter: blur(20px) saturate(180%);
-    -webkit-backdrop-filter: blur(20px) saturate(180%);
+            rgba(16, 20, 27, 0.88) 0%,
+            rgba(7, 9, 12, 0.92) 100%);
+    backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
     border: 1px solid var(--accent-hover);
     border-radius: 16px;
     display: flex;
@@ -6697,7 +6700,7 @@ body>.dashboard-vis-compact.draggable:not(.fixed-to-camera) {
 .dev-modal {
     max-width: 500px;
     border-radius: 24px;
-    backdrop-filter: blur(20px) saturate(180%);
+    backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
     border: 1px solid rgba(255, 255, 255, 0.12);
     box-shadow:
         0 32px 100px rgba(0, 0, 0, 0.5),
