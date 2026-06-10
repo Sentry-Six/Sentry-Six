@@ -3119,8 +3119,11 @@ body>.dashboard-vis-compact.draggable:not(.fixed-to-camera) {
 .modal {
     position: fixed;
     inset: 0;
-    background: var(--overlay-bg);
-    backdrop-filter: blur(4px);
+    /* No backdrop-filter here: it would become the backdrop root and the
+       modal box's own blur would sample this flat dim instead of the video,
+       making the Glass Blur slider appear dead on modals. Keep the dim light
+       so the modal glass reads like the sidebar. */
+    background: rgba(0, 0, 0, 0.35);
     display: flex;
     align-items: center;
     justify-content: center;
