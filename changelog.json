@@ -1,6 +1,17 @@
 {
   "versions": [
     {
+      "version": "2026.24.31",
+      "date": "2026-06-11",
+      "title": "Minimap Placement Fix",
+      "changes": [
+        {
+          "type": "fix",
+          "description": "Export: The GPS minimap now lands exactly where the Advanced Editor preview shows it. The exported map is rendered as a square sized to the tile's smaller side, but it was anchored to the tile's top-left corner — so any not-perfectly-square minimap tile nudged the map left or up in the final video. It is now centered within the tile."
+        }
+      ]
+    },
+    {
       "version": "2026.24.30",
       "date": "2026-06-10",
       "title": "Export Hotfixes",
