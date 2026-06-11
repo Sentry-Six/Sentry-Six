@@ -1,6 +1,25 @@
 {
   "versions": [
     {
+      "version": "2026.24.32",
+      "date": "2026-06-11",
+      "title": "Google Maps",
+      "changes": [
+        {
+          "type": "feature",
+          "description": "Maps: Every map in the app — the viewer GPS map, the Advanced Editor minimap preview, and exported minimaps — now uses Google Maps tiles. A new Settings → Map Provider option lets you pick Google Maps, Google Satellite, or OpenStreetMap, and switches the map live."
+        },
+        {
+          "type": "feature",
+          "description": "Maps: If Google's tile servers can't be reached, the app automatically falls back to OpenStreetMap for the rest of the session (with a notice) — including export map downloads — and tries Google again on the next launch."
+        },
+        {
+          "type": "fix",
+          "description": "Fixed a crash ('A JavaScript error occurred in the main process: EPIPE') that could happen when the app outlived the terminal or wrapper process that launched it — a failed log write no longer takes down the app."
+        }
+      ]
+    },
+    {
       "version": "2026.24.31",
       "date": "2026-06-11",
       "title": "Minimap Placement Fix",
