@@ -264,7 +264,10 @@ export async function runAdvancedExport() {
             dashboardDateLabelScale: settings.dashboardDateLabelScale,
             dashboardDateValueScale: settings.dashboardDateValueScale,
             accelPedMode: window._accelPedMode || 'iconbar',
-            includeTimestamp: settings.includeTimestamp && !settings.includeDashboard,
+            // Unlike the simple modal, the AE allows timestamp + dashboard
+            // together (each is its own tile) — main.js composes the drawtext
+            // timestamp on top of the dashboard for advanced layouts.
+            includeTimestamp: settings.includeTimestamp,
             timestampPosition: 'custom',
             timestampDateFormat: window._dateFormat || 'mdy',
             timestampTimeFormat: window._timeFormat || '12h',

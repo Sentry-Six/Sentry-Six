@@ -1102,7 +1102,10 @@ async function performVideoExport(event, exportId, exportData, ffmpegPath) {
       console.log('[MINIMAP] Skipping - conditions not met');
     }
 
-    let useTimestamp = includeTimestamp && !useAssDashboard;
+    // The simple modal never sends timestamp + dashboard together (its UI and
+    // payload enforce exclusivity), but the Advanced Editor places each as its
+    // own tile — allow the combination there so the export matches the preview.
+    let useTimestamp = includeTimestamp && (!useAssDashboard || (isAdvancedLayout && !!overlayData?.timestamp));
 
     // Calculate timestamp basetime from first relevant segment
     let timestampBasetimeUs = null;
@@ -1479,8 +1482,16 @@ async function performVideoExport(event, exportId, exportData, ffmpegPath) {
       }
       filters.push(`${currentStreamTag}[${minimapInputIdx}:v]overlay=${mapPos}:format=auto[out]`);
       console.log(`[MINIMAP] Leaflet Minimap overlay at ${mapPos}`);
-    } else if (useTimestamp && timestampBasetimeUs) {
-      // Timestamp-only overlay using FFmpeg drawtext filter.
+    } else {
+      filters.push(`${currentStreamTag}format=yuv420p[out]`);
+    }
+
+    // Timestamp overlay using FFmpeg drawtext, applied as a post-pass on the
+    // chain's [out] so it composes with the dashboard/minimap branches above —
+    // the Advanced Editor allows a timestamp tile alongside the dashboard.
+    // When nothing else rendered, this behaves like the old timestamp-only
+    // else-branch.
+    if (useTimestamp && timestampBasetimeUs) {
       const drawtextPositions = {
         'bottom-center': `x=(w-text_w)/2:y=h-th-${padding}`,
         'bottom-left': `x=${padding}:y=h-th-${padding}`,
@@ -1528,10 +1539,10 @@ async function performVideoExport(event, exportId, exportData, ffmpegPath) {
         drawtextPos
       ].join(':');
 
-      filters.push(`${currentStreamTag}${drawtextFilter}[out]`);
+      const lastIdx = filters.length - 1;
+      filters[lastIdx] = filters[lastIdx].replace('[out]', '[pre_ts]');
+      filters.push(`[pre_ts]${drawtextFilter}[out]`);
       console.log(`[TIMESTAMP] Using drawtext filter at ${drawtextPos}, fontsize ${fontSize}`);
-    } else {
-      filters.push(`${currentStreamTag}format=yuv420p[out]`);
     }
 
     // Time-lapse: drop frames then reset timestamps (instead of just speeding up PTS)
