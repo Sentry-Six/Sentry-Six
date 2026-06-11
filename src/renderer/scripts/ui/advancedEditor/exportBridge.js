@@ -332,7 +332,7 @@ export async function runAdvancedExport() {
                         `Advanced Editor layout was too large for safe encoding ` +
                         `(${o.w}×${o.h}). Output resolution was reduced to ` +
                         `${s.w}×${s.h} to ensure the export succeeds.`,
-                        { type: 'warn', duration: 8000 }
+                        { type: 'warn', timeoutMs: 8000 }
                     );
                 } else if (progress.type === 'complete') {
                     resetExportState();
@@ -377,7 +377,6 @@ async function safeSetSetting(key, value) {
     try { await window.electronAPI.setSetting(key, value); }
     catch {}
 }
-
 
 async function extractSeiAndMapPath({ groups, cumStarts, nativeVideo, startTimeMs, endTimeMs, wantMinimap, exportStateRef }) {
     const allSei = [];

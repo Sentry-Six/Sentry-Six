@@ -2229,7 +2229,7 @@ export async function startExport() {
                     `Advanced Editor layout was too large for safe encoding ` +
                     `(${o.w}×${o.h}). Output resolution was reduced to ` +
                     `${s.w}×${s.h} to ensure the export succeeds.`,
-                    { type: 'warn', duration: 8000 }
+                    { type: 'warn', timeoutMs: 8000 }
                 );
             } else if (progress.type === 'complete') {
                 exportState.isExporting = false;
