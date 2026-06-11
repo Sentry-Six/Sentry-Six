@@ -15,10 +15,16 @@
  * falls back to 'osm' at runtime when Google tiles stop loading.
  */
 (function (root, factory) {
+  const api = factory();
   if (typeof module === 'object' && module.exports) {
-    module.exports = factory();
-  } else {
-    root.MapProviders = factory();
+    module.exports = api;
+  }
+  // ALSO set the global when a `module` object exists: the minimap renderer
+  // window runs with nodeIntegration, which injects `module` into the page,
+  // so a CJS-only branch would leave window.MapProviders undefined there and
+  // every consumer would silently fall back to OSM.
+  if (root && typeof root === 'object') {
+    root.MapProviders = api;
   }
 })(typeof self !== 'undefined' ? self : this, function () {
   const PROVIDERS = {
