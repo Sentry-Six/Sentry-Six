@@ -2412,6 +2412,10 @@ export async function cancelExport() {
     // Clean up share progress listener
     window.electronAPI?.removeAllListeners?.('share:progress');
 
+    // Release the AE lock — cancelled exports get no 'complete' event from
+    // main, so without this the modal body stays inert for the session.
+    setSimpleModalAeMode(false);
+
     // Close modal completely when cancelled
     const modal = $('exportModal');
     if (modal) modal.classList.add('hidden');
