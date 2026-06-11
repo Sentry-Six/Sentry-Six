@@ -61,9 +61,14 @@ export function updateGForceMeter(sei) {
     const dotX = 30 + (clampedGX * GFORCE_SCALE);
     const dotY = 30 - (clampedGY * GFORCE_SCALE); // Invert Y so acceleration shows up
 
-    // Sub-0.1px movement is invisible at this meter size — skip the DOM work
+    // Sub-0.1px movement is invisible at this meter size — skip the DOM work,
+    // but only once the trail has fully collapsed onto the dot. Skipping
+    // before then froze the trail dots at their last moving positions for as
+    // long as the reading stayed constant.
     const renderKey = `${dotX.toFixed(1)},${dotY.toFixed(1)}`;
-    if (renderKey === lastRenderKey) return;
+    const trailSettled = gforceHistory.length >= GFORCE_HISTORY_MAX &&
+        gforceHistory.every(p => p.x === dotX && p.y === dotY);
+    if (renderKey === lastRenderKey && trailSettled) return;
     lastRenderKey = renderKey;
 
     // Update trail history
