@@ -64,6 +64,14 @@ export async function runAdvancedExport() {
         return;
     }
 
+    // A simple-modal export may already be running (the AE stays reachable
+    // while one encodes) — starting another would clobber its progress
+    // listener and the shared export state.
+    if (exportStateRef.isExporting) {
+        notify('An export is already in progress.', { type: 'warn' });
+        return;
+    }
+
     const active = state.collection?.active;
     if (!active || !active.groups?.length) {
         showError('No clip loaded.');
@@ -77,38 +85,15 @@ export async function runAdvancedExport() {
         return;
     }
 
-    // ----- 1. File save dialog -----
-    const lastFolder = await safeGetSetting('lastExportFolder');
-    const baseName = (active.groups[0]?.timestampKey || 'export').replace(/[:\s]/g, '_');
-    const defaultPath = lastFolder
-        ? `${lastFolder}/${baseName}.mp4`
-        : `${baseName}.mp4`;
-
-    const outputPath = await window.electronAPI.saveFile({
-        title: 'Save Advanced Editor Export',
-        defaultPath,
-    });
-    if (!outputPath) return;
-    const exportDir = outputPath.replace(/[/\\][^/\\]*$/, '');
-    if (exportDir) safeSetSetting('lastExportFolder', exportDir);
-
-    // Register this export in the shared export state so the simple modal's
-    // cancel / floating-progress machinery controls AE exports too. Without
-    // this, cancelExport() was a no-op for AE exports — closing the modal hid
-    // all progress while ffmpeg kept encoding with no way to stop it.
-    const exportId = `ae_export_${Date.now()}`;
-    exportStateRef.cancelled = false;
-    exportStateRef.isExporting = true;
-    exportStateRef.currentExportId = exportId;
-
-    // ----- 2. Time range from current playback window -----
+    // ----- 1. Time range from current playback window -----
     const totalSec = (nativeVideo.cumulativeStarts || []).slice(-1)[0] || 0;
     const startSec = advancedEditorState.playback.startSec || 0;
     const endSec   = advancedEditorState.playback.endSec || totalSec;
     const startTimeMs = Math.round(startSec * 1000);
     const endTimeMs   = Math.round(endSec   * 1000);
 
-    // ----- 3. Build segment list -----
+    // ----- 2. Build segment list (validated BEFORE any state registration
+    // or save dialog, so a bad clip can't leave isExporting stuck true) -----
     const groups = active.groups;
     const cumStarts = nativeVideo.cumulativeStarts || [];
     const segments = [];
@@ -141,206 +126,232 @@ export async function runAdvancedExport() {
         return;
     }
 
-    // ----- 4. SEI extraction (only if dashboard or minimap requires it) -----
-    let seiData = [];
-    let mapPath = [];
-    if (settings.includeDashboard || settings.includeMinimap) {
-        const extracted = await extractSeiAndMapPath({
-            groups, cumStarts, nativeVideo,
-            startTimeMs, endTimeMs,
-            wantMinimap: settings.includeMinimap,
-            exportStateRef,
-        });
-        seiData = extracted.seiData;
-        mapPath = extracted.mapPath;
-    }
+    // ----- 3. File save dialog -----
+    const lastFolder = await safeGetSetting('lastExportFolder');
+    const baseName = (active.groups[0]?.timestampKey || 'export').replace(/[:\s]/g, '_');
+    const defaultPath = lastFolder
+        ? `${lastFolder}/${baseName}.mp4`
+        : `${baseName}.mp4`;
 
-    // User cancelled during SEI extraction — stop before spawning ffmpeg.
-    if (exportStateRef.cancelled) {
+    const outputPath = await window.electronAPI.saveFile({
+        title: 'Save Advanced Editor Export',
+        defaultPath,
+    });
+    if (!outputPath) return;
+    const exportDir = outputPath.replace(/[/\\][^/\\]*$/, '');
+    if (exportDir) safeSetSetting('lastExportFolder', exportDir);
+
+    // Register this export in the shared export state so the simple modal's
+    // cancel / floating-progress machinery controls AE exports too. Without
+    // this, cancelExport() was a no-op for AE exports — closing the modal hid
+    // all progress while ffmpeg kept encoding with no way to stop it.
+    // Everything from here to startExport runs inside try/catch: any failure
+    // must reset this state or all future exports stay locked out.
+    const exportId = `ae_export_${Date.now()}`;
+    exportStateRef.cancelled = false;
+    exportStateRef.isExporting = true;
+    exportStateRef.currentExportId = exportId;
+
+    const resetExportState = () => {
         exportStateRef.isExporting = false;
         exportStateRef.currentExportId = null;
         exportStateRef.cancelled = false;
-        return;
-    }
-
-    // ----- 5. Build layoutData (per-camera sizing) -----
-    // Match the AE canvas's CURRENT aspect ratio so the export canvas has the
-    // same shape as the preview. Tiles are normalized 0-1 — if the export
-    // canvas were a different aspect than the AE canvas, a tile that looks
-    // close to camera-aspect in the preview would become extremely wide (or
-    // tall) at export time, causing big black letterbox bars around the
-    // camera content inside each tile. WYSIWYG requires the two canvases to
-    // share an aspect ratio. Fall back to 16:9 only when the canvas hasn't
-    // been measured.
-    const quality = settings.quality || 'high';
-    const refW = QUALITY_REF_WIDTH[quality] || QUALITY_REF_WIDTH.high;
-    const aeW = advancedEditorState.canvas.widthPx;
-    const aeH = advancedEditorState.canvas.heightPx;
-    const canvasAspect = (aeW > 0 && aeH > 0) ? (aeW / aeH) : (16 / 9);
-    const refH = Math.round(refW / canvasAspect);
-
-    const cameraLayouts = {};
-    for (const [id, tile] of advancedEditorState.tiles.entries()) {
-        const { type, name } = parseTileId(id);
-        if (type !== 'camera') continue;
-        if (!cameras.includes(name)) continue;
-        cameraLayouts[name] = {
-            x: tile.x * refW,
-            y: tile.y * refH,
-            width: tile.w * refW,
-            height: tile.h * refH,
-        };
-    }
-    const layoutData = {
-        layoutMode: 'advanced',
-        cameras: cameraLayouts,
-        canvasWidth: refW,
-        canvasHeight: refH,
     };
-
-    // ----- 6. Build overlayData (normalized 0-1) -----
-    const overlayData = {};
-    const tsTile = advancedEditorState.tiles.get('overlay:timestamp');
-    if (settings.includeTimestamp && tsTile) {
-        overlayData.timestamp = { x: tsTile.x, y: tsTile.y, w: tsTile.w, h: tsTile.h };
-    }
-    const dashTile = advancedEditorState.tiles.get('overlay:dashboard');
-    if (settings.includeDashboard && dashTile) {
-        overlayData.dashboard = { x: dashTile.x, y: dashTile.y, w: dashTile.w, h: dashTile.h };
-    }
-    // Tesla Mobile has a SECOND dashboard tile for the date bar. Only send
-    // it when the style is tesla-mobile (every other style ignores this).
-    const dateTile = advancedEditorState.tiles.get('overlay:dashboardDate');
-    if (settings.includeDashboard && settings.dashboardStyle === 'tesla-mobile' && dateTile) {
-        overlayData.dashboardDate = { x: dateTile.x, y: dateTile.y, w: dateTile.w, h: dateTile.h };
-    }
-    const miniTile = advancedEditorState.tiles.get('overlay:minimap');
-    if (settings.includeMinimap && miniTile) {
-        overlayData.minimap = { x: miniTile.x, y: miniTile.y, w: miniTile.w, h: miniTile.h };
-    }
-
-    // ----- 7. Assemble exportData (same shape as simple modal + extras) -----
-    const exportData = {
-        segments,
-        startTimeMs,
-        endTimeMs,
-        outputPath,
-        cameras,
-        baseFolderPath,
-        quality,
-        includeDashboard: settings.includeDashboard && seiData.length > 0,
-        seiData,
-        layoutData,
-        overlayData,
-        useMetric: !!depsRef?.getUseMetric?.(),
-        glassBlur: parseInt(document.documentElement.style.getPropertyValue('--glass-blur') || '7', 10),
-        dashboardStyle: settings.dashboardStyle,
-        dashboardPosition: 'custom',
-        dashboardSize: 'custom',
-        // AE-only label/value scaling applied on top of the ASS writer's
-        // base font formula. Simple modal exports omit these and the writer
-        // defaults them to 1 (no scaling), preserving existing behavior.
-        dashboardLabelScale: settings.dashboardLabelScale,
-        dashboardValueScale: settings.dashboardValueScale,
-        // Tesla Mobile two-tile mode: independent scale for the date-bar
-        // tile (the data bar reuses dashboardLabelScale/dashboardValueScale).
-        dashboardDateLabelScale: settings.dashboardDateLabelScale,
-        dashboardDateValueScale: settings.dashboardDateValueScale,
-        accelPedMode: window._accelPedMode || 'iconbar',
-        includeTimestamp: settings.includeTimestamp && !settings.includeDashboard,
-        timestampPosition: 'custom',
-        timestampDateFormat: window._dateFormat || 'mdy',
-        timestampTimeFormat: window._timeFormat || '12h',
-        blurZones: (exportStateRef.blurZones || []).filter(z => cameras.includes(z.camera)),
-        blurType: 'trueBlur',
-        language: typeof window.getCurrentLanguage === 'function' ? window.getCurrentLanguage() : 'en',
-        mirrorCameras: window._mirrorCameras !== false,
-        includeMinimap: settings.includeMinimap && mapPath.length > 0,
-        minimapPosition: 'custom',
-        minimapSize: 'custom',
-        minimapRenderMode: settings.minimapRenderMode,
-        minimapDarkMode: false,
-        mapPath,
-        enableTimelapse: settings.enableTimelapse,
-        timelapseSpeed: settings.timelapseSpeed,
-    };
-
-    // Close AE modal and open the simple export modal so the user sees the
-    // same progress UI + completion panel as a regular export. The simple
-    // modal's #exportProgress / #exportCompletePanel UI is the canonical
-    // export experience — we feed it the same progress events.
-    if (closeAdvancedEditorCb) closeAdvancedEditorCb();
-    try { openExportModal(); } catch (err) { console.warn('[AE] Could not open simple modal:', err); }
-    setSimpleModalAeMode(true);
-
-    const refs = getSimpleModalProgressRefs();
-    if (refs.progressEl) refs.progressEl.classList.remove('hidden');
-    if (refs.progressBar) refs.progressBar.style.width = '0%';
-    if (refs.progressText) refs.progressText.textContent = 'Preparing…';
-    if (refs.dashProgressEl) refs.dashProgressEl.classList.add('hidden');
-    if (refs.miniProgressEl) refs.miniProgressEl.classList.add('hidden');
-
-    // Wire progress listener — mirrors exportVideo.js's listener so the
-    // dashboard / minimap sub-bars behave identically.
-    if (window.electronAPI.on) {
-        window.electronAPI.removeAllListeners?.('export:progress');
-        window.electronAPI.on('export:progress', (rid, progress) => {
-            if (rid !== exportId) return;
-            const r = getSimpleModalProgressRefs();
-
-            if (progress.type === 'progress') {
-                const text = translateMessage(progress.message);
-                if (r.progressBar) r.progressBar.style.width = `${progress.percentage}%`;
-                if (r.progressText) r.progressText.textContent = text;
-            } else if (progress.type === 'dashboard-progress') {
-                if (r.progressEl) r.progressEl.classList.remove('hidden');
-                if (r.dashProgressEl) r.dashProgressEl.classList.remove('hidden');
-                if (r.dashProgressBar) r.dashProgressBar.style.width = `${progress.percentage}%`;
-                if (r.dashProgressText) r.dashProgressText.textContent = translateMessage(progress.message);
-            } else if (progress.type === 'minimap-progress') {
-                if (r.progressEl) r.progressEl.classList.remove('hidden');
-                if (r.miniProgressEl) r.miniProgressEl.classList.remove('hidden');
-                if (r.miniProgressBar) r.miniProgressBar.style.width = `${progress.percentage}%`;
-                if (r.miniProgressText) r.miniProgressText.textContent = translateMessage(progress.message);
-            } else if (progress.type === 'downscaled') {
-                // Bbox exceeded the encoder-safe ceiling — main process scaled
-                // the layout down. Surface this so the user understands why
-                // the output resolution is lower than expected.
-                const o = progress.original;
-                const s = progress.scaled;
-                notify(
-                    `Advanced Editor layout was too large for safe encoding ` +
-                    `(${o.w}×${o.h}). Output resolution was reduced to ` +
-                    `${s.w}×${s.h} to ensure the export succeeds.`,
-                    { type: 'warn', duration: 8000 }
-                );
-            } else if (progress.type === 'complete') {
-                exportStateRef.isExporting = false;
-                exportStateRef.currentExportId = null;
-                exportStateRef.cancelled = false;
-                if (r.dashProgressEl) r.dashProgressEl.classList.add('hidden');
-                if (r.miniProgressEl) r.miniProgressEl.classList.add('hidden');
-                const text = translateMessage(progress.message);
-                if (progress.success) {
-                    if (r.progressBar) r.progressBar.style.width = '100%';
-                    if (r.progressText) r.progressText.textContent = text;
-                    try { showExportCompletePanel(outputPath, text); }
-                    catch (err) { console.warn('[AE] showExportCompletePanel failed:', err); }
-                } else {
-                    if (r.progressText) r.progressText.textContent = text;
-                    setSimpleModalAeMode(false);
-                }
-            }
-        });
-    }
 
     try {
+        // ----- 4. SEI extraction (only if dashboard or minimap requires it) -----
+        let seiData = [];
+        let mapPath = [];
+        if (settings.includeDashboard || settings.includeMinimap) {
+            const extracted = await extractSeiAndMapPath({
+                groups, cumStarts, nativeVideo,
+                startTimeMs, endTimeMs,
+                wantMinimap: settings.includeMinimap,
+                exportStateRef,
+            });
+            seiData = extracted.seiData;
+            mapPath = extracted.mapPath;
+        }
+
+        // User cancelled during SEI extraction — stop before spawning ffmpeg.
+        if (exportStateRef.cancelled) {
+            resetExportState();
+            return;
+        }
+
+        // ----- 5. Build layoutData (per-camera sizing) -----
+        // Match the AE canvas's CURRENT aspect ratio so the export canvas has the
+        // same shape as the preview. Tiles are normalized 0-1 — if the export
+        // canvas were a different aspect than the AE canvas, a tile that looks
+        // close to camera-aspect in the preview would become extremely wide (or
+        // tall) at export time, causing big black letterbox bars around the
+        // camera content inside each tile. WYSIWYG requires the two canvases to
+        // share an aspect ratio. Fall back to 16:9 only when the canvas hasn't
+        // been measured.
+        const quality = settings.quality || 'high';
+        const refW = QUALITY_REF_WIDTH[quality] || QUALITY_REF_WIDTH.high;
+        const aeW = advancedEditorState.canvas.widthPx;
+        const aeH = advancedEditorState.canvas.heightPx;
+        const canvasAspect = (aeW > 0 && aeH > 0) ? (aeW / aeH) : (16 / 9);
+        const refH = Math.round(refW / canvasAspect);
+
+        const cameraLayouts = {};
+        for (const [id, tile] of advancedEditorState.tiles.entries()) {
+            const { type, name } = parseTileId(id);
+            if (type !== 'camera') continue;
+            if (!cameras.includes(name)) continue;
+            cameraLayouts[name] = {
+                x: tile.x * refW,
+                y: tile.y * refH,
+                width: tile.w * refW,
+                height: tile.h * refH,
+            };
+        }
+        const layoutData = {
+            layoutMode: 'advanced',
+            cameras: cameraLayouts,
+            canvasWidth: refW,
+            canvasHeight: refH,
+        };
+
+        // ----- 6. Build overlayData (normalized 0-1) -----
+        const overlayData = {};
+        const tsTile = advancedEditorState.tiles.get('overlay:timestamp');
+        if (settings.includeTimestamp && tsTile) {
+            overlayData.timestamp = { x: tsTile.x, y: tsTile.y, w: tsTile.w, h: tsTile.h };
+        }
+        const dashTile = advancedEditorState.tiles.get('overlay:dashboard');
+        if (settings.includeDashboard && dashTile) {
+            overlayData.dashboard = { x: dashTile.x, y: dashTile.y, w: dashTile.w, h: dashTile.h };
+        }
+        // Tesla Mobile has a SECOND dashboard tile for the date bar. Only send
+        // it when the style is tesla-mobile (every other style ignores this).
+        const dateTile = advancedEditorState.tiles.get('overlay:dashboardDate');
+        if (settings.includeDashboard && settings.dashboardStyle === 'tesla-mobile' && dateTile) {
+            overlayData.dashboardDate = { x: dateTile.x, y: dateTile.y, w: dateTile.w, h: dateTile.h };
+        }
+        const miniTile = advancedEditorState.tiles.get('overlay:minimap');
+        if (settings.includeMinimap && miniTile) {
+            overlayData.minimap = { x: miniTile.x, y: miniTile.y, w: miniTile.w, h: miniTile.h };
+        }
+
+        // ----- 7. Assemble exportData (same shape as simple modal + extras) -----
+        const exportData = {
+            segments,
+            startTimeMs,
+            endTimeMs,
+            outputPath,
+            cameras,
+            baseFolderPath,
+            quality,
+            includeDashboard: settings.includeDashboard && seiData.length > 0,
+            seiData,
+            layoutData,
+            overlayData,
+            useMetric: !!depsRef?.getUseMetric?.(),
+            glassBlur: parseInt(document.documentElement.style.getPropertyValue('--glass-blur') || '7', 10),
+            dashboardStyle: settings.dashboardStyle,
+            dashboardPosition: 'custom',
+            dashboardSize: 'custom',
+            // AE-only label/value scaling applied on top of the ASS writer's
+            // base font formula. Simple modal exports omit these and the writer
+            // defaults them to 1 (no scaling), preserving existing behavior.
+            dashboardLabelScale: settings.dashboardLabelScale,
+            dashboardValueScale: settings.dashboardValueScale,
+            // Tesla Mobile two-tile mode: independent scale for the date-bar
+            // tile (the data bar reuses dashboardLabelScale/dashboardValueScale).
+            dashboardDateLabelScale: settings.dashboardDateLabelScale,
+            dashboardDateValueScale: settings.dashboardDateValueScale,
+            accelPedMode: window._accelPedMode || 'iconbar',
+            includeTimestamp: settings.includeTimestamp && !settings.includeDashboard,
+            timestampPosition: 'custom',
+            timestampDateFormat: window._dateFormat || 'mdy',
+            timestampTimeFormat: window._timeFormat || '12h',
+            blurZones: (exportStateRef.blurZones || []).filter(z => cameras.includes(z.camera)),
+            blurType: 'trueBlur',
+            language: typeof window.getCurrentLanguage === 'function' ? window.getCurrentLanguage() : 'en',
+            mirrorCameras: window._mirrorCameras !== false,
+            includeMinimap: settings.includeMinimap && mapPath.length > 0,
+            minimapPosition: 'custom',
+            minimapSize: 'custom',
+            minimapRenderMode: settings.minimapRenderMode,
+            minimapDarkMode: false,
+            mapPath,
+            enableTimelapse: settings.enableTimelapse,
+            timelapseSpeed: settings.timelapseSpeed,
+        };
+
+        // Close AE modal and open the simple export modal so the user sees the
+        // same progress UI + completion panel as a regular export. The simple
+        // modal's #exportProgress / #exportCompletePanel UI is the canonical
+        // export experience — we feed it the same progress events.
+        if (closeAdvancedEditorCb) closeAdvancedEditorCb();
+        try { openExportModal(); } catch (err) { console.warn('[AE] Could not open simple modal:', err); }
+        setSimpleModalAeMode(true);
+
+        const refs = getSimpleModalProgressRefs();
+        if (refs.progressEl) refs.progressEl.classList.remove('hidden');
+        if (refs.progressBar) refs.progressBar.style.width = '0%';
+        if (refs.progressText) refs.progressText.textContent = 'Preparing…';
+        if (refs.dashProgressEl) refs.dashProgressEl.classList.add('hidden');
+        if (refs.miniProgressEl) refs.miniProgressEl.classList.add('hidden');
+
+        // Wire progress listener — mirrors exportVideo.js's listener so the
+        // dashboard / minimap sub-bars behave identically.
+        if (window.electronAPI.on) {
+            window.electronAPI.removeAllListeners?.('export:progress');
+            window.electronAPI.on('export:progress', (rid, progress) => {
+                if (rid !== exportId) return;
+                const r = getSimpleModalProgressRefs();
+
+                if (progress.type === 'progress') {
+                    const text = translateMessage(progress.message);
+                    if (r.progressBar) r.progressBar.style.width = `${progress.percentage}%`;
+                    if (r.progressText) r.progressText.textContent = text;
+                } else if (progress.type === 'dashboard-progress') {
+                    if (r.progressEl) r.progressEl.classList.remove('hidden');
+                    if (r.dashProgressEl) r.dashProgressEl.classList.remove('hidden');
+                    if (r.dashProgressBar) r.dashProgressBar.style.width = `${progress.percentage}%`;
+                    if (r.dashProgressText) r.dashProgressText.textContent = translateMessage(progress.message);
+                } else if (progress.type === 'minimap-progress') {
+                    if (r.progressEl) r.progressEl.classList.remove('hidden');
+                    if (r.miniProgressEl) r.miniProgressEl.classList.remove('hidden');
+                    if (r.miniProgressBar) r.miniProgressBar.style.width = `${progress.percentage}%`;
+                    if (r.miniProgressText) r.miniProgressText.textContent = translateMessage(progress.message);
+                } else if (progress.type === 'downscaled') {
+                    // Bbox exceeded the encoder-safe ceiling — main process scaled
+                    // the layout down. Surface this so the user understands why
+                    // the output resolution is lower than expected.
+                    const o = progress.original;
+                    const s = progress.scaled;
+                    notify(
+                        `Advanced Editor layout was too large for safe encoding ` +
+                        `(${o.w}×${o.h}). Output resolution was reduced to ` +
+                        `${s.w}×${s.h} to ensure the export succeeds.`,
+                        { type: 'warn', duration: 8000 }
+                    );
+                } else if (progress.type === 'complete') {
+                    resetExportState();
+                    if (r.dashProgressEl) r.dashProgressEl.classList.add('hidden');
+                    if (r.miniProgressEl) r.miniProgressEl.classList.add('hidden');
+                    const text = translateMessage(progress.message);
+                    if (progress.success) {
+                        if (r.progressBar) r.progressBar.style.width = '100%';
+                        if (r.progressText) r.progressText.textContent = text;
+                        try { showExportCompletePanel(outputPath, text); }
+                        catch (err) { console.warn('[AE] showExportCompletePanel failed:', err); }
+                    } else {
+                        if (r.progressText) r.progressText.textContent = text;
+                        setSimpleModalAeMode(false);
+                    }
+                }
+            });
+        }
+
         await window.electronAPI.startExport(exportId, exportData);
     } catch (err) {
         console.error('[AE] Export error:', err);
-        exportStateRef.isExporting = false;
-        exportStateRef.currentExportId = null;
-        exportStateRef.cancelled = false;
+        resetExportState();
         const r = getSimpleModalProgressRefs();
         if (r.progressText) r.progressText.textContent = `Export failed: ${err.message || err}`;
         setSimpleModalAeMode(false);
