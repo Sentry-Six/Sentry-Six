@@ -562,7 +562,7 @@ async function performVideoExport(event, exportId, exportData, ffmpegPath) {
         if (layout.x + layout.width  > maxX) maxX = layout.x + layout.width;
         if (layout.y + layout.height > maxY) maxY = layout.y + layout.height;
       }
-      for (const key of ['timestamp', 'dashboard', 'minimap']) {
+      for (const key of ['timestamp', 'dashboard', 'dashboardDate', 'minimap']) {
         const o = overlayData?.[key];
         if (!o) continue;
         const ox = o.x * canvasW_px;
