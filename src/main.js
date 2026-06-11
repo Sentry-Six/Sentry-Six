@@ -1402,8 +1402,15 @@ async function performVideoExport(event, exportId, exportData, ffmpegPath) {
           const canvasW_px = layoutData.canvasWidth  || totalW;
           const canvasH_px = layoutData.canvasHeight || totalH;
           const bbox = layoutData._advancedBBox || { minX: 0, minY: 0 };
-          const px = Math.round(overlayData.minimap.x * canvasW_px - bbox.minX);
-          const py = Math.round(overlayData.minimap.y * canvasH_px - bbox.minY);
+          // The pre-rendered map is a square sized to the tile's SMALLER side
+          // (floored to even). Center that square within the tile rect —
+          // anchoring at the tile's top-left shifts the map left/up whenever
+          // the tile isn't perfectly square, drifting from the editor preview.
+          const mw = Math.round(overlayData.minimap.w * canvasW_px);
+          const mh = Math.round(overlayData.minimap.h * canvasH_px);
+          const side = minimapPixelSize || Math.max(2, Math.floor(Math.min(mw, mh) / 2) * 2);
+          const px = Math.round(overlayData.minimap.x * canvasW_px - bbox.minX + (mw - side) / 2);
+          const py = Math.round(overlayData.minimap.y * canvasH_px - bbox.minY + (mh - side) / 2);
           mapPos = `${px}:${py}`;
         }
         filters.push(`${currentStreamTag}${dashAssChain}[with_dash]`);
@@ -1428,8 +1435,13 @@ async function performVideoExport(event, exportId, exportData, ffmpegPath) {
         const canvasW_px = layoutData.canvasWidth  || totalW;
         const canvasH_px = layoutData.canvasHeight || totalH;
         const bbox = layoutData._advancedBBox || { minX: 0, minY: 0 };
-        const px = Math.round(overlayData.minimap.x * canvasW_px - bbox.minX);
-        const py = Math.round(overlayData.minimap.y * canvasH_px - bbox.minY);
+        // Center the square pre-rendered map within the (possibly non-square)
+        // tile rect — see the matching block in the dashboard+minimap branch.
+        const mw = Math.round(overlayData.minimap.w * canvasW_px);
+        const mh = Math.round(overlayData.minimap.h * canvasH_px);
+        const side = minimapPixelSize || Math.max(2, Math.floor(Math.min(mw, mh) / 2) * 2);
+        const px = Math.round(overlayData.minimap.x * canvasW_px - bbox.minX + (mw - side) / 2);
+        const py = Math.round(overlayData.minimap.y * canvasH_px - bbox.minY + (mh - side) / 2);
         mapPos = `${px}:${py}`;
       }
       filters.push(`${currentStreamTag}[${minimapInputIdx}:v]overlay=${mapPos}:format=auto[out]`);
