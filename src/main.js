@@ -222,8 +222,15 @@ async function applyBlurZonesToStreams({ blurZones, blurType, streams, streamTag
 
       const blurredStreamTag = `[blurred_${cam}]`;
 
+      // The mask MUST match the stream's exact dimensions: alphamerge rejects
+      // mismatched inputs and that kills the whole graph with zero frames
+      // emitted. Streams with per-tile sizes (Advanced Editor) carry their
+      // own blurW/blurH; everything else uses the shared camera size.
+      const streamW = blurStream.blurW || cameraW;
+      const streamH = blurStream.blurH || cameraH;
+
       filters.push(`${blurCameraStreamTag}split=2[blur_orig_${cam}][blur_base_${cam}]`);
-      filters.push(`[${maskInputIdx}:v]scale=${cameraW}:${cameraH}:force_original_aspect_ratio=disable,format=gray,format=yuva420p[mask_alpha_${cam}]`);
+      filters.push(`[${maskInputIdx}:v]scale=${streamW}:${streamH}:force_original_aspect_ratio=disable,format=gray,format=yuva420p[mask_alpha_${cam}]`);
       filters.push(`[blur_orig_${cam}]boxblur=10:10[blurred_temp_${cam}]`);
       filters.push(`[blurred_temp_${cam}][mask_alpha_${cam}]alphamerge[blurred_with_alpha_${cam}]`);
       filters.push(`[blur_base_${cam}][blurred_with_alpha_${cam}]overlay=0:0:format=auto${blurredStreamTag}`);
@@ -1148,7 +1155,10 @@ async function performVideoExport(event, exportId, exportData, ffmpegPath) {
         chain += `,setsar=1[v${i}]`;
 
         filters.push(chain);
-        aeStreams.push({ camera, tag: `[v${i}]`, x, y });
+        // blurW/blurH: AE tiles are scaled to their own per-tile size, so the
+        // blur mask must match it — alphamerge hard-fails the whole filter
+        // graph ("Invalid argument" before the first frame) on any size mismatch.
+        aeStreams.push({ camera, tag: `[v${i}]`, x, y, blurW: finalW, blurH: finalH });
       }
 
       // Apply blur zones to individual camera streams BEFORE grid composition

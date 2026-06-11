@@ -331,7 +331,12 @@ async function createMinimapRenderer(minimapWidth, minimapHeight) {
       webPreferences: {
         nodeIntegration: true,
         contextIsolation: false,
-        offscreen: true
+        offscreen: true,
+        // The renderer signals each frame via requestAnimationFrame; hidden
+        // windows get their rAF/timers throttled (or suspended) by Chromium
+        // on some machines, which stalls past the per-frame timeout and kills
+        // the whole minimap pre-render ("Minimap render timeout").
+        backgroundThrottling: false
       }
     });
     
