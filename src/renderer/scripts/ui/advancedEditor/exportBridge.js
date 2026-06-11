@@ -7,6 +7,7 @@
 
 import { advancedEditorState, parseTileId } from './state.js';
 import { filePathToUrl } from '../../lib/utils.js';
+import { parseTimestampKeyToEpochMs } from '../../core/clipBrowser.js';
 import { translateMessage, showExportCompletePanel, openExportModal, setSimpleModalAeMode } from '../../features/exportVideo.js';
 import { notify } from '../notifications.js';
 
@@ -374,13 +375,6 @@ async function safeSetSetting(key, value) {
     catch {}
 }
 
-function parseTimestampKeyToEpochMs(key) {
-    if (!key || typeof key !== 'string') return null;
-    const m = key.match(/^(\d{4})-(\d{2})-(\d{2})_(\d{2})-(\d{2})-(\d{2})$/);
-    if (!m) return null;
-    const [, y, mo, d, h, mi, s] = m;
-    return Date.UTC(+y, +mo - 1, +d, +h, +mi, +s);
-}
 
 async function extractSeiAndMapPath({ groups, cumStarts, nativeVideo, startTimeMs, endTimeMs, wantMinimap, exportStateRef }) {
     const allSei = [];
