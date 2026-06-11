@@ -3,6 +3,7 @@
 // 0..1000 ticks for sub-second precision; values are mapped to seconds.
 
 import { advancedEditorState } from './state.js';
+import { formatTimeHMS } from '../timeDisplay.js';
 import {
     togglePlayPause, seekCumulative,
     getDuration, getStartSec, getEndSec, getCurrentSec
@@ -89,8 +90,7 @@ function updatePlayIcon() {
 
 function formatTime(sec) {
     if (!isFinite(sec) || sec < 0) sec = 0;
-    const s = Math.floor(sec);
-    const m = Math.floor(s / 60);
-    const r = s % 60;
-    return `${String(m).padStart(2, '0')}:${String(r).padStart(2, '0')}`;
+    // Same formatter as the main player time display so >1h ranges roll
+    // minutes into hours ("1:15:30") instead of showing "75:30".
+    return formatTimeHMS(sec);
 }
