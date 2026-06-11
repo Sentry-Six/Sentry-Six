@@ -1,6 +1,21 @@
 {
   "versions": [
     {
+      "version": "2026.24.30",
+      "date": "2026-06-10",
+      "title": "Export Hotfixes",
+      "changes": [
+        {
+          "type": "fix",
+          "description": "Export: Privacy blur zones no longer crash Advanced Editor exports with 'code 4294967274'. The blur mask was sized to the quality preset while AE camera tiles render at their own per-tile size; the mismatch killed the encode before a single frame was written. Masks now always match the tile they blur."
+        },
+        {
+          "type": "fix",
+          "description": "Export: Fixed 'Minimap render timeout' aborting the Live Map (Slow) pre-render on some machines. Chromium throttles animation callbacks in hidden windows, which stalled the offscreen map renderer; background throttling is now disabled for that window."
+        }
+      ]
+    },
+    {
       "version": "2026.24.29",
       "date": "2026-06-10",
       "title": "Liquid Glass Redesign, Export Reliability & Performance",
