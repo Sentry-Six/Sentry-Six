@@ -107,6 +107,24 @@ const activeExportPaths = {}; // Track output paths for cleanup on cancel
 const cancelledExports = new Set(); // Track cancelled exports by ID
 let mainWindow = null;
 
+// Session-scoped map provider fallback: set when any renderer window reports
+// that Google tile loads are failing, so export tile downloads follow the
+// same OSM fallback as the on-screen maps. Cleared on app restart so Google
+// gets retried next launch.
+let mapProviderFallbackActive = false;
+ipcMain.on('map:provider-fallback', () => {
+  if (!mapProviderFallbackActive) {
+    console.log('[MAP] Google tiles unavailable — exports will use OpenStreetMap this session');
+  }
+  mapProviderFallbackActive = true;
+});
+
+function getEffectiveMapProvider() {
+  if (mapProviderFallbackActive) return 'osm';
+  const settings = loadSettings();
+  return settings.mapTileProvider || 'google';
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1400,
@@ -871,7 +889,8 @@ async function performVideoExport(event, exportId, exportData, ffmpegPath) {
               mapPath,
               minimapTargetSize,
               ffmpegPath,
-              minimapDarkMode
+              minimapDarkMode,
+              getEffectiveMapProvider()
             );
             mapBgPath = mapResult.imagePath;
             mapBounds = mapResult.bounds;
@@ -1049,7 +1068,8 @@ async function performVideoExport(event, exportId, exportData, ffmpegPath) {
             ffmpegPath,
             sendMinimapProgress,
             cancelledExports,
-            minimapDarkMode
+            minimapDarkMode,
+            getEffectiveMapProvider()
           );
 
           tempFiles.push(minimapTempPath);

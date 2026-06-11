@@ -6,6 +6,7 @@
 import { initKeybindSettings } from '../lib/keybinds.js';
 import { getCurrentLanguage, setLanguage, getAvailableLanguages, onLanguageChange, t } from '../lib/i18n.js';
 import { initFeatureBadges, FEATURE_BADGE_KEYS } from '../features/exportVideo.js';
+import { setMapTileProvider, getSelectedProviderId } from './mapTiles.js';
 
 
 /**
@@ -145,6 +146,10 @@ export function initSettingsModal() {
                 const settingsMapMode = $('settingsMapMode');
                 if (settingsMapMode) settingsMapMode.value = window._mapDarkMode ? 'dark' : 'light';
 
+                // Sync map provider dropdown
+                const settingsMapProviderEl = $('settingsMapProvider');
+                if (settingsMapProviderEl) settingsMapProviderEl.value = getSelectedProviderId();
+
                 // Sync layout style toggle
                 const settingsLayoutStyle = $('settingsLayoutStyle');
                 if (settingsLayoutStyle) {
@@ -280,6 +285,19 @@ export function initSettingsModal() {
                 mapToggle.dispatchEvent(new Event('change'));
             }
             settingsMapToggle.blur();
+        };
+    }
+
+    // Map provider dropdown (Google Maps / Google Satellite / OpenStreetMap)
+    const settingsMapProvider = $('settingsMapProvider');
+    if (settingsMapProvider && window.electronAPI?.getSetting) {
+        window.electronAPI.getSetting('mapTileProvider').then(saved => {
+            settingsMapProvider.value = window.MapProviders?.getProvider?.(saved)?.id || 'google';
+        });
+
+        settingsMapProvider.onchange = async () => {
+            await setMapTileProvider(settingsMapProvider.value);
+            settingsMapProvider.blur();
         };
     }
 

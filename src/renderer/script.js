@@ -31,6 +31,7 @@ import { initAdvancedEditor, openAdvancedEditor } from './scripts/ui/advancedEdi
 import { initEventMarkers, updateEventTimelineMarker, updateEventCameraHighlight } from './scripts/ui/eventMarkers.js';
 import { initSkipSeconds, skipSeconds } from './scripts/features/skipSeconds.js';
 import { initMapVisualization, updateMapVisibility, updateMapMarker, clearMapMarker, getMapOrientation, setMapOrientation, getMapBearing } from './scripts/ui/mapVisualization.js';
+import { attachTileLayer } from './scripts/ui/mapTiles.js';
 import { initDashboardVisibility, updateDashboardVisibility } from './scripts/ui/dashboardVisibility.js';
 import { hasValidGps, extractSeiFromEntry, findSeiAtTime } from './scripts/core/seiExtractor.js';
 import { 
@@ -453,11 +454,10 @@ let useMetric = false; // Will be loaded from settings
                 boxZoom: false,
                 keyboard: false
             }).setView([0, 0], 2);
-            // Use OpenStreetMap tiles - works globally including China
-            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                maxZoom: 19,
-                subdomains: 'abc'
-            }).addTo(map);
+            // Tile source comes from the shared provider registry (Google by
+            // default, OpenStreetMap as the automatic fallback) — see
+            // scripts/ui/mapTiles.js and src/shared/mapProviders.js.
+            attachTileLayer(map);
             
             // Apply dark mode if previously saved
             if (window._mapDarkMode) applyMapDarkMode(true);

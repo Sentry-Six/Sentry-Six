@@ -5,6 +5,7 @@
     <title>Minimap Renderer</title>
     <link rel="stylesheet" href="vendor/leaflet/leaflet.css" />
     <script src="vendor/leaflet/leaflet.js"></script>
+    <script src="../shared/mapProviders.js"></script>
     <style>
         * {
             margin: 0;
@@ -70,6 +71,8 @@
         let map = null;
         let mapMarker = null;
         let mapPolyline = null;
+        let tileLayer = null;
+        let tileProviderId = (window.MapProviders && window.MapProviders.DEFAULT_PROVIDER_ID) || 'google';
         
         // Arrow size as percentage of minimap size
         const ARROW_SIZE_PERCENT = 0.30;  // 18% of minimap width
@@ -195,12 +198,59 @@
             return current + delta * factor;
         }
         
+        // Tile layer from the shared provider registry (Google by default,
+        // OSM fallback) — see src/shared/mapProviders.js.
+        function buildTileLayer() {
+            const layerOptions = {
+                updateWhenIdle: false,
+                updateWhenZooming: false,
+                keepBuffer: 8
+            };
+            if (!window.MapProviders) {
+                // Registry script failed to load — keep the old OSM behavior.
+                return L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    maxZoom: 19, subdomains: 'abc', ...layerOptions
+                });
+            }
+            const provider = window.MapProviders.getProvider(tileProviderId);
+            const layer = L.tileLayer(provider.urlTemplate, {
+                maxZoom: Math.min(provider.maxZoom, 19),
+                subdomains: provider.subdomains,
+                ...layerOptions
+            });
+            // Google's key-less tile endpoint is unofficial: if its tiles fail
+            // before any succeed, fall back to OSM and tell the main process
+            // so the rest of the export follows.
+            if (window.MapProviders.isGoogleProvider(tileProviderId)) {
+                let errors = 0;
+                let loaded = false;
+                layer.on('tileload', () => { loaded = true; });
+                layer.on('tileerror', () => {
+                    if (loaded || ++errors < 3) return;
+                    console.warn('[MINIMAP] Google tiles failing — falling back to OpenStreetMap');
+                    if (ipcRenderer?.send) ipcRenderer.send('map:provider-fallback');
+                    setTileProvider('osm');
+                });
+            }
+            return layer;
+        }
+
+        function setTileProvider(providerId) {
+            tileProviderId = window.MapProviders
+                ? window.MapProviders.getProvider(providerId).id
+                : providerId;
+            if (map) {
+                if (tileLayer) map.removeLayer(tileLayer);
+                tileLayer = buildTileLayer().addTo(map);
+            }
+        }
+
         function initMap() {
             if (map) return;
-            
+
             // Calculate arrow size before creating map
             calculateArrowSize();
-            
+
             map = L.map('minimap', {
                 zoomControl: false,
                 attributionControl: false,
@@ -214,14 +264,8 @@
                 zoomAnimation: false,
                 markerZoomAnimation: false
             }).setView([0, 0], mapZoom);
-            
-            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                maxZoom: 19,
-                subdomains: 'abc',
-                updateWhenIdle: false,
-                updateWhenZooming: false,
-                keepBuffer: 8
-            }).addTo(map);
+
+            tileLayer = buildTileLayer().addTo(map);
         }
         
         // Subdivide a path using Catmull-Rom spline for smoother curves
@@ -376,6 +420,11 @@
                 if (ipcRenderer?.send) ipcRenderer.send('minimap:ready');
             });
             
+            ipcRenderer.on('minimap:setProvider', (event, providerId) => {
+                console.log('[MINIMAP] Tile provider:', providerId);
+                setTileProvider(providerId);
+            });
+
             ipcRenderer.on('minimap:setDarkMode', (event, enabled) => {
                 console.log('[MINIMAP] Dark mode:', enabled);
                 document.getElementById('minimapContainer').classList.toggle('dark-mode', !!enabled);

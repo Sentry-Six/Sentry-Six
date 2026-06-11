@@ -4,6 +4,7 @@ const fs = require('fs');
 const os = require('os');
 const https = require('https');
 const { spawn } = require('child_process');
+const MapProviders = require('../shared/mapProviders');
 
 // Calculate minimap size based on output resolution (square aspect ratio)
 function calculateMinimapSize(outputWidth, outputHeight, sizeOption = 'medium') {
@@ -29,7 +30,8 @@ function calculateMinimapSize(outputWidth, outputHeight, sizeOption = 'medium') 
 
 // ============================================
 // STATIC MAP TILE DOWNLOADING FOR ASS MINIMAP
-// Downloads OpenStreetMap tiles and creates a composite background image
+// Downloads map tiles (Google by default, OSM fallback — see
+// src/shared/mapProviders.js) and creates a composite background image
 // ============================================
 
 /**
@@ -89,25 +91,31 @@ function calculateOptimalZoom(bounds, targetSize) {
 }
 
 /**
- * Download a single map tile from OpenStreetMap
+ * Download a single map tile from the given provider
  * @param {number} x - Tile X coordinate
  * @param {number} y - Tile Y coordinate
  * @param {number} zoom - Zoom level
  * @param {string} outputPath - Path to save the tile
+ * @param {string} providerId - Provider id from the shared registry
+ * @param {number} requestIndex - Running counter for subdomain round-robin
  * @returns {Promise<string>} Path to downloaded tile
  */
-async function downloadMapTile(x, y, zoom, outputPath) {
+async function downloadMapTile(x, y, zoom, outputPath, providerId = 'osm', requestIndex = 0) {
   return new Promise((resolve, reject) => {
-    const url = `https://tile.openstreetmap.org/${zoom}/${x}/${y}.png`;
-    
+    const url = MapProviders.buildTileUrl(providerId, x, y, zoom, requestIndex);
+
+    // The UA identifies us to any tile server (Node sends none by default);
+    // the Referer is part of OSM's tile usage policy and only sent there.
+    const headers = {
+      'User-Agent': 'Sentry-Studio/1.0 (Tesla Dashcam Viewer; https://sentry-six.com/sentry-studio)'
+    };
+    if (!MapProviders.isGoogleProvider(providerId)) {
+      headers['Referer'] = 'https://sentry-six.com/';
+    }
+
     const file = fs.createWriteStream(outputPath);
-    
-    const request = https.get(url, {
-      headers: {
-        'User-Agent': 'Sentry-Studio/1.0 (Tesla Dashcam Viewer; https://sentry-six.com/sentry-studio)',
-        'Referer': 'https://sentry-six.com/'
-      }
-    }, (response) => {
+
+    const request = https.get(url, { headers }, (response) => {
       if (response.statusCode === 200) {
         response.pipe(file);
         file.on('finish', () => {
@@ -143,9 +151,10 @@ async function downloadMapTile(x, y, zoom, outputPath) {
  * @param {number} targetSize - Target output size in pixels (square)
  * @param {string} ffmpegPath - Path to FFmpeg executable
  * @param {boolean} darkMode - Whether to apply dark theme filter to map tiles
+ * @param {string} providerId - Tile provider id (see src/shared/mapProviders.js)
  * @returns {Promise<{imagePath: string, bounds: Object, zoom: number}>}
  */
-async function downloadStaticMapBackground(exportId, mapPath, targetSize, ffmpegPath, darkMode = true) {
+async function downloadStaticMapBackground(exportId, mapPath, targetSize, ffmpegPath, darkMode = true, providerId = MapProviders.DEFAULT_PROVIDER_ID) {
   if (!mapPath || mapPath.length === 0) {
     throw new Error('No GPS data for map background');
   }
@@ -195,18 +204,39 @@ async function downloadStaticMapBackground(exportId, mapPath, targetSize, ffmpeg
   const tileSize = 256; // OSM tiles are 256x256
   
   try {
-    // Download all tiles
+    // Download all tiles. If Google's (unofficial, key-less) tile endpoint
+    // fails mid-batch, retry that tile on OSM and keep the rest of the batch
+    // on OSM so the stitched background comes from a single provider style.
+    let activeProviderId = MapProviders.getProvider(providerId).id;
+    let requestIndex = 0;
     for (let ty = topLeftTile.y; ty <= bottomRightTile.y; ty++) {
       for (let tx = topLeftTile.x; tx <= bottomRightTile.x; tx++) {
         const tilePath = path.join(tempDir, `tile_${tx}_${ty}.png`);
-        await downloadMapTile(tx, ty, zoom, tilePath);
+        try {
+          await downloadMapTile(tx, ty, zoom, tilePath, activeProviderId, requestIndex++);
+        } catch (tileErr) {
+          if (!MapProviders.isGoogleProvider(activeProviderId)) throw tileErr;
+          console.warn(`[MAP] ${activeProviderId} tile failed (${tileErr.message}) — switching batch to OpenStreetMap`);
+          activeProviderId = MapProviders.FALLBACK_PROVIDER_ID;
+          // Discard any Google tiles already downloaded so styles don't mix
+          for (const t of tilePaths) {
+            try { fs.unlinkSync(t.path); } catch {}
+            await downloadMapTile(
+              t.tileX, t.tileY, zoom, t.path, activeProviderId, requestIndex++
+            );
+            await new Promise(r => setTimeout(r, 100));
+          }
+          await downloadMapTile(tx, ty, zoom, tilePath, activeProviderId, requestIndex++);
+        }
         tilePaths.push({
           path: tilePath,
+          tileX: tx,
+          tileY: ty,
           gridX: tx - topLeftTile.x,
           gridY: ty - topLeftTile.y
         });
-        
-        // Small delay to be nice to OSM servers
+
+        // Small delay to be nice to the tile servers
         await new Promise(r => setTimeout(r, 100));
       }
     }
@@ -428,7 +458,7 @@ async function renderMinimapFrameByTime(minimapWindow, timestampMs, width, heigh
 }
 
 // Pre-render minimap overlay to a temp video file
-async function preRenderMinimap(exportId, seiData, mapPath, startTimeMs, endTimeMs, minimapWidth, minimapHeight, ffmpegPath, sendProgress, cancelledExports, darkMode = false) {
+async function preRenderMinimap(exportId, seiData, mapPath, startTimeMs, endTimeMs, minimapWidth, minimapHeight, ffmpegPath, sendProgress, cancelledExports, darkMode = false, providerId = MapProviders.DEFAULT_PROVIDER_ID) {
   // Capture at 12fps instead of the video's 36fps: every frame is a separate
   // BrowserWindow capturePage round-trip, which dominates export time on long
   // clips (a 5-minute clip is ~10,800 captures at 36fps). The overlay filter
@@ -448,7 +478,11 @@ async function preRenderMinimap(exportId, seiData, mapPath, startTimeMs, endTime
   console.log(`[MINIMAP] Creating renderer window ${minimapWidth}x${minimapHeight}`);
   console.log(`[MINIMAP] Smooth mode: ${totalFrames} frames at ${FPS}fps with interpolation`);
   const minimapWindow = await createMinimapRenderer(minimapWidth, minimapHeight);
-  
+
+  // Set the tile provider before the view locks so the right tiles load
+  minimapWindow.webContents.send('minimap:setProvider', providerId);
+  console.log(`[MINIMAP] Tile provider: ${providerId}`);
+
   // Send the map path data for the polyline (this also locks the view)
   minimapWindow.webContents.send('minimap:init', mapPath);
   console.log(`[MINIMAP] Sent ${mapPath.length} GPS points to renderer`);

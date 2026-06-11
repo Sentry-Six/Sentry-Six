@@ -8,6 +8,7 @@
 
 import { advancedEditorState } from './state.js';
 import { findSeiAtTime } from '../../core/seiExtractor.js';
+import { attachTileLayer, detachTileLayer } from '../mapTiles.js';
 
 const MPS_TO_MPH = 2.23694;
 const MPS_TO_KMH = 3.6;
@@ -258,10 +259,9 @@ function makeMinimapPreview(contentEl) {
                 doubleClickZoom: false,
                 touchZoom: false,
             });
-            // Tile layer
-            window.L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                maxZoom: 18,
-            }).addTo(map);
+            // Tile layer from the shared provider registry (Google with OSM
+            // fallback); 18 preserves this preview's original zoom ceiling.
+            attachTileLayer(map, { maxZoomCap: 18 });
 
             const nativeVideo = depsRef?.getNativeVideo?.();
             const path = nativeVideo?.mapPath || [];
@@ -299,6 +299,7 @@ function makeMinimapPreview(contentEl) {
         },
         dispose() {
             try { if (resizeObs) resizeObs.disconnect(); } catch {}
+            try { if (map) detachTileLayer(map); } catch {}
             try { if (map) map.remove(); } catch {}
         }
     };

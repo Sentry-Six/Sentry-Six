@@ -2023,6 +2023,14 @@
                                 </div>
                             </label>
                             <div class="select-row">
+                                <span class="select-row-label" data-i18n="ui.settings.mapProvider">Map Provider</span>
+                                <select id="settingsMapProvider" class="settings-select">
+                                    <option value="google" selected data-i18n="ui.settings.mapProviderGoogle">Google Maps</option>
+                                    <option value="google-satellite" data-i18n="ui.settings.mapProviderGoogleSat">Google Satellite</option>
+                                    <option value="osm" data-i18n="ui.settings.mapProviderOsm">OpenStreetMap</option>
+                                </select>
+                            </div>
+                            <div class="select-row">
                                 <span class="select-row-label" data-i18n="ui.settings.mapStyle">Map Style</span>
                                 <select id="settingsMapMode" class="settings-select">
                                     <option value="light" selected data-i18n="ui.settings.mapStyleLight">Light</option>
@@ -3189,6 +3197,7 @@
 
     <!-- Scripts -->
     <script src="vendor/leaflet/leaflet.js"></script>
+    <script src="../shared/mapProviders.js"></script>
     <script src="vendor/protobuf.min.js"></script>
     <script src="scripts/data/dashcam-mp4.js"></script>
     <script type="module" src="script.js"></script>
