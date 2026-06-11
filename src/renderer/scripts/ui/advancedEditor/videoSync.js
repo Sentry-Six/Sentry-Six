@@ -17,6 +17,11 @@ let cumStarts = [];          // length = segments.length + 1
 let totalSec = 0;
 let currentSegIdx = -1;
 let masterCamera = null;
+// Per-segment clock master: the preferred master (front) can be missing from
+// individual segments (camera dropout, deleted file) — the playback clock
+// falls back to any camera that has a file in the current segment, so the
+// tick loop never reads currentTime from a <video> with no source.
+let activeMasterCamera = null;
 
 export function initVideoSync(deps, options = {}) {
     depsRef = deps;
@@ -147,6 +152,7 @@ export function disposeVideos() {
     totalSec = 0;
     currentSegIdx = -1;
     masterCamera = null;
+    activeMasterCamera = null;
 }
 
 async function extractSeiForSegmentsInRange(groups, priorityIdx) {
@@ -195,12 +201,13 @@ async function extractSeiForSegmentsInRange(groups, priorityIdx) {
 }
 
 export function play() {
-    if (!masterCamera) return;
-    const master = advancedEditorState.videoElements.get(masterCamera);
+    const masterCam = activeMasterCamera || masterCamera;
+    if (!masterCam) return;
+    const master = advancedEditorState.videoElements.get(masterCam);
     if (!master) return;
     master.play().catch(err => console.warn('[AE] master play failed:', err));
     for (const [cam, vid] of advancedEditorState.videoElements.entries()) {
-        if (cam !== masterCamera) vid.play().catch(() => {});
+        if (cam !== masterCam) vid.play().catch(() => {});
     }
     advancedEditorState.playback.isPlaying = true;
     startRaf();
@@ -278,13 +285,33 @@ function findSegmentIdx(cumSec) {
     return cumStarts.length - 2;
 }
 
+// Pick the clock master for a segment: the preferred master if it has a file,
+// else the first camera that does, else null (gap segment with no video).
+function pickActiveMaster(segIdx) {
+    const seg = segments[segIdx];
+    if (!seg) return null;
+    if (seg.files[masterCamera] && advancedEditorState.videoElements.has(masterCamera)) {
+        return masterCamera;
+    }
+    for (const camera of advancedEditorState.videoElements.keys()) {
+        if (seg.files[camera]) return camera;
+    }
+    return null;
+}
+
 async function loadSegment(segIdx) {
     const seg = segments[segIdx];
     if (!seg) return;
+    activeMasterCamera = pickActiveMaster(segIdx);
     const promises = [];
     for (const [camera, vid] of advancedEditorState.videoElements.entries()) {
         const url = seg.files[camera];
-        if (!url) { vid.removeAttribute('src'); continue; }
+        if (!url) {
+            // load() after removing src detaches the old media — without it
+            // the previous segment's frames keep playing in this tile.
+            if (vid.getAttribute('src')) { vid.removeAttribute('src'); vid.load(); }
+            continue;
+        }
         if (vid.src !== url) {
             vid.src = url;
             promises.push(new Promise((resolve) => {
@@ -318,8 +345,25 @@ function startRaf() {
             advancedEditorState.playback.rafId = null;
             return;
         }
-        const master = advancedEditorState.videoElements.get(masterCamera);
-        if (!master) { advancedEditorState.playback.rafId = null; return; }
+        const master = activeMasterCamera
+            ? advancedEditorState.videoElements.get(activeMasterCamera)
+            : null;
+
+        // No camera has video in this segment (dropout/gap) — skip ahead
+        // instead of stalling on a clock that can never advance.
+        if (!master) {
+            if (currentSegIdx + 1 < segments.length) {
+                pause();
+                currentSegIdx += 1;
+                await loadSegment(currentSegIdx);
+                seekAllLocal(0);
+                play();
+            } else {
+                pause();
+                advancedEditorState.playback.rafId = null;
+            }
+            return;
+        }
 
         const cur = (cumStarts[currentSegIdx] || 0) + master.currentTime;
 
@@ -345,7 +389,7 @@ function startRaf() {
 
         // Drift correction: pull followers toward master.
         for (const [cam, vid] of advancedEditorState.videoElements.entries()) {
-            if (cam === masterCamera) continue;
+            if (cam === activeMasterCamera) continue;
             if (vid.readyState >= 1 && Math.abs(vid.currentTime - master.currentTime) > DRIFT_THRESHOLD_SEC) {
                 try { vid.currentTime = master.currentTime; } catch {}
             }
