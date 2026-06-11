@@ -1616,13 +1616,18 @@ function generateDetailedDashboardEvents(seiData, startTimeMs, endTimeMs, option
   const totalRows = numRows + 1; // +1 for the Date/Time header row at the top
 
   let dashWidth, dashHeight, rowHeight, pos;
+  let customPadding = 0;
   if (customPosition) {
     dashWidth = Math.max(80, Math.round(customPosition.w));
     dashHeight = Math.max(80, Math.round(customPosition.h));
     // Fill the user's tile precisely: 10 content rows (header + 9 data)
     // sized to fit between top and bottom paddings. The old `/ (totalRows
     // + 1)` left an extra row's worth of dead space below the last row.
-    const customPadding = Math.round(dashWidth * 0.06);
+    // Padding is capped by the tile's SMALLER side — deriving it from width
+    // alone gave a wide+short tile (e.g. 2000×150) a padding taller than the
+    // tile itself, a negative usable height, and rows drawn far below the
+    // panel's bottom edge.
+    customPadding = Math.round(Math.min(dashWidth, dashHeight) * 0.06);
     rowHeight = Math.max(10, Math.floor((dashHeight - 2 * customPadding) / totalRows));
     pos = {
       x: Math.round(customPosition.x + dashWidth / 2),
@@ -1657,7 +1662,9 @@ function generateDetailedDashboardEvents(seiData, startTimeMs, endTimeMs, option
   // both lines plus inter-line padding fit cleanly without crowding the
   // separator below.
   const dualLineFontSize = Math.min(smallFontSize, Math.max(8, Math.round(rowHeight * 0.38)));
-  const padding = Math.round(dashWidth * 0.06);
+  // Custom (AE) tiles reuse the height-capped padding computed above so the
+  // row grid stays inside the tile; preset layouts keep the width-based one.
+  const padding = customPosition ? customPadding : Math.round(dashWidth * 0.06);
   const events = [];
 
   // Panel bounds
