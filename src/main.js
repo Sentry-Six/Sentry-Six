@@ -59,6 +59,19 @@ const crypto = require('crypto');
 // ============================================
 // DIAGNOSTICS: Console capture (must be early to catch all logs)
 // ============================================
+
+// stdout/stderr are pipes when the app is launched by a wrapper process
+// (npm start, npx, CI). If that parent dies while the app keeps running,
+// the pipes break and the next console.log raises an unhandled EPIPE that
+// crashes the main process with the "JavaScript error" dialog. Logging is
+// best-effort: swallow stream errors instead of dying. Logs still reach
+// the in-memory diagnostics buffer below.
+for (const stdStream of [process.stdout, process.stderr]) {
+  if (stdStream && typeof stdStream.on === 'function') {
+    stdStream.on('error', () => {});
+  }
+}
+
 const mainLogBuffer = [];
 const originalMainConsole = {
   log: console.log.bind(console),
