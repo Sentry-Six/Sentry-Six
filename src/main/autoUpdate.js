@@ -7,7 +7,7 @@ const { execSync } = require('child_process');
 
 // Auto-Update Configuration
 const UPDATE_CONFIG = {
-  owner: 'ChadR23',
+  owner: 'Sentry-Six',
   repo: 'Sentry-Six',
   defaultBranch: 'main'
 };

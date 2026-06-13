@@ -166,7 +166,7 @@
     },
     "publish": {
       "provider": "github",
-      "owner": "ChadR23",
+      "owner": "Sentry-Six",
       "repo": "Sentry-Six",
       "releaseType": "release"
     }
