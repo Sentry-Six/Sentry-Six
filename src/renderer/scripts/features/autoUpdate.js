@@ -331,7 +331,7 @@ function showForceManualModal(info) {
         const downloadBtn = document.getElementById('forceManualDownloadBtn');
         if (downloadBtn) {
             downloadBtn.addEventListener('click', () => {
-                const downloadUrl = info.download_url || 'https://github.com/ChadR23/Sentry-Six/releases/latest';
+                const downloadUrl = info.download_url || 'https://github.com/Sentry-Six/Sentry-Six/releases/latest';
                 if (window.electronAPI?.openExternal) {
                     window.electronAPI.openExternal(downloadUrl);
                 }

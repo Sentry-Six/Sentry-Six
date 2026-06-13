@@ -217,7 +217,7 @@ function processApiResponse(apiResponse) {
     return {
       action: 'force_manual',
       message: apiResponse.message || 'A critical update is required. Please download the latest version manually.',
-      download_url: apiResponse.download_url || 'https://github.com/ChadR23/Sentry-Six/releases/latest',
+      download_url: apiResponse.download_url || 'https://github.com/Sentry-Six/Sentry-Six/releases/latest',
       new_version: apiResponse.new_version
     };
   }
