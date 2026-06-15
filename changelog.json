@@ -1,6 +1,17 @@
 {
   "versions": [
     {
+      "version": "2026.25.33",
+      "date": "2026-06-15",
+      "title": "Export Camera Layout Fix",
+      "changes": [
+        {
+          "type": "fix",
+          "description": "Export: Unchecking a camera in the standard Export window now actually removes it — from the layout preview and from the rendered video. The standard export's camera toggles shared the same markup as the Advanced Editor's, so it was reading both sets of checkboxes at once; a still-checked Advanced Editor copy kept a 'removed' camera in the layout and in the final export. The standard export now reads only its own camera selection. The Advanced Editor was unaffected and continues to work as before."
+        }
+      ]
+    },
+    {
       "version": "2026.24.32",
       "date": "2026-06-11",
       "title": "Google Maps",
