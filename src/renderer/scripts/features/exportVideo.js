@@ -595,7 +595,7 @@ function detectAvailableCameras(state) {
  * @param {Set<string>} availableCameras - Set of available camera names
  */
 function updateCameraCheckboxVisibility(availableCameras) {
-    const allCameraCheckboxes = document.querySelectorAll('.option-card input[data-camera]');
+    const allCameraCheckboxes = document.querySelectorAll('#exportCameraToggles input[data-camera]');
     const hasPillarCameras = availableCameras.has('left_pillar') || availableCameras.has('right_pillar');
 
     allCameraCheckboxes.forEach(checkbox => {
@@ -927,7 +927,7 @@ export function openExportModal() {
 
     const qualityInputs = document.querySelectorAll('input[name="exportQuality"]');
     qualityInputs.forEach(input => { input.onchange = updateExportSizeEstimate; });
-    const cameraInputs = document.querySelectorAll('.option-card input[data-camera]');
+    const cameraInputs = document.querySelectorAll('#exportCameraToggles input[data-camera]');
     cameraInputs.forEach(input => { input.onchange = updateExportSizeEstimate; });
     updateExportSizeEstimate();
 
@@ -1582,7 +1582,7 @@ export function updateExportSizeEstimate() {
     const endPct = exportState.endMarkerPct ?? 100;
     const durationMin = Math.abs((endPct - startPct) / 100 * totalSec) / 60;
 
-    const selectedCameras = document.querySelectorAll('.option-card input[data-camera]:checked');
+    const selectedCameras = document.querySelectorAll('#exportCameraToggles input[data-camera]:checked');
     const cameraCount = selectedCameras.length || 6;
     const isFrontOnly = cameraCount === 1 && selectedCameras[0]?.dataset?.camera === 'front';
     const hasFrontAndOthers = cameraCount > 1 && Array.from(selectedCameras).some(cb => cb.dataset?.camera === 'front');
@@ -1805,7 +1805,7 @@ export async function startExport() {
         return;
     }
 
-    const cameraCheckboxes = document.querySelectorAll('.option-card input[data-camera]:checked');
+    const cameraCheckboxes = document.querySelectorAll('#exportCameraToggles input[data-camera]:checked');
     const cameras = Array.from(cameraCheckboxes).map(cb => cb.dataset.camera);
 
     if (cameras.length === 0) {

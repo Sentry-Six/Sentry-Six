@@ -46,7 +46,11 @@ export function setAvailableCameras(cameras) {
  */
 export function initLayoutLab() {
     const canvas = document.getElementById('layoutCanvas');
-    const toggles = document.querySelectorAll('.option-card input[data-camera]');
+    // Scope strictly to the simple-export camera grid. The Advanced Editor's
+    // toggles (#aeCameraToggles) reuse the same .option-card/input[data-camera]
+    // markup, so an unscoped query would also grab the AE checkboxes and keep
+    // cards alive that the user unchecked here.
+    const toggles = document.querySelectorAll('#exportCameraToggles input[data-camera]');
     
     if (!canvas) return;
     
@@ -137,7 +141,7 @@ function updateCanvas() {
     const canvas = document.getElementById('layoutCanvas');
     if (!canvas || layoutState.canvasWidth === 0) return; // Wait for canvas to be initialized
     
-    const checkedCameras = Array.from(document.querySelectorAll('.option-card input[data-camera]:checked'))
+    const checkedCameras = Array.from(document.querySelectorAll('#exportCameraToggles input[data-camera]:checked'))
         .map(cb => cb.dataset.camera);
     
     // Check if we're going from 0 cameras to having cameras (reset all positions)
