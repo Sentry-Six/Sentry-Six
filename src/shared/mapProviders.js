@@ -31,7 +31,10 @@
     'google': {
       id: 'google',
       label: 'Google Maps',
-      urlTemplate: 'https://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}',
+      // apistyle=s.e:l|p.v:off hides all label elements (street/place names,
+      // POI icons) while keeping road/park/water geometry. The endpoint
+      // honors this undocumented style param; %7C is the encoded '|'.
+      urlTemplate: 'https://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}&apistyle=s.e:l%7Cp.v:off',
       subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
       maxZoom: 20,
       attribution: '&copy; Google'

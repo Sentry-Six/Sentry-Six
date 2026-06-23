@@ -6588,7 +6588,12 @@ body>.dashboard-vis-compact.draggable:not(.fixed-to-camera) {
 .settings-horizontal-body {
     display: flex;
     padding: 0 !important;
-    max-height: 520px;
+    /* Fixed height (not max-height) so the modal stays the same size across
+       tabs — short sections leave empty space, tall ones scroll in
+       .settings-content rather than growing the modal. Capped for short
+       viewports. */
+    height: 520px;
+    max-height: calc(100vh - 120px);
     overflow: hidden;
 }
 
