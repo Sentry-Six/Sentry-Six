@@ -135,9 +135,9 @@ export async function extractSeiFromEntry(entry, seiType) {
  * @param {number} timestampMs - Target timestamp in milliseconds
  * @returns {Object|null} SEI data or null
  */
-export function findSeiAtTime(seiData, timestampMs) {
+export function findSeiAtTime(seiData, timestampMs, maxStaleMs = 3000) {
     if (!seiData || !seiData.length) return null;
-    
+
     // Binary search for the closest timestamp (data is sorted by timestampMs)
     let lo = 0, hi = seiData.length - 1;
     while (lo < hi) {
@@ -145,7 +145,7 @@ export function findSeiAtTime(seiData, timestampMs) {
         if (seiData[mid].timestampMs <= timestampMs) lo = mid;
         else hi = mid - 1;
     }
-    
+
     // lo is now the last entry with timestampMs <= target.
     // Check if lo+1 is closer (if it exists).
     let closest = seiData[lo];
@@ -154,6 +154,10 @@ export function findSeiAtTime(seiData, timestampMs) {
         const diffHi = Math.abs(seiData[lo + 1].timestampMs - timestampMs);
         if (diffHi < diffLo) closest = seiData[lo + 1];
     }
-    
+
+    // Parked footage carries no telemetry SEI, so the nearest sample can be far
+    // from this frame. Beyond maxStaleMs, report "no data" (null) so callers can
+    // hide the dashboard instead of freezing a stale driving value.
+    if (closest && Math.abs(closest.timestampMs - timestampMs) > maxStaleMs) return null;
     return closest?.sei || null;
 }

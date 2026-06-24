@@ -613,6 +613,7 @@ function generateCompactDashboardEvents(seiData, startTimeMs, endTimeMs, options
   for (let frame = 0; frame <= totalFrames; frame++) {
     const currentTimeMs = startTimeMs + (frame * frameTimeMs);
     const sei = findSeiAtTime(seiData, currentTimeMs);
+    const parked = sei == null; // no telemetry (parked) -> show "PARKED" instead of stale values
     const actualTimestampMs = convertVideoTimeToTimestamp(currentTimeMs);
 
     // Extract telemetry values
@@ -657,6 +658,7 @@ function generateCompactDashboardEvents(seiData, startTimeMs, endTimeMs, options
 
     // Create state signature for change detection
     const currentState = JSON.stringify({
+      parked,
       speed, gearText, leftBlinkVisible, rightBlinkVisible,
       apActive, apText, brakeActive, accelPct: Math.round(accelPct),
       steeringAngle: Math.round(steeringAngle), displayTime, displayDate
@@ -697,6 +699,22 @@ function generateCompactDashboardEvents(seiData, startTimeMs, endTimeMs, options
           `b ${bgLeft} ${bgTop} ${bgLeft + r} ${bgTop} ${bgLeft + r} ${bgTop}{\\p0}`
         ));
 
+        // Date and Time (stacked) — always shown; the clock comes from segment
+        // timestamps and stays valid even while parked (no telemetry needed).
+        events.push(dialogueLine(1, startAssTime, endAssTime, 'CompactDash',
+          `{\\an5\\pos(${positions.dateTime},${pos.y - fontSize * 0.35})\\bord0\\shad0\\fs${dateNumSz}\\1c&HA0A0A0&}${prev.displayDate}`
+        ));
+        events.push(dialogueLine(1, startAssTime, endAssTime, 'CompactDash',
+          `{\\an5\\pos(${positions.dateTime},${pos.y + fontSize * 0.35})\\bord0\\shad0\\fs${dateUnitSz}\\1c&HA0A0A0&}${prev.displayTime}`
+        ));
+
+        if (prev.parked) {
+          // Parked: Tesla embeds no telemetry SEI, so rather than freeze stale
+          // gauges we blank them and show PARKED where the speed/gear normally sit.
+          events.push(dialogueLine(1, startAssTime, endAssTime, 'CompactDash',
+            `{\\an5\\pos(${Math.round(pos.x)},${Math.round(pos.y)})\\bord0\\shad0\\fs${Math.round(fontSize * 0.8)}\\b1\\1c&HFFFFFF&}PARKED`
+          ));
+        } else {
         // Brake pedal icon - from Illustrator export, centered at (0,0)
         const brakeColor = prev.brakeActive ? '&H0000FF&' : '&H606060&'; // Red when active, gray when off
         // Base path is ~773 units wide (from -386.87 to 386.05), scale to fit iconSize
@@ -716,15 +734,6 @@ function generateCompactDashboardEvents(seiData, startTimeMs, endTimeMs, options
 
         // Per-frame: only the small text size is still needed locally.
         const smallTextSize = Math.round(fontSize * 0.7);
-
-        // Date and Time display (stacked vertically) - at position 1 (where Gear was)
-        // Date on top, Time below - both same size as the old time display
-        events.push(dialogueLine(1, startAssTime, endAssTime, 'CompactDash',
-          `{\\an5\\pos(${positions.dateTime},${pos.y - fontSize * 0.35})\\bord0\\shad0\\fs${dateNumSz}\\1c&HA0A0A0&}${prev.displayDate}`
-        ));
-        events.push(dialogueLine(1, startAssTime, endAssTime, 'CompactDash',
-          `{\\an5\\pos(${positions.dateTime},${pos.y + fontSize * 0.35})\\bord0\\shad0\\fs${dateUnitSz}\\1c&HA0A0A0&}${prev.displayTime}`
-        ));
 
         // Left blinker arrow - from Illustrator export, centered at (0,0)
         const leftColor = prev.leftBlinkVisible ? '&H22C55E&' : '&H505050&'; // Green when on
@@ -872,6 +881,7 @@ function generateCompactDashboardEvents(seiData, startTimeMs, endTimeMs, options
             ));
           }
         }
+        } // end else: telemetry drawn only when not parked
       }
 
       prevState = currentState;
@@ -1753,6 +1763,7 @@ function generateDetailedDashboardEvents(seiData, startTimeMs, endTimeMs, option
   for (let frame = 0; frame <= totalFrames; frame++) {
     const currentTimeMs = startTimeMs + (frame * frameTimeMs);
     const sei = findSeiAtTime(seiData, currentTimeMs);
+    const parked = sei == null; // no telemetry (parked) -> show "PARKED" instead of stale values
 
     // Extract telemetry values
     const mps = Math.abs(getSeiValue(sei, 'vehicleSpeedMps', 'vehicle_speed_mps') || 0);
@@ -2309,6 +2320,7 @@ function generateTeslaMobileDashboardEvents(seiData, startTimeMs, endTimeMs, opt
   for (let frame = 0; frame <= totalFrames; frame++) {
     const currentTimeMs = startTimeMs + (frame * frameTimeMs);
     const sei = findSeiAtTime(seiData, currentTimeMs);
+    const parked = sei == null; // no telemetry (parked) -> show "PARKED" instead of stale values
 
     // Extract telemetry
     const mps = Math.abs(getSeiValue(sei, 'vehicleSpeedMps', 'vehicle_speed_mps') || 0);
@@ -2591,7 +2603,7 @@ function generateTeslaMobileDashboardEvents(seiData, startTimeMs, endTimeMs, opt
  * the frame loops call it once per output frame, and a linear scan made
  * long exports O(n²) (minutes of blocked main process).
  */
-function findSeiAtTime(seiData, videoTimeMs) {
+function findSeiAtTime(seiData, videoTimeMs, maxStaleMs = 3000) {
   if (!seiData || seiData.length === 0) return null;
 
   // Binary search for the first sample with timestampMs >= videoTimeMs
@@ -2610,7 +2622,12 @@ function findSeiAtTime(seiData, videoTimeMs) {
     if (prevDiff <= currDiff) lo -= 1;
   }
 
-  return seiData[lo]?.sei || null;
+  // Parked footage carries no telemetry SEI, so the nearest sample can be far
+  // from this frame. Beyond maxStaleMs, report "no data" (null) so the dashboard
+  // hides for that stretch instead of freezing a stale driving value.
+  const nearest = seiData[lo];
+  if (nearest && Math.abs(nearest.timestampMs - videoTimeMs) > maxStaleMs) return null;
+  return nearest?.sei || null;
 }
 
 /**
@@ -2917,6 +2934,7 @@ function generateTeslaScreenDashEvents(seiData, startTimeMs, endTimeMs, options)
   for (let frame = 0; frame <= totalFrames; frame++) {
     const currentTimeMs = startTimeMs + (frame * frameTimeMs);
     const sei = findSeiAtTime(seiData, currentTimeMs);
+    const parked = sei == null; // no telemetry (parked) -> show "PARKED" instead of stale values
 
     // --- Telemetry ---
     const mps = Math.abs(getSeiValue(sei, 'vehicleSpeedMps', 'vehicle_speed_mps') || 0);
