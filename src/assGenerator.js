@@ -1828,6 +1828,7 @@ function generateDetailedDashboardEvents(seiData, startTimeMs, endTimeMs, option
 
     // Create state signature
     const currentState = JSON.stringify({
+      parked,
       primarySpeed, gearText,
       leftBlinkVisible, rightBlinkVisible,
       apActive, apDisplayText, brakeApplied, accelPct,
@@ -1887,6 +1888,12 @@ function generateDetailedDashboardEvents(seiData, startTimeMs, endTimeMs, option
           drawSectionSep(startAssTime, endAssTime, headerRowY + rowHeight);
         }
 
+        if (prev.parked) {
+          // Parked: no telemetry — show PARKED centered in the panel; keep the clock.
+          events.push(dialogueLine(1, startAssTime, endAssTime, 'DetailedDash',
+            `{\\an5\\pos(${centerX},${Math.round((panelTop + panelBottom) / 2)})\\bord0\\shad0\\fs${Math.round(fontSize * 1.2)}\\1c&HFFFFFF&\\b1}PARKED`
+          ));
+        } else {
         // === Row 0: Speed ===
         const row0Y = getRowY(0);
         // Label (centered)
@@ -2054,6 +2061,7 @@ function generateDetailedDashboardEvents(seiData, startTimeMs, endTimeMs, option
         events.push(dialogueLine(1, startAssTime, endAssTime, 'DetailedDash',
           `{\\an5\\pos(${centerX},${row8Y + rowHeight * 0.68})\\bord0\\shad0\\fs${dualLineFontSize}\\1c&HCCCCCC&}${labels.longitudinal}:  ${prev.gForceYStr} G`
         ));
+        } // end else: telemetry rows drawn only when not parked
       }
 
       prevState = currentState;
@@ -2361,6 +2369,7 @@ function generateTeslaMobileDashboardEvents(seiData, startTimeMs, endTimeMs, opt
     const timeSec = dateHeight > 0 ? Math.floor(actualTs / 1000) : 0;
 
     const currentState = JSON.stringify({
+      parked,
       speed, gearLetter, leftBlinkVisible, rightBlinkVisible,
       apActive, apText, brakeActive, accelPct: Math.round(accelPct),
       steeringAngle: Math.round(steeringAngle),
@@ -2413,6 +2422,12 @@ function generateTeslaMobileDashboardEvents(seiData, startTimeMs, endTimeMs, opt
           `m 0 ${sepY} l ${playResX} ${sepY} l ${playResX} ${sepY + 1} l 0 ${sepY + 1}{\\p0}`
         ));
 
+        if (prev.parked) {
+          // Parked: no telemetry — show PARKED in the bar; the date bar stays.
+          events.push(dialogueLine(2, startAssTime, endAssTime, 'CompactDash',
+            `{\\an5\\pos(${Math.round(playResX / 2)},${Math.round((dashBarTop + dashBarBottom) / 2)})\\fs${Math.round(dashHeight * 0.45)}\\bord0\\shad0\\1c&HFFFFFF&\\1a&H00&\\b1}PARKED`
+          ));
+        } else {
         // --- Uniform sizing: everything matches circle diameter height ---
         // Circle diameter is the visual reference height for ALL elements.
         // Icon scales stay constant per-frame (sized to circle); text sizes
@@ -2587,6 +2602,7 @@ function generateTeslaMobileDashboardEvents(seiData, startTimeMs, endTimeMs, opt
             ));
           }
         }
+        } // end else: telemetry drawn only when not parked
       }
 
       prevState = currentState;
@@ -2991,6 +3007,7 @@ function generateTeslaScreenDashEvents(seiData, startTimeMs, endTimeMs, options)
     const barMagRounded = Math.round(barMagnitude * 20) / 20;
 
     const currentState = JSON.stringify({
+      parked,
       speed,
       gearLetter,
       apActive,
@@ -3006,6 +3023,12 @@ function generateTeslaScreenDashEvents(seiData, startTimeMs, endTimeMs, options)
         const endAssTime = formatAssTime((frame * frameTimeMs));
         const prev = JSON.parse(prevState);
 
+        if (prev.parked) {
+          // Parked: no telemetry — show PARKED in the HUD; the clock stays below.
+          events.push(dialogueLine(2, startAssTime, endAssTime, 'ScreenDash',
+            `{\\an7\\pos(${hudX},${speedY})\\bord0\\shad0\\fs${Math.round(speedFs * 0.5)}\\b1\\1c&HFFFFFF&}PARKED`
+          ));
+        } else {
         // === HUD column (top-left) ===
 
         // PRND row at top of column. Active gear is bold blue, inactive is dim gray.
@@ -3068,6 +3091,7 @@ function generateTeslaScreenDashEvents(seiData, startTimeMs, endTimeMs, options)
             `m ${barX} ${barCenterY} l ${barX + barW} ${barCenterY} l ${barX + barW} ${fillBottom} l ${barX} ${fillBottom}{\\p0}`
           ));
         }
+        } // end else: HUD telemetry drawn only when not parked
 
         // === Clock (top-center) ===
         // Centered above the canvas so it never collides with the minimap tile,
