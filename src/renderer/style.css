@@ -1364,11 +1364,14 @@ canvas,
 }
 
 /* Telemetry gap (parked): Tesla embeds no telemetry while parked, so rather
-   than freeze the last driving values we hide the gauges and show a centered
-   PARKED label. The recording time stays — it comes from the clip timestamp,
-   not SEI. Mirrors the exported-video behaviour. */
+   than freeze the last driving values we drop the gauges and show PARKED to the
+   LEFT of the recording time. The time stays — it comes from the clip
+   timestamp, not SEI. Mirrors the exported-video behaviour. */
 .parked-label-compact { display: none; }
-.dashboard-vis-compact.telemetry-parked .vis-content-compact { position: relative; }
+.dashboard-vis-compact.telemetry-parked .vis-content-compact {
+    justify-content: center;
+    gap: clamp(10px, 3%, 30px);
+}
 .dashboard-vis-compact.telemetry-parked .brake-icon-compact,
 .dashboard-vis-compact.telemetry-parked .gear-state-compact,
 .dashboard-vis-compact.telemetry-parked .turn-signal-compact,
@@ -1376,20 +1379,16 @@ canvas,
 .dashboard-vis-compact.telemetry-parked .autopilot-label-compact,
 .dashboard-vis-compact.telemetry-parked .steering-wrapper-compact,
 .dashboard-vis-compact.telemetry-parked .accel-pedal-container-compact {
-    visibility: hidden;
+    display: none;
 }
 .dashboard-vis-compact.telemetry-parked .parked-label-compact {
     display: block;
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
+    order: -1; /* sit to the LEFT of the recording time */
     font-weight: 700;
     letter-spacing: 0.08em;
     color: #fff;
-    font-size: clamp(14px, 2.4vw, 26px);
+    font-size: clamp(13px, 1.7em, 24px);
     white-space: nowrap;
-    pointer-events: none;
 }
 
 .dashboard-vis {
