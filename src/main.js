@@ -903,7 +903,20 @@ async function performVideoExport(event, exportId, exportData, ffmpegPath) {
               minimapTargetSize,
               ffmpegPath,
               minimapDarkMode,
-              getEffectiveMapProvider()
+              getEffectiveMapProvider(),
+              (p) => {
+                // Tile download/stitch occupy the first ~half of the minimap
+                // bar (0-47%); the composite-video encode fills 50-100%.
+                if (p.phase === 'stitch') {
+                  sendMinimapProgress(47, 'Stitching map background...');
+                } else {
+                  const pct = p.total > 0 ? Math.round((p.completed / p.total) * 45) : 0;
+                  sendMinimapProgress(
+                    pct,
+                    `Downloading map tiles... ${p.completed.toLocaleString()}/${p.total.toLocaleString()}`
+                  );
+                }
+              }
             );
             mapBgPath = mapResult.imagePath;
             mapBounds = mapResult.bounds;
@@ -915,7 +928,7 @@ async function performVideoExport(event, exportId, exportData, ffmpegPath) {
             // Continue without map background - will use dark bg from ASS
           }
 
-          sendMinimapProgress(30, 'Generating route overlay...');
+          sendMinimapProgress(49, 'Generating route overlay...');
 
           // Step 2: Generate ASS with route path and markers
           // If we have a map background, use standalone mode with map bounds
@@ -1016,7 +1029,18 @@ async function performVideoExport(event, exportId, exportData, ffmpegPath) {
             // previously ran to completion (or outlived the app) untracked.
             activeExports[exportId] = proc;
             let stderr = '';
-            proc.stderr.on('data', d => stderr += d.toString());
+            proc.stderr.on('data', d => {
+              const chunk = d.toString();
+              stderr += chunk;
+              // Advance the minimap bar 50->100% as the composite encodes.
+              const times = [...chunk.matchAll(/time=(\d+):(\d+):(\d+(?:\.\d+)?)/g)];
+              if (times.length && durationSec > 0) {
+                const m = times[times.length - 1];
+                const t = (+m[1]) * 3600 + (+m[2]) * 60 + parseFloat(m[3]);
+                const frac = Math.max(0, Math.min(1, t / durationSec));
+                sendMinimapProgress(50 + Math.round(frac * 50), `Creating minimap video... ${Math.round(frac * 100)}%`);
+              }
+            });
             proc.on('close', code => {
               if (activeExports[exportId] === proc) delete activeExports[exportId];
               if (cancelledExports.has(exportId)) reject(new Error('Export cancelled'));

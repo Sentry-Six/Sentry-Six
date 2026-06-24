@@ -154,7 +154,7 @@ async function downloadMapTile(x, y, zoom, outputPath, providerId = 'osm', reque
  * @param {string} providerId - Tile provider id (see src/shared/mapProviders.js)
  * @returns {Promise<{imagePath: string, bounds: Object, zoom: number}>}
  */
-async function downloadStaticMapBackground(exportId, mapPath, targetSize, ffmpegPath, darkMode = true, providerId = MapProviders.DEFAULT_PROVIDER_ID) {
+async function downloadStaticMapBackground(exportId, mapPath, targetSize, ffmpegPath, darkMode = true, providerId = MapProviders.DEFAULT_PROVIDER_ID, onProgress = null) {
   if (!mapPath || mapPath.length === 0) {
     throw new Error('No GPS data for map background');
   }
@@ -194,12 +194,25 @@ async function downloadStaticMapBackground(exportId, mapPath, targetSize, ffmpeg
   const tilesX = bottomRightTile.x - topLeftTile.x + 1;
   const tilesY = bottomRightTile.y - topLeftTile.y + 1;
   
-  console.log(`[MAP] Downloading ${tilesX}x${tilesY} tiles (${tilesX * tilesY} total)`);
-  
+  const totalTiles = tilesX * tilesY;
+  console.log(`[MAP] Downloading ${tilesX}x${tilesY} tiles (${totalTiles} total)`);
+
+  // Report download progress without flooding IPC: emit ~150 updates across
+  // the whole batch (plus the final tile) so the renderer counter ticks
+  // smoothly even for very large grids.
+  const reportStep = Math.max(1, Math.floor(totalTiles / 150));
+  let tilesCompleted = 0;
+  const reportTileProgress = () => {
+    if (typeof onProgress !== 'function') return;
+    if (tilesCompleted % reportStep === 0 || tilesCompleted === totalTiles) {
+      onProgress({ phase: 'download', completed: tilesCompleted, total: totalTiles });
+    }
+  };
+
   // Create temp directory for tiles
   const tempDir = path.join(os.tmpdir(), `map_tiles_${exportId}_${Date.now()}`);
   fs.mkdirSync(tempDir, { recursive: true });
-  
+
   const tilePaths = [];
   const tileSize = 256; // OSM tiles are 256x256
   
@@ -236,12 +249,20 @@ async function downloadStaticMapBackground(exportId, mapPath, targetSize, ffmpeg
           gridY: ty - topLeftTile.y
         });
 
+        tilesCompleted++;
+        reportTileProgress();
+
         // Small delay to be nice to the tile servers
         await new Promise(r => setTimeout(r, 100));
       }
     }
-    
+
     console.log(`[MAP] Downloaded ${tilePaths.length} tiles`);
+    // Hand off to the stitch phase so the renderer stops showing the tile
+    // counter and reflects that work is still happening.
+    if (typeof onProgress === 'function') {
+      onProgress({ phase: 'stitch', completed: totalTiles, total: totalTiles });
+    }
     
     // Use FFmpeg to stitch tiles together and apply dark theme
     const stitchedWidth = tilesX * tileSize;
