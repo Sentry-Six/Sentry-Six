@@ -44,3 +44,20 @@ export function updateDashboardVisibility() {
         dashboardVis.classList.toggle('user-hidden', !enabled);
     }
 }
+
+// Dashboard layout containers that support the parked state. Toggling the class
+// on all of them is safe (only the active layout is visible).
+const PARKED_CONTAINER_IDS = ['dashboardVis', 'dashboardVisCompact'];
+
+/**
+ * Toggle the "parked" telemetry-gap state on the live dashboard. When parked,
+ * CSS hides the gauges and shows a centered PARKED label while the clock stays.
+ * Independent of the user's on/off toggle. Idempotent (safe to call per frame).
+ * @param {boolean} parked
+ */
+export function setDashboardParked(parked) {
+    for (const id of PARKED_CONTAINER_IDS) {
+        const el = document.getElementById(id);
+        if (el) el.classList.toggle('telemetry-parked', parked);
+    }
+}

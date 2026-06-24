@@ -32,7 +32,7 @@ import { initEventMarkers, updateEventTimelineMarker, updateEventCameraHighlight
 import { initSkipSeconds, skipSeconds } from './scripts/features/skipSeconds.js';
 import { initMapVisualization, updateMapVisibility, updateMapMarker, clearMapMarker, getMapOrientation, setMapOrientation, getMapBearing } from './scripts/ui/mapVisualization.js';
 import { attachTileLayer } from './scripts/ui/mapTiles.js';
-import { initDashboardVisibility, updateDashboardVisibility } from './scripts/ui/dashboardVisibility.js';
+import { initDashboardVisibility, updateDashboardVisibility, setDashboardParked } from './scripts/ui/dashboardVisibility.js';
 import { hasValidGps, extractSeiFromEntry, findSeiAtTime } from './scripts/core/seiExtractor.js';
 import { 
     getRootFolderNameFromWebkitRelativePath, cameraLabel, buildTeslaCamIndex, buildDayCollections
@@ -4106,10 +4106,13 @@ function telemetryAnimationLoop() {
         
         const sei = findSeiAtTime(nativeVideo.seiData, currentVidMs);
         if (sei) {
+            setDashboardParked(false);
             updateVisualization(sei);
             nativeVideo.lastSeiTimeMs = currentVidMs;
             nativeVideo.dashboardReset = false;
         } else {
+            // No telemetry near this time (parked) -> show PARKED, hide gauges.
+            setDashboardParked(true);
             const lastSei = nativeVideo.lastSeiTimeMs ?? -Infinity;
             const timeSinceLastSei = currentVidMs - lastSei;
             if (timeSinceLastSei > 2000 && !nativeVideo.dashboardReset) {
@@ -4153,10 +4156,13 @@ function onMasterTimeUpdate() {
     if (!nativeVideo.telemetryRafId) {
         const sei = findSeiAtTime(nativeVideo.seiData, currentVidMs);
         if (sei) {
+            setDashboardParked(false);
             updateVisualization(sei);
             nativeVideo.lastSeiTimeMs = currentVidMs;
             nativeVideo.dashboardReset = false;
         } else {
+            // No telemetry near this time (parked) -> show PARKED, hide gauges.
+            setDashboardParked(true);
             const lastSei = nativeVideo.lastSeiTimeMs ?? -Infinity;
             const timeSinceLastSei = currentVidMs - lastSei;
             if (timeSinceLastSei > 2000 && !nativeVideo.dashboardReset) {
