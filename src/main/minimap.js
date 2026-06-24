@@ -73,21 +73,39 @@ function tileToLatLon(x, y, zoom) {
 function calculateOptimalZoom(bounds, targetSize) {
   const { minLat, maxLat, minLon, maxLon } = bounds;
   
-  // Try zoom levels from high to low, find one where bounds fit in ~2-4 tiles
+  // Preferred: highest zoom where the route fits in ~2-4 tiles (good detail)
   for (let zoom = 18; zoom >= 10; zoom--) {
     const topLeft = latLonToTile(maxLat, minLon, zoom);
     const bottomRight = latLonToTile(minLat, maxLon, zoom);
-    
+
     const tilesX = bottomRight.x - topLeft.x + 1;
     const tilesY = bottomRight.y - topLeft.y + 1;
-    
+
     // We want 2-4 tiles in each dimension for good detail
     if (tilesX <= 4 && tilesY <= 4 && tilesX >= 1 && tilesY >= 1) {
       return zoom;
     }
   }
-  
-  return 14; // Default fallback
+
+  // Long multi-city drive: nothing from zoom 10-18 fits in 4 tiles. Keep zooming
+  // out and take the highest zoom whose grid stays within MAX_TILES_PER_AXIS, so
+  // the stitch can never balloon into thousands of tiles. The old code returned a
+  // fixed zoom 14 here, which on a 6-7h drive produced a 182x72 = 13,104-tile grid
+  // and a ~1MB FFmpeg command line that died with spawn ENAMETOOLONG.
+  const MAX_TILES_PER_AXIS = 8;
+  for (let zoom = 9; zoom >= 1; zoom--) {
+    const topLeft = latLonToTile(maxLat, minLon, zoom);
+    const bottomRight = latLonToTile(minLat, maxLon, zoom);
+
+    const tilesX = bottomRight.x - topLeft.x + 1;
+    const tilesY = bottomRight.y - topLeft.y + 1;
+
+    if (tilesX <= MAX_TILES_PER_AXIS && tilesY <= MAX_TILES_PER_AXIS) {
+      return zoom;
+    }
+  }
+
+  return 1; // Whole-world view (at most 2x2 tiles) — never explodes
 }
 
 /**
@@ -196,6 +214,15 @@ async function downloadStaticMapBackground(exportId, mapPath, targetSize, ffmpeg
   
   const totalTiles = tilesX * tilesY;
   console.log(`[MAP] Downloading ${tilesX}x${tilesY} tiles (${totalTiles} total)`);
+
+  // Safety net: zoom selection above bounds the grid, but never attempt a stitch
+  // whose `-i` argument list would exceed the OS command-line limit (~32KB on
+  // Windows) — that throws spawn ENAMETOOLONG and silently kills the map. Bail to
+  // the caller's dark-panel fallback instead of failing the whole minimap.
+  const MAX_SAFE_TILES = 256;
+  if (totalTiles > MAX_SAFE_TILES) {
+    throw new Error(`Map tile grid too large to stitch (${tilesX}x${tilesY}=${totalTiles} tiles)`);
+  }
 
   // Report download progress without flooding IPC: emit ~150 updates across
   // the whole batch (plus the final tile) so the renderer counter ticks
