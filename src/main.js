@@ -991,6 +991,16 @@ async function performVideoExport(event, exportId, exportData, ffmpegPath) {
             ? `,format=rgba,geq=r='r(X\\,Y)':g='g(X\\,Y)':b='b(X\\,Y)':a='alpha(X\\,Y)*min(1\\,X/W*5)*min(1\\,(H-Y)/H*5)'`
             : '';
 
+          // The minimap overlay is composited and THEN frame-selected by the
+          // timelapse filter, so at high speed-ups nearly all of its frames are
+          // discarded. Match its frame rate to the timelapse (floored at 6fps so
+          // the marker stays fluid) so this lossless .mov stays small — a 6-7h
+          // drive at 64x drops from ~21GB to ~3.5GB (6x), avoiding the
+          // "No space left on device" crash. Non-timelapse exports keep 36fps.
+          const minimapFps = (enableTimelapse && timelapseSpeed > 1)
+            ? Math.max(6, Math.ceil(FPS / timelapseSpeed))
+            : FPS;
+
           let minimapFfmpegArgs;
           if (mapBgPath) {
             // Use map image as background, loop it for video duration
@@ -1003,7 +1013,7 @@ async function performVideoExport(event, exportId, exportData, ffmpegPath) {
               '-vf', `scale=${minimapTargetSize}:${minimapTargetSize},format=rgba,ass='${escapedAssPath}'${featherFilter}`,
               '-c:v', 'qtrle',
               '-pix_fmt', 'argb',
-              '-r', '36',
+              '-r', minimapFps.toString(),
               minimapVideoPath
             ];
           } else {
@@ -1011,11 +1021,11 @@ async function performVideoExport(event, exportId, exportData, ffmpegPath) {
             minimapFfmpegArgs = [
               '-y',
               '-f', 'lavfi',
-              '-i', `color=c=black@0:s=${minimapTargetSize}x${minimapTargetSize}:d=${durationSec}:r=36,format=rgba`,
+              '-i', `color=c=black@0:s=${minimapTargetSize}x${minimapTargetSize}:d=${durationSec}:r=${minimapFps},format=rgba`,
               '-vf', `ass='${escapedAssPath}'${featherFilter}`,
               '-c:v', 'qtrle',
               '-pix_fmt', 'argb',
-              '-r', '36',
+              '-r', minimapFps.toString(),
               minimapVideoPath
             ];
           }
