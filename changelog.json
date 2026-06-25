@@ -1,6 +1,45 @@
 {
   "versions": [
     {
+      "version": "2026.26.34",
+      "date": "2026-06-25",
+      "title": "Long Export Reliability",
+      "changes": [
+        {
+          "type": "fix",
+          "description": "Dashboard: When the car is parked — Supercharging, a Sentry event, or any stop — the dashboard now shows 'PARKED' instead of freezing on the last driving values. Tesla only records telemetry (speed, gear, blinkers, Autopilot) while driving, so during a parked stretch the old dashboard kept displaying the last reading — for example holding 'R' or a speed for the entire stop — which looked like the video and dashboard had drifted out of sync. The date and clock keep ticking as before. This applies to the live in-app dashboard and all five export dashboard styles."
+        },
+        {
+          "type": "fix",
+          "description": "Export: The GPS minimap now renders on long, multi-hour drives. A long route asked for thousands of map tiles in a single command, which overflowed the operating system's command-length limit and silently aborted the minimap (ENAMETOOLONG) — leaving the map blank or the export stuck on 'Downloading map tiles'. The tile grid is now bounded for the chosen zoom level, so even a 7-hour drive builds its map."
+        },
+        {
+          "type": "fix",
+          "description": "Export: Fixed long timelapsed exports failing with 'No space left on device'. The temporary minimap video was always rendered at a high fixed frame rate regardless of timelapse speed, ballooning to around 21 GB on a 7-hour 64x export; it now matches the timelapse frame rate, shrinking the temporary file to roughly 4 GB."
+        },
+        {
+          "type": "fix",
+          "description": "Export: Start and end markers are now accurate on long drives. Marker positions were stored as a percentage of the timeline, but the timeline's measured length shifts slightly as clip durations are refined in the background — so on a multi-hour export the clip could begin or end a couple of minutes away from the marker you set. Markers are now anchored to wall-clock time, so the exported range matches the start and end times you picked."
+        },
+        {
+          "type": "improvement",
+          "description": "Export: The minimap step now shows real progress instead of appearing frozen. A live tile-download counter and a moving progress bar fill as tiles download, then hand off to 'Creating minimap video' during encoding — so it's clear the app is working, not hung, on long drives."
+        },
+        {
+          "type": "improvement",
+          "description": "Export: The minimap route line is now thinner on long, zoomed-out drives so the path stays legible instead of blobbing over the map. Line thickness scales with the minimap size and tapers as the map zooms out; short, close-up drives are unchanged."
+        },
+        {
+          "type": "improvement",
+          "description": "Maps: Google Maps tiles now render without street and place-name labels for a cleaner map, keeping road, park, and water shapes. Settings -> Map Provider still switches providers live."
+        },
+        {
+          "type": "improvement",
+          "description": "Settings: The Settings window now keeps a consistent size as you switch between tabs instead of resizing to fit each section."
+        }
+      ]
+    },
+    {
       "version": "2026.25.33",
       "date": "2026-06-15",
       "title": "Export Camera Layout Fix",
