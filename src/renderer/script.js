@@ -11,7 +11,7 @@ import { initKeybindActions, initKeybindSettings, initGlobalKeybindListener } fr
 import { initSteeringWheel, smoothSteeringTo, stopSteeringAnimation, resetSteeringWheel } from './scripts/ui/steeringWheel.js';
 import { formatTimeHMS, updateTimeDisplayNew, updateRecordingTime } from './scripts/ui/timeDisplay.js';
 import { 
-    exportState, initExportModule, setExportMarker, updateExportMarkers, 
+    exportState, initExportModule, setExportMarker, updateExportMarkers, recomputeMarkerPctsFromWallClock,
     updateExportButtonState, openExportModal, closeExportModal, reopenExportModal,
     updateExportRangeDisplay, updateExportSizeEstimate, checkFFmpegAvailability,
     startExport, cancelExport, confirmCancelExport, clearExportMarkers, renderSharedClipsList
@@ -3287,7 +3287,11 @@ function selectDayCollection(dayKey) {
         const cumStart = nativeVideo.cumulativeStarts[segIdx] || 0;
         const currentSec = cumStart + (vid?.currentTime || 0);
         updateTimeDisplayNew(Math.floor(currentSec), Math.floor(totalSec));
-        
+
+        // Timeline length just changed — re-lock export markers to their frames.
+        // They're anchored to wall-clock (not %), so they survive this rebuild.
+        try { recomputeMarkerPctsFromWallClock(); } catch {}
+
         // Refresh event timeline marker with accurate durations
         updateEventTimelineMarker();
         
