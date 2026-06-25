@@ -1246,11 +1246,17 @@ function generateMinimapRoutePath(gpsPath, bounds, mapSize, mapX, mapY, duration
     sampledPoints = smoothedPoints.filter((_, i) => i % step === 0 || i === smoothedPoints.length - 1);
   }
 
-  // Line thickness scales with both minimap size and zoom level
-  // Higher zoom = more detail visible = thinner line so roads aren't obscured
-  const strokeWidth = mapZoom
-    ? Math.max(2, Math.round(mapSize / (60 + (mapZoom - 12) * 12)))
-    : Math.max(2, Math.round(mapSize / 80));
+  // Line thickness scales with the minimap's pixel size (so it looks the same
+  // at any minimap size / export resolution) and tapers thinner the more
+  // zoomed-out the map is. Long drives zoom way out (~z8-9) and cram a dense,
+  // turn-heavy route into the box, so a fat line blobs over everything — thin
+  // it down. Short drives stay close (~z14+) and keep the full-width line.
+  // zoomScale: 1.0 at z14+ down to a 0.55 floor when fully zoomed out.
+  const baseWidth = mapSize / 70; // ~3.9px small .. ~17px 4K-xlarge
+  const zoomScale = mapZoom
+    ? Math.max(0.55, Math.min(1, (mapZoom - 6) / 8))
+    : 1;
+  const strokeWidth = Math.max(2, Math.round(baseWidth * zoomScale));
 
   // Build path as a series of thin filled rectangles (stroke segments)
   // For each segment, create a quadrilateral perpendicular to the line direction
