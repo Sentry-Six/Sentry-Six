@@ -73,7 +73,9 @@
         let mapPolyline = null;
         let tileLayer = null;
         let tileProviderId = (window.MapProviders && window.MapProviders.DEFAULT_PROVIDER_ID) || 'google';
-        
+        let labelsEnabled = window.MapProviders ? window.MapProviders.DEFAULT_LABELS_ENABLED : false;
+        let darkEnabled = false;
+
         // Arrow size as percentage of minimap size
         const ARROW_SIZE_PERCENT = 0.30;  // 18% of minimap width
         let arrowSize = 80;  // Will be calculated based on container size
@@ -213,7 +215,8 @@
                 });
             }
             const provider = window.MapProviders.getProvider(tileProviderId);
-            const layer = L.tileLayer(provider.urlTemplate, {
+            const url = window.MapProviders.getUrlTemplate(tileProviderId, { labels: labelsEnabled, dark: darkEnabled });
+            const layer = L.tileLayer(url, {
                 maxZoom: Math.min(provider.maxZoom, 19),
                 subdomains: provider.subdomains,
                 ...layerOptions
@@ -235,14 +238,37 @@
             return layer;
         }
 
+        function rebuildTiles() {
+            if (!map) return;
+            if (tileLayer) map.removeLayer(tileLayer);
+            tileLayer = buildTileLayer().addTo(map);
+        }
+
+        // Native-dark providers (Google night palette) bake darkness into the
+        // tiles, so the CSS invert must NOT be layered on top; OSM still needs it.
+        function updateDarkClass() {
+            const native = window.MapProviders && window.MapProviders.hasNativeDark(tileProviderId);
+            document.getElementById('minimapContainer')
+                .classList.toggle('dark-mode', darkEnabled && !native);
+        }
+
         function setTileProvider(providerId) {
             tileProviderId = window.MapProviders
                 ? window.MapProviders.getProvider(providerId).id
                 : providerId;
-            if (map) {
-                if (tileLayer) map.removeLayer(tileLayer);
-                tileLayer = buildTileLayer().addTo(map);
-            }
+            rebuildTiles();
+            updateDarkClass();
+        }
+
+        function setTileLabels(enabled) {
+            labelsEnabled = !!enabled;
+            rebuildTiles();
+        }
+
+        function setTileDark(enabled) {
+            darkEnabled = !!enabled;
+            rebuildTiles();
+            updateDarkClass();
         }
 
         function initMap() {
@@ -420,6 +446,11 @@
                 if (ipcRenderer?.send) ipcRenderer.send('minimap:ready');
             });
             
+            ipcRenderer.on('minimap:setLabels', (event, enabled) => {
+                console.log('[MINIMAP] Labels:', enabled);
+                setTileLabels(enabled);
+            });
+
             ipcRenderer.on('minimap:setProvider', (event, providerId) => {
                 console.log('[MINIMAP] Tile provider:', providerId);
                 setTileProvider(providerId);
@@ -427,7 +458,7 @@
 
             ipcRenderer.on('minimap:setDarkMode', (event, enabled) => {
                 console.log('[MINIMAP] Dark mode:', enabled);
-                document.getElementById('minimapContainer').classList.toggle('dark-mode', !!enabled);
+                setTileDark(enabled);
                 if (ipcRenderer?.send) ipcRenderer.send('minimap:ready');
             });
             
