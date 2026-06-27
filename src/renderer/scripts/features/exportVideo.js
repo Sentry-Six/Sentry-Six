@@ -646,8 +646,9 @@ function markerWallMsNow() {
 }
 
 /** Map a wall-clock (epoch ms) to a contiguous timeline second, or null if it
- *  falls outside any segment (a recording gap). Uses the CURRENT timeline. */
-function wallMsToContiguousSec(wallMs) {
+ *  falls outside any segment (a recording gap). Uses the CURRENT timeline.
+ *  Exported so the Advanced Editor export can anchor its range the same way. */
+export function wallMsToContiguousSec(wallMs) {
     if (wallMs == null) return null;
     const nv = getNativeVideo?.();
     const groups = getState?.()?.collection?.active?.groups || [];

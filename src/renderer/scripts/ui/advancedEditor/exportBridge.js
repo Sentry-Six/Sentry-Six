@@ -8,7 +8,7 @@
 import { advancedEditorState, parseTileId } from './state.js';
 import { filePathToUrl } from '../../lib/utils.js';
 import { parseTimestampKeyToEpochMs } from '../../core/clipBrowser.js';
-import { translateMessage, showExportCompletePanel, openExportModal, setSimpleModalAeMode } from '../../features/exportVideo.js';
+import { translateMessage, showExportCompletePanel, openExportModal, setSimpleModalAeMode, wallMsToContiguousSec } from '../../features/exportVideo.js';
 import { notify } from '../notifications.js';
 
 // Quality preset → reference canvas width in pixels.
@@ -88,8 +88,21 @@ export async function runAdvancedExport() {
 
     // ----- 1. Time range from current playback window -----
     const totalSec = (nativeVideo.cumulativeStarts || []).slice(-1)[0] || 0;
-    const startSec = advancedEditorState.playback.startSec || 0;
-    const endSec   = advancedEditorState.playback.endSec || totalSec;
+    let startSec = advancedEditorState.playback.startSec || 0;
+    let endSec   = advancedEditorState.playback.endSec || totalSec;
+    // Prefer the wall-clock marker anchors (immune to timeline re-probing) so the
+    // AE export locks to the marked frames and doesn't drift on long drives, just
+    // like the simple export. The AE inherits the simple-modal markers; only
+    // override when BOTH anchors resolve against the current timeline, else keep
+    // the playback window.
+    {
+        const sWall = exportStateRef.startMarkerWallMs, eWall = exportStateRef.endMarkerWallMs;
+        if (sWall != null && eWall != null) {
+            const a = wallMsToContiguousSec(Math.min(sWall, eWall));
+            const b = wallMsToContiguousSec(Math.max(sWall, eWall));
+            if (a != null && b != null) { startSec = a; endSec = b; }
+        }
+    }
     const startTimeMs = Math.round(startSec * 1000);
     const endTimeMs   = Math.round(endSec   * 1000);
 
