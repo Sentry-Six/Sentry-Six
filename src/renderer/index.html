@@ -2006,102 +2006,120 @@
                             <span class="material-symbols-outlined mi-sm">expand_more</span>
                         </div>
                         <div class="settings-accordion-body">
-                            <label class="toggle-row">
-                                <span class="toggle-row-label" data-i18n="ui.settings.dashboard">Dashboard
-                                    Overlay</span>
-                                <div class="toggle-switch">
-                                    <input type="checkbox" id="settingsDashboardToggle" checked>
-                                    <div class="toggle-switch-track">
-                                        <div class="toggle-switch-thumb"></div>
-                                    </div>
-                                </div>
-                            </label>
-                            <label class="toggle-row">
-                                <span class="toggle-row-label" data-i18n="ui.settings.gpsMap">GPS Map</span>
-                                <div class="toggle-switch">
-                                    <input type="checkbox" id="settingsMapToggle" checked>
-                                    <div class="toggle-switch-track">
-                                        <div class="toggle-switch-thumb"></div>
-                                    </div>
-                                </div>
-                            </label>
-                            <div class="select-row">
-                                <span class="select-row-label" data-i18n="ui.settings.mapProvider">Map Provider</span>
-                                <select id="settingsMapProvider" class="settings-select">
-                                    <option value="google" selected data-i18n="ui.settings.mapProviderGoogle">Google Maps</option>
-                                    <option value="google-satellite" data-i18n="ui.settings.mapProviderGoogleSat">Google Satellite</option>
-                                    <option value="osm" data-i18n="ui.settings.mapProviderOsm">OpenStreetMap</option>
-                                </select>
+                            <!-- Subtabs: Dashboard / Map / UI -->
+                            <div class="settings-subtab-bar" role="tablist">
+                                <button type="button" class="settings-subtab-btn active" data-subtab="dashboard" role="tab" data-i18n="ui.settings.subtabDashboard">Dashboard</button>
+                                <button type="button" class="settings-subtab-btn" data-subtab="map" role="tab" data-i18n="ui.settings.subtabMap">Map</button>
+                                <button type="button" class="settings-subtab-btn" data-subtab="cameras" role="tab" data-i18n="ui.settings.subtabCameras">Cameras</button>
                             </div>
-                            <div class="select-row">
-                                <span class="select-row-label" data-i18n="ui.settings.mapStyle">Map Style</span>
-                                <select id="settingsMapMode" class="settings-select">
-                                    <option value="light" selected data-i18n="ui.settings.mapStyleLight">Light</option>
-                                    <option value="dark" data-i18n="ui.settings.mapStyleDark">Dark</option>
-                                </select>
+
+                            <!-- Dashboard subtab -->
+                            <div class="settings-subtab-panel active" data-subtab="dashboard">
+                                <label class="toggle-row">
+                                    <span class="toggle-row-label" data-i18n="ui.settings.dashboard">Dashboard Overlay</span>
+                                    <div class="toggle-switch">
+                                        <input type="checkbox" id="settingsDashboardToggle" checked>
+                                        <div class="toggle-switch-track">
+                                            <div class="toggle-switch-thumb"></div>
+                                        </div>
+                                    </div>
+                                </label>
+                                <div class="select-row">
+                                    <span class="select-row-label" data-i18n="ui.settings.dashboardStyle">Dashboard Style</span>
+                                    <select id="settingsDashboardLayout" class="settings-select">
+                                        <option value="default" data-i18n="ui.settings.default">Default</option>
+                                        <option value="compact" data-i18n="ui.export.compact">Compact</option>
+                                    </select>
+                                </div>
+                                <label class="toggle-row hidden" id="settingsCompactDashboardFixedRow">
+                                    <span class="toggle-row-label" data-i18n="ui.settings.fixedToFrontCamera">Fixed to Front Camera</span>
+                                    <div class="toggle-switch">
+                                        <input type="checkbox" id="settingsCompactDashboardFixed" checked>
+                                        <div class="toggle-switch-track">
+                                            <div class="toggle-switch-thumb"></div>
+                                        </div>
+                                    </div>
+                                </label>
+                                <div class="select-row">
+                                    <span class="select-row-label" data-i18n="ui.settings.acceleratorDisplay">Accelerator Display</span>
+                                    <select id="settingsAccelPedMode" class="settings-select">
+                                        <option value="solid" data-i18n="ui.settings.solidColor">Solid Color</option>
+                                        <option value="iconbar" selected data-i18n="ui.settings.iconBar">Icon Bar</option>
+                                        <option value="sidebar" data-i18n="ui.settings.sideBar">Side Bar</option>
+                                    </select>
+                                </div>
                             </div>
-                            <div class="select-row">
-                                <span class="select-row-label" data-i18n="ui.settings.dashboardStyle">Dashboard
-                                    Style</span>
-                                <select id="settingsDashboardLayout" class="settings-select">
-                                    <option value="default" data-i18n="ui.settings.default">Default</option>
-                                    <option value="compact" data-i18n="ui.export.compact">Compact</option>
-                                </select>
+
+                            <!-- Map subtab -->
+                            <div class="settings-subtab-panel" data-subtab="map">
+                                <label class="toggle-row">
+                                    <span class="toggle-row-label" data-i18n="ui.settings.gpsMap">GPS Map</span>
+                                    <div class="toggle-switch">
+                                        <input type="checkbox" id="settingsMapToggle" checked>
+                                        <div class="toggle-switch-track">
+                                            <div class="toggle-switch-thumb"></div>
+                                        </div>
+                                    </div>
+                                </label>
+                                <div class="select-row">
+                                    <span class="select-row-label" data-i18n="ui.settings.mapProvider">Map Provider</span>
+                                    <select id="settingsMapProvider" class="settings-select">
+                                        <option value="google" selected data-i18n="ui.settings.mapProviderGoogle">Google Maps</option>
+                                        <option value="google-satellite" data-i18n="ui.settings.mapProviderGoogleSat">Google Satellite</option>
+                                        <option value="osm" data-i18n="ui.settings.mapProviderOsm">OpenStreetMap</option>
+                                    </select>
+                                </div>
+                                <div class="select-row">
+                                    <span class="select-row-label" data-i18n="ui.settings.mapStyle">Map Style</span>
+                                    <select id="settingsMapMode" class="settings-select">
+                                        <option value="light" selected data-i18n="ui.settings.mapStyleLight">Light</option>
+                                        <option value="dark" data-i18n="ui.settings.mapStyleDark">Dark</option>
+                                    </select>
+                                </div>
+                                <label class="toggle-row">
+                                    <span class="toggle-row-label" data-i18n="ui.settings.mapLabels">Map Labels</span>
+                                    <div class="toggle-switch">
+                                        <input type="checkbox" id="settingsMapLabels" checked>
+                                        <div class="toggle-switch-track">
+                                            <div class="toggle-switch-thumb"></div>
+                                        </div>
+                                    </div>
+                                </label>
                             </div>
-                            <label class="toggle-row hidden" id="settingsCompactDashboardFixedRow">
-                                <span class="toggle-row-label" data-i18n="ui.settings.fixedToFrontCamera">Fixed to Front
-                                    Camera</span>
-                                <div class="toggle-switch">
-                                    <input type="checkbox" id="settingsCompactDashboardFixed" checked>
-                                    <div class="toggle-switch-track">
-                                        <div class="toggle-switch-thumb"></div>
+
+                            <!-- Cameras subtab -->
+                            <div class="settings-subtab-panel" data-subtab="cameras">
+                                <label class="toggle-row">
+                                    <span class="toggle-row-label" data-i18n="ui.settings.sentryCameraGlow">Sentry Camera Glow</span>
+                                    <div class="toggle-switch">
+                                        <input type="checkbox" id="settingsSentryCameraHighlight" checked>
+                                        <div class="toggle-switch-track">
+                                            <div class="toggle-switch-thumb"></div>
+                                        </div>
                                     </div>
-                                </div>
-                            </label>
-                            <div class="select-row">
-                                <span class="select-row-label" data-i18n="ui.settings.acceleratorDisplay">Accelerator
-                                    Display</span>
-                                <select id="settingsAccelPedMode" class="settings-select">
-                                    <option value="solid" data-i18n="ui.settings.solidColor">Solid Color</option>
-                                    <option value="iconbar" selected data-i18n="ui.settings.iconBar">Icon Bar</option>
-                                    <option value="sidebar" data-i18n="ui.settings.sideBar">Side Bar</option>
-                                </select>
-                            </div>
-                            <label class="toggle-row">
-                                <span class="toggle-row-label" data-i18n="ui.settings.sentryCameraGlow">Sentry Camera
-                                    Glow</span>
-                                <div class="toggle-switch">
-                                    <input type="checkbox" id="settingsSentryCameraHighlight" checked>
-                                    <div class="toggle-switch-track">
-                                        <div class="toggle-switch-thumb"></div>
+                                </label>
+                                <label class="toggle-row">
+                                    <span class="toggle-row-label" data-i18n="ui.settings.savedCameraGlow">Saved Camera Glow</span>
+                                    <div class="toggle-switch">
+                                        <input type="checkbox" id="settingsSavedCameraHighlight" checked>
+                                        <div class="toggle-switch-track">
+                                            <div class="toggle-switch-thumb"></div>
+                                        </div>
                                     </div>
-                                </div>
-                            </label>
-                            <label class="toggle-row">
-                                <span class="toggle-row-label" data-i18n="ui.settings.savedCameraGlow">Saved Camera
-                                    Glow</span>
-                                <div class="toggle-switch">
-                                    <input type="checkbox" id="settingsSavedCameraHighlight" checked>
-                                    <div class="toggle-switch-track">
-                                        <div class="toggle-switch-thumb"></div>
+                                </label>
+                                <label class="toggle-row">
+                                    <span class="toggle-row-label" data-i18n="ui.settings.mirrorCameras">Mirror Cameras</span>
+                                    <div class="toggle-switch">
+                                        <input type="checkbox" id="settingsMirrorCameras" checked>
+                                        <div class="toggle-switch-track">
+                                            <div class="toggle-switch-thumb"></div>
+                                        </div>
                                     </div>
+                                </label>
+                                <div class="action-row">
+                                    <span class="action-row-label" data-i18n="ui.settings.resetCameraOrder">Reset Camera Order</span>
+                                    <button id="resetCameraOrderBtn" class="btn btn-secondary btn-small" data-i18n="ui.settings.reset">Reset</button>
                                 </div>
-                            </label>
-                            <label class="toggle-row">
-                                <span class="toggle-row-label" data-i18n="ui.settings.mirrorCameras">Mirror
-                                    Cameras</span>
-                                <div class="toggle-switch">
-                                    <input type="checkbox" id="settingsMirrorCameras" checked>
-                                    <div class="toggle-switch-track">
-                                        <div class="toggle-switch-thumb"></div>
-                                    </div>
-                                </div>
-                            </label>
-                            <div class="action-row">
-                                <span class="action-row-label" data-i18n="ui.settings.resetCameraOrder">Reset Camera
-                                    Order</span>
-                                <button id="resetCameraOrderBtn" class="btn btn-secondary btn-small"
-                                    data-i18n="ui.settings.reset">Reset</button>
                             </div>
                         </div>
                     </div>
@@ -2276,6 +2294,7 @@
                             <span class="material-symbols-outlined mi-sm">expand_more</span>
                         </div>
                         <div class="settings-accordion-body">
+                            <div class="settings-sub-label" style="margin-bottom:4px;font-size:11px;opacity:0.6;text-transform:uppercase;letter-spacing:0.05em;" data-i18n="ui.settings.teslacamFolder">TeslaCam Folder</div>
                             <div class="input-row">
                                 <input type="text" id="defaultFolderPath" class="text-input"
                                     placeholder="No default folder" data-i18n-placeholder="ui.settings.noFolderSet"
@@ -2286,14 +2305,6 @@
                                     title="Clear">✕</button>
                             </div>
                             <div id="defaultFolderStatus" class="folder-status"></div>
-                            <div class="settings-sub-label" style="margin-top:12px;margin-bottom:4px;font-size:11px;opacity:0.6;text-transform:uppercase;letter-spacing:0.05em;">SentryUSB Drive Data</div>
-                            <div class="input-row">
-                                <input type="text" id="driveDataFilePath" class="text-input"
-                                    placeholder="No drive-data.json selected" readonly>
-                                <button id="browseDriveDataFileBtn" class="btn btn-secondary btn-small">Browse</button>
-                                <button id="clearDriveDataFileBtn" class="btn btn-secondary btn-small" title="Clear">✕</button>
-                            </div>
-                            <div id="driveDataFileStatus" class="folder-status"></div>
                         </div>
                     </div>
 
@@ -2310,6 +2321,14 @@
                             <span class="material-symbols-outlined mi-sm">expand_more</span>
                         </div>
                         <div class="settings-accordion-body">
+                            <div class="settings-sub-label" style="margin-bottom:4px;font-size:11px;opacity:0.6;text-transform:uppercase;letter-spacing:0.05em;">Sentry USB Drive Data</div>
+                            <div class="input-row">
+                                <input type="text" id="driveDataFilePath" class="text-input"
+                                    placeholder="No drive-data.json selected" readonly>
+                                <button id="browseDriveDataFileBtn" class="btn btn-secondary btn-small">Browse</button>
+                                <button id="clearDriveDataFileBtn" class="btn btn-secondary btn-small" title="Clear">✕</button>
+                            </div>
+                            <div id="driveDataFileStatus" class="folder-status"></div>
                             <label class="toggle-row">
                                 <div class="toggle-row-info">
                                     <span class="toggle-row-label">Show Drive Stats</span>

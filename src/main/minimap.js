@@ -118,9 +118,9 @@ function calculateOptimalZoom(bounds, targetSize) {
  * @param {number} requestIndex - Running counter for subdomain round-robin
  * @returns {Promise<string>} Path to downloaded tile
  */
-async function downloadMapTile(x, y, zoom, outputPath, providerId = 'osm', requestIndex = 0) {
+async function downloadMapTile(x, y, zoom, outputPath, providerId = 'osm', requestIndex = 0, styleOpts = {}) {
   return new Promise((resolve, reject) => {
-    const url = MapProviders.buildTileUrl(providerId, x, y, zoom, requestIndex);
+    const url = MapProviders.buildTileUrl(providerId, x, y, zoom, requestIndex, styleOpts);
 
     // The UA identifies us to any tile server (Node sends none by default);
     // the Referer is part of OSM's tile usage policy and only sent there.
@@ -170,9 +170,10 @@ async function downloadMapTile(x, y, zoom, outputPath, providerId = 'osm', reque
  * @param {string} ffmpegPath - Path to FFmpeg executable
  * @param {boolean} darkMode - Whether to apply dark theme filter to map tiles
  * @param {string} providerId - Tile provider id (see src/shared/mapProviders.js)
+ * @param {boolean} labels - Whether to show map labels (provider permitting)
  * @returns {Promise<{imagePath: string, bounds: Object, zoom: number}>}
  */
-async function downloadStaticMapBackground(exportId, mapPath, targetSize, ffmpegPath, darkMode = true, providerId = MapProviders.DEFAULT_PROVIDER_ID, onProgress = null) {
+async function downloadStaticMapBackground(exportId, mapPath, targetSize, ffmpegPath, darkMode = true, providerId = MapProviders.DEFAULT_PROVIDER_ID, labels = MapProviders.DEFAULT_LABELS_ENABLED, onProgress = null) {
   if (!mapPath || mapPath.length === 0) {
     throw new Error('No GPS data for map background');
   }
@@ -248,12 +249,16 @@ async function downloadStaticMapBackground(exportId, mapPath, targetSize, ffmpeg
     // fails mid-batch, retry that tile on OSM and keep the rest of the batch
     // on OSM so the stitched background comes from a single provider style.
     let activeProviderId = MapProviders.getProvider(providerId).id;
+    // Curated labels + (for Google) the night palette are baked into the tile
+    // URL; the FFmpeg dark filter below is only used for providers without a
+    // native dark style (OSM).
+    const styleOpts = { labels, dark: darkMode };
     let requestIndex = 0;
     for (let ty = topLeftTile.y; ty <= bottomRightTile.y; ty++) {
       for (let tx = topLeftTile.x; tx <= bottomRightTile.x; tx++) {
         const tilePath = path.join(tempDir, `tile_${tx}_${ty}.png`);
         try {
-          await downloadMapTile(tx, ty, zoom, tilePath, activeProviderId, requestIndex++);
+          await downloadMapTile(tx, ty, zoom, tilePath, activeProviderId, requestIndex++, styleOpts);
         } catch (tileErr) {
           if (!MapProviders.isGoogleProvider(activeProviderId)) throw tileErr;
           console.warn(`[MAP] ${activeProviderId} tile failed (${tileErr.message}) — switching batch to OpenStreetMap`);
@@ -262,11 +267,11 @@ async function downloadStaticMapBackground(exportId, mapPath, targetSize, ffmpeg
           for (const t of tilePaths) {
             try { fs.unlinkSync(t.path); } catch {}
             await downloadMapTile(
-              t.tileX, t.tileY, zoom, t.path, activeProviderId, requestIndex++
+              t.tileX, t.tileY, zoom, t.path, activeProviderId, requestIndex++, styleOpts
             );
             await new Promise(r => setTimeout(r, 100));
           }
-          await downloadMapTile(tx, ty, zoom, tilePath, activeProviderId, requestIndex++);
+          await downloadMapTile(tx, ty, zoom, tilePath, activeProviderId, requestIndex++, styleOpts);
         }
         tilePaths.push({
           path: tilePath,
@@ -305,8 +310,11 @@ async function downloadStaticMapBackground(exportId, mapPath, targetSize, ffmpeg
       inputs.push('-i', tile.path);
     }
     
-    // Dark theme filter (only applied when dark mode is enabled)
-    const darkFilter = darkMode ? ',hue=s=0.7:b=-0.2,eq=brightness=-0.15:contrast=1.1' : '';
+    // Dark theme filter — only for providers without a native dark style.
+    // Google bakes its night palette into the tiles (apistyle), so filtering
+    // it again would double-darken; OSM still needs this CSS-style filter.
+    const darkFilter = (darkMode && !MapProviders.hasNativeDark(activeProviderId))
+      ? ',hue=s=0.7:b=-0.2,eq=brightness=-0.15:contrast=1.1' : '';
 
     // Create filter to position each tile
     if (tilePaths.length === 1) {
@@ -506,7 +514,7 @@ async function renderMinimapFrameByTime(minimapWindow, timestampMs, width, heigh
 }
 
 // Pre-render minimap overlay to a temp video file
-async function preRenderMinimap(exportId, seiData, mapPath, startTimeMs, endTimeMs, minimapWidth, minimapHeight, ffmpegPath, sendProgress, cancelledExports, darkMode = false, providerId = MapProviders.DEFAULT_PROVIDER_ID) {
+async function preRenderMinimap(exportId, seiData, mapPath, startTimeMs, endTimeMs, minimapWidth, minimapHeight, ffmpegPath, sendProgress, cancelledExports, darkMode = false, providerId = MapProviders.DEFAULT_PROVIDER_ID, labels = MapProviders.DEFAULT_LABELS_ENABLED) {
   // Capture at 12fps instead of the video's 36fps: every frame is a separate
   // BrowserWindow capturePage round-trip, which dominates export time on long
   // clips (a 5-minute clip is ~10,800 captures at 36fps). The overlay filter
@@ -527,9 +535,10 @@ async function preRenderMinimap(exportId, seiData, mapPath, startTimeMs, endTime
   console.log(`[MINIMAP] Smooth mode: ${totalFrames} frames at ${FPS}fps with interpolation`);
   const minimapWindow = await createMinimapRenderer(minimapWidth, minimapHeight);
 
-  // Set the tile provider before the view locks so the right tiles load
+  // Set the tile provider + labels before the view locks so the right tiles load
+  minimapWindow.webContents.send('minimap:setLabels', labels);
   minimapWindow.webContents.send('minimap:setProvider', providerId);
-  console.log(`[MINIMAP] Tile provider: ${providerId}`);
+  console.log(`[MINIMAP] Tile provider: ${providerId}, labels: ${labels}`);
 
   // Send the map path data for the polyline (this also locks the view)
   minimapWindow.webContents.send('minimap:init', mapPath);

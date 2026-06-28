@@ -30,8 +30,8 @@ import { initDraggablePanels, resetPanelPosition } from './scripts/ui/draggableP
 import { initAdvancedEditor, openAdvancedEditor } from './scripts/ui/advancedEditor/index.js';
 import { initEventMarkers, updateEventTimelineMarker, updateEventCameraHighlight } from './scripts/ui/eventMarkers.js';
 import { initSkipSeconds, skipSeconds } from './scripts/features/skipSeconds.js';
-import { initMapVisualization, updateMapVisibility, updateMapMarker, clearMapMarker, getMapOrientation, setMapOrientation, getMapBearing } from './scripts/ui/mapVisualization.js';
-import { attachTileLayer } from './scripts/ui/mapTiles.js';
+import { initMapVisualization, updateMapVisibility, updateMapMarker, clearMapMarker, getMapOrientation, setMapOrientation, getMapBearing, setUprightMarker } from './scripts/ui/mapVisualization.js';
+import { attachTileLayer, refreshTileLayers, getEffectiveProviderId } from './scripts/ui/mapTiles.js';
 import { initDashboardVisibility, updateDashboardVisibility, setDashboardParked } from './scripts/ui/dashboardVisibility.js';
 import { hasValidGps, extractSeiFromEntry, findSeiAtTime } from './scripts/core/seiExtractor.js';
 import { 
@@ -226,6 +226,7 @@ function resetDashboardAndMap() {
     if (eventLocationMarker) {
         eventLocationMarker.remove();
         eventLocationMarker = null;
+        setUprightMarker(null);
     }
     
     // Clear SEI data cache and tracking flags
@@ -312,7 +313,9 @@ function showEventJsonLocation(coll, { recenter = true } = {}) {
     const latlng = L.latLng(lat, lon);
     // Note: This is a static event location marker, separate from the moving GPS marker
     eventLocationMarker = L.marker(latlng, { icon: eventIcon }).addTo(map);
-    
+    // Keep the pin upright while the map rotates in heading-up mode
+    setUprightMarker(eventLocationMarker);
+
     // Center map on location (skipped on re-call after polyline fitBounds)
     if (recenter) {
         map.setView(latlng, 16);
@@ -426,18 +429,30 @@ let useMetric = false; // Will be loaded from settings
         updateTileLabels();
     });
     
-    // Map dark mode - applies CSS filter to Leaflet tile pane
+    // Map dark mode. Styled providers (Google) bake a real night palette into
+    // the tiles via apistyle, so for those we rebuild the layer and apply NO
+    // CSS filter. Providers without a native dark style (OSM/satellite) still
+    // get the CSS invert on the tile pane.
     window._mapDarkMode = false;
+
+    // Filter-only step (no tile rebuild) — safe to call after a tile rebuild
+    // without recursing. Decides invert vs. none based on the active provider.
+    function updateMapDarkFilter() {
+        const tilePane = document.getElementById('map')?.querySelector('.leaflet-tile-pane');
+        if (!tilePane) return;
+        const native = window.MapProviders?.hasNativeDark?.(getEffectiveProviderId());
+        tilePane.style.filter = (window._mapDarkMode && !native)
+            ? 'invert(100%) hue-rotate(180deg) brightness(0.85) contrast(1.2)'
+            : '';
+    }
+    window._updateMapDarkFilter = updateMapDarkFilter;
+
     function applyMapDarkMode(enabled) {
-        const mapEl = document.getElementById('map');
-        if (mapEl) {
-            const tilePane = mapEl.querySelector('.leaflet-tile-pane');
-            if (tilePane) {
-                tilePane.style.filter = enabled
-                    ? 'invert(100%) hue-rotate(180deg) brightness(0.85) contrast(1.2)'
-                    : '';
-            }
-        }
+        window._mapDarkMode = enabled;
+        // Rebuild tiles so Google picks up (or drops) its night palette; the
+        // rebuild also calls updateMapDarkFilter() to set the CSS invert.
+        refreshTileLayers();
+        updateMapDarkFilter();
     }
     window.applyMapDarkMode = applyMapDarkMode;
 
