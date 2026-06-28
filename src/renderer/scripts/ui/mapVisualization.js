@@ -17,6 +17,12 @@ let zoomListenerAttached = false;
 // while the vehicle sits still (most Sentry footage)
 let lastMarkerFrameKey = null;
 
+// A static marker (the Sentry/Saved event location pin) that must stay
+// visually upright while the map container rotates in heading-up mode.
+// Without counter-rotation it spins with the container and renders sideways.
+let uprightMarker = null;
+let uprightMarkerEl = null; // cached inner <svg> to counter-rotate
+
 // Orientation mode: 'heading-up' or 'north-up'
 let mapOrientation = 'heading-up';
 
@@ -79,6 +85,9 @@ export function setMapOrientation(mode) {
             }
         }
     }
+
+    // Re-align the static event pin for the new orientation
+    applyUprightMarkerRotation();
 }
 
 /**
@@ -108,6 +117,36 @@ function rebuildMarkerIcon(map) {
         iconAnchor: [half, half]
     });
     mapMarker.setIcon(arrowIcon);
+}
+
+/**
+ * Counter-rotate the registered "upright" marker (the event pin) so it stays
+ * vertically upright regardless of the heading-up container rotation. The
+ * pin's tip is its icon anchor (bottom-center), so we pivot there to keep the
+ * tip pinned to its location. The inner <svg> is rotated (not the
+ * .event-marker-pin wrapper) to avoid clobbering its one-shot bounce animation.
+ */
+function applyUprightMarkerRotation() {
+    if (!uprightMarker) return;
+    if (!uprightMarkerEl || !uprightMarkerEl.isConnected) {
+        uprightMarkerEl = uprightMarker._icon?.querySelector('svg') || null;
+    }
+    if (uprightMarkerEl) {
+        const rot = mapOrientation === 'heading-up' ? currentMapBearing : 0;
+        uprightMarkerEl.style.transformOrigin = '50% 100%';
+        uprightMarkerEl.style.transform = `rotate(${rot}deg)`;
+    }
+}
+
+/**
+ * Register (or clear, with null) a static marker that should stay upright as
+ * the map rotates — currently the Sentry/Saved event location pin.
+ * @param {Object|null} marker - Leaflet marker, or null to unregister
+ */
+export function setUprightMarker(marker) {
+    uprightMarker = marker || null;
+    uprightMarkerEl = null;
+    applyUprightMarkerRotation();
 }
 
 // Dependencies set via init
@@ -258,6 +297,9 @@ export function updateMapMarker(sei, hasValidGps) {
             }
         }
 
+        // Keep the static event pin upright against the container rotation
+        applyUprightMarkerRotation();
+
         // Store for recenter button
         window._mapCurrentMarkerLatLng = latlng;
 
@@ -298,4 +340,7 @@ export function clearMapMarker() {
             mapContainer.style.transform = 'rotate(0deg) scale(1)';
         }
     }
+
+    // Bearing is now 0 — make sure the event pin (if still present) is upright
+    applyUprightMarkerRotation();
 }

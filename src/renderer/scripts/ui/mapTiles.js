@@ -22,6 +22,7 @@ const SETTING_KEY = 'mapTileProvider';
 const registeredMaps = new Map();
 
 let selectedProviderId = null;   // resolved from settings (null until loaded)
+let labelsEnabled = null;        // resolved from settings (null until loaded)
 let sessionFallbackActive = false;
 let settingLoadPromise = null;
 let probeStarted = false;
@@ -43,10 +44,42 @@ function loadSelectedProvider() {
             } catch {
                 selectedProviderId = registry().DEFAULT_PROVIDER_ID;
             }
+            try {
+                const savedLabels = await window.electronAPI?.getSetting?.(registry().LABELS_SETTING_KEY);
+                labelsEnabled = (savedLabels === undefined || savedLabels === null)
+                    ? registry().DEFAULT_LABELS_ENABLED
+                    : !!savedLabels;
+            } catch {
+                labelsEnabled = registry().DEFAULT_LABELS_ENABLED;
+            }
             return selectedProviderId;
         })();
     }
     return settingLoadPromise;
+}
+
+/**
+ * Whether map labels are currently enabled (resolved setting, or default).
+ * The menu toggle is not wired up yet; this is here for it to read.
+ */
+export function getMapLabelsEnabled() {
+    return labelsEnabled === null ? registry().DEFAULT_LABELS_ENABLED : labelsEnabled;
+}
+
+/**
+ * Toggle map labels: persist, then rebuild every live layer. Export tile
+ * downloads and the minimap renderer window read the same persisted setting,
+ * so they follow on the next export. (No UI calls this yet.)
+ * @param {boolean} enabled
+ */
+export async function setMapLabels(enabled) {
+    labelsEnabled = !!enabled;
+    try {
+        await window.electronAPI?.setSetting?.(registry().LABELS_SETTING_KEY, labelsEnabled);
+    } catch (err) {
+        console.warn('[MAP] Failed to persist map labels setting:', err);
+    }
+    applyEffectiveProviderToAllMaps();
 }
 
 export function getEffectiveProviderId() {
@@ -62,7 +95,12 @@ export function getSelectedProviderId() {
 
 function createLayer(providerId, opts = {}) {
     const p = registry().getProvider(providerId);
-    return window.L.tileLayer(p.urlTemplate, {
+    // Dark mode is a global (owned by script.js / settingsModal). Styled
+    // providers (Google) bake the night palette into the tile via apistyle;
+    // for others the URL is unchanged and script.js applies a CSS invert.
+    const dark = !!(typeof window !== 'undefined' && window._mapDarkMode);
+    const url = registry().getUrlTemplate(providerId, { labels: getMapLabelsEnabled(), dark });
+    return window.L.tileLayer(url, {
         maxZoom: Math.min(p.maxZoom, opts.maxZoomCap ?? p.maxZoom),
         subdomains: p.subdomains,
         ...(opts.layerOptions || {})
@@ -128,6 +166,19 @@ function applyEffectiveProviderToAllMaps() {
             console.warn('[MAP] Failed to swap tile layer:', err);
         }
     }
+    // The effective provider may have changed whether a native dark style is in
+    // play (e.g. Google ↔ OSM), so re-evaluate the CSS invert on the live map.
+    if (typeof window !== 'undefined' && window._updateMapDarkFilter) {
+        window._updateMapDarkFilter();
+    }
+}
+
+/**
+ * Rebuild every registered map's tile layer (e.g. after a dark-mode change so
+ * styled providers pick up their night palette). Exposed for script.js.
+ */
+export function refreshTileLayers() {
+    applyEffectiveProviderToAllMaps();
 }
 
 /**
@@ -143,6 +194,9 @@ export function attachTileLayer(map, opts = {}) {
     registeredMaps.set(map, entry);
     loadSelectedProvider().then(() => {
         if (!registeredMaps.has(map)) return; // detached before setting loaded
+        // A dark-mode/provider change may have rebuilt this entry's layer while
+        // the setting was loading — drop it first so we don't orphan a layer.
+        if (entry.layer) map.removeLayer(entry.layer);
         const effective = getEffectiveProviderId();
         entry.layer = createLayer(effective, opts);
         watchLayerForFailure(entry.layer, effective);

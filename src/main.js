@@ -54,6 +54,7 @@ const { registerDiagnosticsStorageIpc } = require('./main/diagnostics');
 const { UPDATE_CONFIG, autoUpdater, getLatestVersionFromGitHub, registerAutoUpdateIpc, setupAutoUpdaterEvents } = require('./main/autoUpdate');
 const { findFFmpegPath, preCacheFFmpegPath, formatExportDuration, detectGpuHardware, detectGpuEncoder, detectHEVCEncoder, findVaapiDevice, getGpuEncoder, setGpuEncoder, getGpuEncoderHEVC, setGpuEncoderHEVC } = require('./main/ffmpeg');
 const { calculateMinimapSize, downloadStaticMapBackground, preRenderMinimap } = require('./main/minimap');
+const MapProviders = require('./shared/mapProviders');
 const crypto = require('crypto');
 
 // ============================================
@@ -136,6 +137,17 @@ function getEffectiveMapProvider() {
   if (mapProviderFallbackActive) return 'osm';
   const settings = loadSettings();
   return settings.mapTileProvider || 'google';
+}
+
+// Whether exported maps should show labels. Reads the same persisted setting
+// the renderer writes; defaults to the registry default (labels hidden) when
+// unset. The menu toggle isn't wired up yet — this is the plumbing for it.
+function getEffectiveMapLabels() {
+  const settings = loadSettings();
+  const saved = settings[MapProviders.LABELS_SETTING_KEY];
+  return (saved === undefined || saved === null)
+    ? MapProviders.DEFAULT_LABELS_ENABLED
+    : !!saved;
 }
 
 function createWindow() {
@@ -904,6 +916,7 @@ async function performVideoExport(event, exportId, exportData, ffmpegPath) {
               ffmpegPath,
               minimapDarkMode,
               getEffectiveMapProvider(),
+              getEffectiveMapLabels(),
               (p) => {
                 // Tile download/stitch occupy the first ~half of the minimap
                 // bar (0-47%); the composite-video encode fills 50-100%.
@@ -1116,7 +1129,8 @@ async function performVideoExport(event, exportId, exportData, ffmpegPath) {
             sendMinimapProgress,
             cancelledExports,
             minimapDarkMode,
-            getEffectiveMapProvider()
+            getEffectiveMapProvider(),
+            getEffectiveMapLabels()
           );
 
           tempFiles.push(minimapTempPath);

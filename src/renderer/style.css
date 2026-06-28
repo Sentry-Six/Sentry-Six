@@ -6619,7 +6619,12 @@ body>.dashboard-vis-compact.draggable:not(.fixed-to-camera) {
     /* Fixed height (not max-height) so the modal stays the same size across
        tabs — short sections leave empty space, tall ones scroll in
        .settings-content rather than growing the modal. Capped for short
-       viewports. */
+       viewports.
+       flex: 0 0 auto is required: this element is also .modal-body { flex: 1 },
+       and in the .modal-content flex column that flex-basis:0% makes the
+       browser size it to content (ignoring the height) — so without this the
+       modal still resizes per tab. */
+    flex: 0 0 auto;
     height: 520px;
     max-height: calc(100vh - 120px);
     overflow: hidden;
@@ -6754,6 +6759,60 @@ body>.dashboard-vis-compact.draggable:not(.fixed-to-camera) {
 
 .settings-horizontal-body .settings-accordion:not(.open) {
     display: none;
+}
+
+/* Subtabs within a settings section (Playback & Overlays: Dashboard / Map / UI) */
+.settings-subtab-bar {
+    display: flex;
+    gap: 4px;
+    padding: 4px;
+    margin-bottom: 14px;
+    background: var(--modal-header-bg);
+    border: 1px solid var(--border-subtle);
+    border-radius: 10px;
+}
+
+.settings-subtab-btn {
+    flex: 1;
+    padding: 7px 10px;
+    border: none;
+    border-radius: 7px;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.settings-subtab-btn:hover {
+    background: var(--surface-hover);
+    color: var(--text-color);
+}
+
+.settings-subtab-btn.active {
+    background: var(--accent-bg);
+    color: var(--accent-color);
+}
+
+/* Only the active subtab's panel shows… */
+.settings-subtab-panel {
+    display: none;
+}
+
+.settings-subtab-panel.active {
+    display: block;
+}
+
+/* …except while searching: reveal every panel so the row-level search filter
+   can match across subtabs, and hide the subtab bar itself. */
+.settings-content.settings-searching .settings-subtab-bar {
+    display: none;
+}
+
+.settings-content.settings-searching .settings-subtab-panel {
+    display: block;
 }
 
 /* Enhanced modal chrome for settings */

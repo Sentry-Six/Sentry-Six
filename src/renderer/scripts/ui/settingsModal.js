@@ -6,7 +6,7 @@
 import { initKeybindSettings } from '../lib/keybinds.js';
 import { getCurrentLanguage, setLanguage, getAvailableLanguages, onLanguageChange, t } from '../lib/i18n.js';
 import { initFeatureBadges, FEATURE_BADGE_KEYS } from '../features/exportVideo.js';
-import { setMapTileProvider, getSelectedProviderId } from './mapTiles.js';
+import { setMapTileProvider, getSelectedProviderId, setMapLabels, getMapLabelsEnabled } from './mapTiles.js';
 
 
 /**
@@ -89,6 +89,22 @@ export function initSettingsModal() {
                 if (content) content.scrollTop = 0;
             });
         });
+
+        // Subtab navigation within a section (Playback & Overlays: Dashboard / Map / UI).
+        // Generic: any .settings-subtab-bar drives the sibling .settings-subtab-panels.
+        settingsModal.querySelectorAll('.settings-subtab-bar').forEach(bar => {
+            const btns = bar.querySelectorAll('.settings-subtab-btn');
+            const accordionBody = bar.closest('.settings-accordion-body');
+            btns.forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const target = btn.dataset.subtab;
+                    btns.forEach(b => b.classList.toggle('active', b === btn));
+                    accordionBody?.querySelectorAll('.settings-subtab-panel').forEach(panel => {
+                        panel.classList.toggle('active', panel.dataset.subtab === target);
+                    });
+                });
+            });
+        });
     }
 
     const closeSettingsModal = $('closeSettingsModal');
@@ -149,6 +165,10 @@ export function initSettingsModal() {
                 // Sync map provider dropdown
                 const settingsMapProviderEl = $('settingsMapProvider');
                 if (settingsMapProviderEl) settingsMapProviderEl.value = getSelectedProviderId();
+
+                // Sync map labels toggle
+                const settingsMapLabelsEl = $('settingsMapLabels');
+                if (settingsMapLabelsEl) settingsMapLabelsEl.checked = getMapLabelsEnabled();
 
                 // Sync layout style toggle
                 const settingsLayoutStyle = $('settingsLayoutStyle');
@@ -298,6 +318,16 @@ export function initSettingsModal() {
         settingsMapProvider.onchange = async () => {
             await setMapTileProvider(settingsMapProvider.value);
             settingsMapProvider.blur();
+        };
+    }
+
+    // Map labels toggle (default on — matches Sentry Drive's labeled map)
+    const settingsMapLabels = $('settingsMapLabels');
+    if (settingsMapLabels) {
+        settingsMapLabels.checked = getMapLabelsEnabled();
+        settingsMapLabels.onchange = async () => {
+            await setMapLabels(settingsMapLabels.checked);
+            settingsMapLabels.blur();
         };
     }
 
@@ -1277,18 +1307,23 @@ export function initSettingsSearch() {
         navItems.forEach(n => n.classList.remove('search-highlight'));
     }
 
+    const contentEl = settingsModal.querySelector('.settings-content');
+
     function performSearch(query) {
         const q = query.trim().toLowerCase();
         clearBtn?.classList.toggle('hidden', q.length === 0);
 
         if (!q) {
             isSearching = false;
+            contentEl?.classList.remove('settings-searching');
             restoreSidebarState();
             if (noResults) noResults.classList.add('hidden');
             return;
         }
 
         isSearching = true;
+        // Reveal all subtab panels so row matches in inactive subtabs aren't hidden
+        contentEl?.classList.add('settings-searching');
         let anyVisible = false;
 
         accordions.forEach(acc => {
