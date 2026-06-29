@@ -63,6 +63,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getSetting: (key) => ipcRenderer.invoke('settings:get', key),
   setSetting: (key, value) => ipcRenderer.invoke('settings:set', key, value),
 
+  // Relaunch the app (used by settings that only take effect at startup)
+  relaunchApp: () => ipcRenderer.invoke('app:relaunch'),
+
   // Map tiles: renderer detected Google tile failure — main process flips
   // export tile downloads to the OSM fallback for the rest of the session
   notifyMapProviderFallback: () => ipcRenderer.send('map:provider-fallback'),

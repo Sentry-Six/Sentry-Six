@@ -34,6 +34,23 @@ function saveSettings(settings) {
   }
 }
 
+// Apply the playback hardware-acceleration preference as a Chromium switch.
+// MUST run before app 'ready'. Multi-cam playback decodes up to 6 <video>
+// elements at once; on low-end integrated GPUs (e.g. Intel HD Graphics 630)
+// the hardware video decoder runs out of concurrent decode sessions and all
+// but one stream freeze. When the user turns hardware video acceleration off
+// we force software video decoding. Default (setting absent) keeps it on so
+// existing users are unaffected.
+// Returns true if hardware decoding stays enabled, false if it was disabled.
+function applyPlaybackHardwareAcceleration() {
+  const settings = loadSettings();
+  if (settings.hardwareVideoAcceleration === false) {
+    app.commandLine.appendSwitch('disable-accelerated-video-decode');
+    return false;
+  }
+  return true;
+}
+
 function registerSettingsIpc() {
   ipcMain.handle('settings:get', async (event, key) => {
     const settings = loadSettings();
@@ -47,4 +64,4 @@ function registerSettingsIpc() {
   });
 }
 
-module.exports = { settingsPath, loadSettings, saveSettings, registerSettingsIpc };
+module.exports = { settingsPath, loadSettings, saveSettings, registerSettingsIpc, applyPlaybackHardwareAcceleration };

@@ -57,7 +57,8 @@ export const translations = {
                 checkForUpdates: "Check for Updates", checkForUpdatesDesc: "Manually check for new versions", checkNow: "Check Now", checking: "Checking...", upToDate: "Up to Date", checkFailed: "Check Failed", updateFound: "Update Found!",
                 eventHighlights: "Event Highlights", sentryCameraGlow: "Sentry Camera Glow", sentryCameraGlowDesc: "Red glow on triggered camera",
                 savedCameraGlow: "Saved Camera Glow", savedCameraGlowDesc: "Yellow glow on triggered camera",
-                cameraLayout: "Camera Layout", resetCameraOrder: "Reset Camera Order", resetCameraOrderDesc: "Restore default grid positions", reset: "Reset"
+                cameraLayout: "Camera Layout", resetCameraOrder: "Reset Camera Order", resetCameraOrderDesc: "Restore default grid positions", reset: "Reset",
+                hardwareVideoAccel: "Hardware Video Acceleration", hardwareVideoAccelDesc: "Use the GPU to decode video. Turn this off if cameras freeze on older or integrated graphics. Requires restart."
             },
             cameras: { front: "Front", back: "Back", leftPillar: "Left Pillar", rightPillar: "Right Pillar", leftRepeater: "Left Repeater", rightRepeater: "Right Repeater" },
             dashboard: { drive: "Drive", manual: "Manual", noData: "No Data", mph: "MPH", kmh: "KM/H", selfDriving: "Self Driving", autosteer: "Autosteer", tacc: "TACC" },

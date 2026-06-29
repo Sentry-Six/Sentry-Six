@@ -48,7 +48,7 @@ function compositeBlurMasks(width, height, zones) {
   return PNG.sync.write(canvas);
 }
 const { checkUpdateWithTelemetry, processApiResponse } = require('./updateTelemetry');
-const { settingsPath, loadSettings, saveSettings, registerSettingsIpc } = require('./main/settings');
+const { settingsPath, loadSettings, saveSettings, registerSettingsIpc, applyPlaybackHardwareAcceleration } = require('./main/settings');
 const { SUPPORT_SERVER_URL, registerSupportChatIpc } = require('./main/supportChat');
 const { registerDiagnosticsStorageIpc } = require('./main/diagnostics');
 const { UPDATE_CONFIG, autoUpdater, getLatestVersionFromGitHub, registerAutoUpdateIpc, setupAutoUpdaterEvents } = require('./main/autoUpdate');
@@ -108,6 +108,14 @@ console.log = (...args) => { captureMainLog('log', args); originalMainConsole.lo
 console.warn = (...args) => { captureMainLog('warn', args); originalMainConsole.warn(...args); };
 console.error = (...args) => { captureMainLog('error', args); originalMainConsole.error(...args); };
 console.info = (...args) => { captureMainLog('info', args); originalMainConsole.info(...args); };
+
+// Apply the playback hardware-acceleration preference. This MUST run before the
+// app 'ready' event because Chromium command-line switches are read at startup.
+// Placed after the console overrides above so the decision is captured in the
+// diagnostics log.
+if (!applyPlaybackHardwareAcceleration()) {
+  console.log('[STARTUP] Hardware video acceleration disabled by user setting — using software video decode');
+}
 
 // Get the configured update branch from settings (defaults to main)
 function getUpdateBranch() {
@@ -2022,6 +2030,13 @@ ipcMain.handle('dialog:openFile', async (_event, filters) => {
 
 // Settings module (extracted to src/main/settings.js)
 registerSettingsIpc();
+
+// Relaunch the app. Used after toggling settings that only take effect at
+// startup (e.g. hardware video acceleration, which is a Chromium switch).
+ipcMain.handle('app:relaunch', () => {
+  app.relaunch();
+  app.exit(0);
+});
 
 /**
  * Check if npm packages need to be installed after an update (dev mode only)

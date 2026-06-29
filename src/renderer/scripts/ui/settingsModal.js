@@ -817,6 +817,37 @@ export function initSettingsModal() {
         });
     }
 
+    // Hardware video acceleration toggle. Backed by a Chromium switch that is
+    // only read at startup, so a change requires an app relaunch to take effect.
+    const settingsHardwareVideoAccel = $('settingsHardwareVideoAccel');
+    if (settingsHardwareVideoAccel) {
+        if (window.electronAPI?.getSetting) {
+            window.electronAPI.getSetting('hardwareVideoAcceleration').then(savedValue => {
+                // Default on (hardware decode) when unset
+                settingsHardwareVideoAccel.checked = savedValue !== false;
+            });
+        }
+
+        settingsHardwareVideoAccel.addEventListener('change', async function () {
+            const enabled = this.checked;
+            if (window.electronAPI?.setSetting) {
+                await window.electronAPI.setSetting('hardwareVideoAcceleration', enabled);
+            }
+            settingsHardwareVideoAccel.blur();
+
+            // The switch only takes effect at startup — offer to restart now.
+            const restartNow = confirm(
+                (enabled
+                    ? 'Hardware video acceleration will be turned on.'
+                    : 'Hardware video acceleration will be turned off (software video decoding).') +
+                '\n\nThis change takes effect after a restart. Restart now?'
+            );
+            if (restartNow && window.electronAPI?.relaunchApp) {
+                window.electronAPI.relaunchApp();
+            }
+        });
+    }
+
     // Reset camera order button (use onclick to prevent duplicate listeners)
     const resetCameraOrderBtn = $('resetCameraOrderBtn');
     if (resetCameraOrderBtn) {
