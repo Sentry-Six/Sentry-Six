@@ -131,6 +131,11 @@ export function initAdvancedEditor(injected) {
                 const style = advancedEditorState.settings.dashboardStyle;
                 const keys = dashboardTilesForStyle(style);
                 if (value) {
+                    // Timestamp and dashboard are mutually exclusive — the sidebar
+                    // has already unchecked + locked the timestamp toggle, so drop
+                    // its now-suppressed tile from the canvas.
+                    unmountOverlay('timestamp');
+                    removeOverlayTile('timestamp');
                     for (const k of keys) {
                         addOverlayTile(k);
                         mountOverlay(k, style);
@@ -244,10 +249,14 @@ export async function openAdvancedEditor() {
         // the dashboard is on AND the style is tesla-mobile.
         const dashOn = advancedEditorState.settings.includeDashboard;
         const isTeslaMobile = advancedEditorState.settings.dashboardStyle === 'tesla-mobile';
+        // Timestamp and dashboard are mutually exclusive — the dashboard already
+        // shows the date/time (mirrors the simple export). Suppress the timestamp
+        // whenever the dashboard is on.
+        const tsOn = advancedEditorState.settings.includeTimestamp && !dashOn;
         await buildLayout({
             selectedCameras: advancedEditorState.settings.selectedCameras,
             overlaysEnabled: {
-                timestamp:     advancedEditorState.settings.includeTimestamp,
+                timestamp:     tsOn,
                 dashboard:     dashOn,
                 dashboardDate: dashOn && isTeslaMobile,
                 minimap:       advancedEditorState.settings.includeMinimap,
@@ -269,7 +278,7 @@ export async function openAdvancedEditor() {
         setTimeout(onCanvasResize, 300);
 
         // Mount overlay previews for any overlays that are enabled at open time.
-        if (advancedEditorState.settings.includeTimestamp) mountOverlay('timestamp');
+        if (tsOn) mountOverlay('timestamp');
         if (advancedEditorState.settings.includeDashboard) {
             const style = advancedEditorState.settings.dashboardStyle;
             for (const k of dashboardTilesForStyle(style)) {
@@ -347,10 +356,12 @@ async function resetLayout() {
     const settings = advancedEditorState.settings;
     const dashOn = settings.includeDashboard;
     const isTeslaMobile = settings.dashboardStyle === 'tesla-mobile';
+    // Timestamp and dashboard are mutually exclusive (see openAdvancedEditor).
+    const tsOn = settings.includeTimestamp && !dashOn;
     await buildLayout({
         selectedCameras: settings.selectedCameras,
         overlaysEnabled: {
-            timestamp:     settings.includeTimestamp,
+            timestamp:     tsOn,
             dashboard:     dashOn,
             dashboardDate: dashOn && isTeslaMobile,
             minimap:       settings.includeMinimap,
@@ -358,7 +369,7 @@ async function resetLayout() {
     });
     onCanvasResize();
 
-    if (settings.includeTimestamp) mountOverlay('timestamp');
+    if (tsOn) mountOverlay('timestamp');
     if (settings.includeDashboard) {
         const style = settings.dashboardStyle;
         for (const k of dashboardTilesForStyle(style)) {

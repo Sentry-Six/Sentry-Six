@@ -230,8 +230,11 @@ export async function runAdvancedExport() {
 
         // ----- 6. Build overlayData (normalized 0-1) -----
         const overlayData = {};
+        // The dashboard already renders the date/time, so a separate timestamp
+        // burn-in is redundant — mutually exclusive, mirroring the simple export.
+        const includeTimestamp = settings.includeTimestamp && !settings.includeDashboard;
         const tsTile = advancedEditorState.tiles.get('overlay:timestamp');
-        if (settings.includeTimestamp && tsTile) {
+        if (includeTimestamp && tsTile) {
             overlayData.timestamp = { x: tsTile.x, y: tsTile.y, w: tsTile.w, h: tsTile.h };
         }
         const dashTile = advancedEditorState.tiles.get('overlay:dashboard');
@@ -277,10 +280,9 @@ export async function runAdvancedExport() {
             dashboardDateLabelScale: settings.dashboardDateLabelScale,
             dashboardDateValueScale: settings.dashboardDateValueScale,
             accelPedMode: window._accelPedMode || 'iconbar',
-            // Unlike the simple modal, the AE allows timestamp + dashboard
-            // together (each is its own tile) — main.js composes the drawtext
-            // timestamp on top of the dashboard for advanced layouts.
-            includeTimestamp: settings.includeTimestamp,
+            // Timestamp and dashboard are mutually exclusive (the dashboard
+            // already shows the date/time), matching the simple export modal.
+            includeTimestamp,
             timestampPosition: 'custom',
             timestampDateFormat: window._dateFormat || 'mdy',
             timestampTimeFormat: window._timeFormat || '12h',

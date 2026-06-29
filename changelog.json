@@ -6,6 +6,10 @@
       "title": "Long Export Reliability",
       "changes": [
         {
+          "type": "fix",
+          "description": "Advanced Editor: The timestamp and dashboard overlays are now mutually exclusive, matching the standard Export window. The dashboard already shows the date and time, so enabling it now turns off and locks the separate timestamp overlay instead of burning both into the video — previously a custom export could show the timestamp overlapping the dashboard's own clock."
+        },
+        {
           "type": "feature",
           "description": "Playback: Added a Hardware Video Acceleration setting (Settings → Playback & Overlays → Cameras). On some computers with older or integrated graphics, playing all six cameras at once would freeze five of the streams while only one kept playing, because the GPU can only decode so many videos at the same time. Turning this setting off switches to software video decoding so every camera plays. It's on by default and a restart is required for a change to take effect."
         },
