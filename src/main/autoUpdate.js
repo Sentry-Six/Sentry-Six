@@ -3,7 +3,8 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const https = require('https');
-const { execSync } = require('child_process');
+const http = require('http');
+const { execSync, spawn } = require('child_process');
 
 // Auto-Update Configuration
 const UPDATE_CONFIG = {
@@ -11,6 +12,48 @@ const UPDATE_CONFIG = {
   repo: 'Sentry-Six',
   defaultBranch: 'main'
 };
+
+// Packaged Linux install that isn't an AppImage (i.e. a .deb). electron-updater
+// can't install these, so we download and install the .deb ourselves via pkexec.
+function isDebInstall() {
+  return process.platform === 'linux' && app.isPackaged && !process.env.APPIMAGE;
+}
+
+// Dev override: fetch version.json and the .deb from SENTRY_DEV_UPDATE_URL instead
+// of GitHub, so the .deb update flow is testable without a release. Restricted to
+// Linux and a loopback host so a stray or hostile env var can't point a production
+// install at a remote server (the download is installed as root via pkexec).
+function updateBase() {
+  const raw = (process.env.SENTRY_DEV_UPDATE_URL || '').replace(/\/+$/, '');
+  if (!raw || process.platform !== 'linux') return '';
+  try {
+    const host = new URL(raw).hostname;
+    if (host === 'localhost' || host === '127.0.0.1' || host === '::1') return raw;
+  } catch { /* malformed URL -> ignore override */ }
+  return '';
+}
+
+// Reject anything but a plain dotted version so it can't traverse the download path.
+function isValidVersion(v) {
+  return typeof v === 'string' && /^[0-9]+(\.[0-9]+){1,3}$/.test(v);
+}
+
+// Debian arch matching the electron-builder artifactName (${arch}).
+function debArch() {
+  return process.arch === 'arm64' ? 'arm64' : 'amd64';
+}
+
+// Build the .deb download URL for a version (dev override, else the GitHub release).
+function debDownloadUrl(version) {
+  const file = `SentryStudio-${version}-linux-${debArch()}.deb`;
+  const base = updateBase();
+  return base
+    ? `${base}/${file}`
+    : `https://github.com/${UPDATE_CONFIG.owner}/${UPDATE_CONFIG.repo}/releases/download/v${version}/${file}`;
+}
+
+// The .deb downloaded by update:install, awaiting update:installAndRestart.
+let pendingDebPath = null;
 
 // electron-updater is optional - only needed for NSIS packaged installs
 // Manual npm installs use the GitHub download method instead
@@ -23,14 +66,21 @@ try {
   console.log('[UPDATE] electron-updater not available - using manual update method');
 }
 
+// Pick http or https by URL scheme so a local test server (http://localhost) works
+// alongside the real GitHub (https) endpoints.
+function clientFor(url) {
+  return url.startsWith('http://') ? http : https;
+}
+
 function httpsGet(url) {
   return new Promise((resolve, reject) => {
     const options = {
       headers: { 'User-Agent': 'Sentry-Studio-Updater' }
     };
-    https.get(url, options, (res) => {
+    clientFor(url).get(url, options, (res) => {
       if (res.statusCode === 301 || res.statusCode === 302) {
-        return httpsGet(res.headers.location).then(resolve).catch(reject);
+        const next = new URL(res.headers.location, url).toString();
+        return httpsGet(next).then(resolve).catch(reject);
       }
       let data = '';
       res.on('data', chunk => data += chunk);
@@ -45,39 +95,63 @@ function downloadFile(url, destPath, onProgress) {
     const options = {
       headers: { 'User-Agent': 'Sentry-Studio-Updater' }
     };
-    
+
+    const fail = (err) => {
+      try { if (fs.existsSync(destPath)) fs.unlinkSync(destPath); } catch { /* best effort */ }
+      reject(err);
+    };
+
     const handleResponse = (res) => {
       if (res.statusCode === 301 || res.statusCode === 302) {
-        const redirectReq = https.get(res.headers.location, options, handleResponse);
+        const next = new URL(res.headers.location, url).toString();
+        const redirectReq = clientFor(next).get(next, options, handleResponse);
         redirectReq.on('error', reject);
         redirectReq.setTimeout(30000, () => { redirectReq.destroy(); reject(new Error('Redirect timeout')); });
         return;
       }
-      
+      // Only a 200 body is a real download; a 404/500 page must not be saved and
+      // later handed to `dpkg -i` as if it were a package.
+      if (res.statusCode !== 200) {
+        res.resume();
+        return reject(new Error(`Download failed: HTTP ${res.statusCode}`));
+      }
+
       const totalSize = parseInt(res.headers['content-length'], 10);
       let downloadedSize = 0;
       const file = fs.createWriteStream(destPath);
-      
+
       res.on('data', chunk => {
         downloadedSize += chunk.length;
         if (onProgress && totalSize) {
           onProgress(Math.round((downloadedSize / totalSize) * 100));
         }
       });
-      
+      res.on('error', (err) => { file.destroy(); fail(err); });
+
       res.pipe(file);
       file.on('finish', () => {
-        file.close();
-        resolve(destPath);
+        file.close(() => {
+          if (totalSize && downloadedSize !== totalSize) {
+            return fail(new Error(`Truncated download: ${downloadedSize}/${totalSize} bytes`));
+          }
+          resolve(destPath);
+        });
       });
-      file.on('error', (err) => {
-        fs.unlinkSync(destPath);
-        reject(err);
-      });
+      file.on('error', (err) => fail(err));
     };
-    
-    https.get(url, options, handleResponse).on('error', reject);
+
+    clientFor(url).get(url, options, handleResponse).on('error', reject);
   });
+}
+
+// Fetch the latest version.json, honouring the dev override base URL when set.
+async function fetchLatestVersionInfo(getUpdateBranch) {
+  const base = updateBase();
+  if (base) {
+    const response = await httpsGet(`${base}/version.json?cb=${Date.now()}`);
+    return response.statusCode === 200 ? JSON.parse(response.data) : null;
+  }
+  return getLatestVersionFromGitHub(getUpdateBranch);
 }
 
 /**
@@ -271,9 +345,143 @@ function registerAutoUpdateIpc(deps) {
     }
   }
 
+  const sendUpdateError = (message) => {
+    const mainWindow = getMainWindow();
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('update:error', { message });
+    }
+  };
+
+  // Remove the temp dir holding a downloaded .deb, if any.
+  function clearPendingDeb() {
+    if (!pendingDebPath) return;
+    try { fs.rmSync(path.dirname(pendingDebPath), { recursive: true, force: true }); } catch { /* best effort */ }
+    pendingDebPath = null;
+  }
+
+  /** Download the new .deb; installDebAndRestart installs it on restart. */
+  async function performDebUpdate() {
+    const sendProgress = (percentage, message) => {
+      const mainWindow = getMainWindow();
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('update:progress', { percentage, message });
+      }
+    };
+
+    let destPath = null;
+    try {
+      sendProgress(5, 'Fetching latest version info...');
+      const latest = await fetchLatestVersionInfo(getUpdateBranch);
+      if (!latest || !latest.version) {
+        return { success: false, error: 'Could not fetch version info' };
+      }
+      const version = latest.version;
+      if (!isValidVersion(version)) {
+        return { success: false, error: 'Invalid update version' };
+      }
+
+      // A private 0700 dir (random name) is the download target: another local
+      // user can't pre-create or symlink the path we later install as root.
+      clearPendingDeb();
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sentry-upd-'));
+      destPath = path.join(dir, `SentryStudio-${version}-linux-${debArch()}.deb`);
+
+      sendProgress(10, 'Downloading update...');
+      await downloadFile(debDownloadUrl(version), destPath, (pct) => {
+        sendProgress(10 + Math.round(pct * 0.85), `Downloading... ${pct}%`);
+      });
+
+      // Confirm it's really a Debian archive before offering to install it.
+      const fd = fs.openSync(destPath, 'r');
+      const magic = Buffer.alloc(8);
+      fs.readSync(fd, magic, 0, 8, 0);
+      fs.closeSync(fd);
+      if (magic.toString('binary') !== '!<arch>\n') {
+        try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* best effort */ }
+        return { success: false, error: 'Downloaded file is not a valid package' };
+      }
+
+      pendingDebPath = destPath;
+      sendProgress(100, 'Update downloaded');
+
+      const mainWindow = getMainWindow();
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('update:downloaded', { version, isDeb: true });
+      }
+      return { success: true, needsRestart: true, isDeb: true };
+    } catch (err) {
+      console.error('[UPDATE] .deb download failed:', err.message);
+      if (destPath) { try { fs.rmSync(path.dirname(destPath), { recursive: true, force: true }); } catch { /* best effort */ } }
+      return { success: false, error: err.message };
+    }
+  }
+
+  // Guards against a second click spawning a competing dpkg while one is running.
+  let debInstalling = false;
+
+  /** Install the downloaded .deb via pkexec, then relaunch. dpkg -i over the
+   *  running app is safe; relaunch only on a clean exit. */
+  function installDebAndRestart() {
+    if (debInstalling) return;
+    if (!pendingDebPath || !fs.existsSync(pendingDebPath)) {
+      clearPendingDeb();
+      sendUpdateError('Update file is no longer available. Please check for updates again.');
+      return;
+    }
+    debInstalling = true;
+    // Absolute paths so an attacker-controlled PATH can't substitute either binary
+    // in the privileged install. stderr is captured for diagnostics.
+    const child = spawn('/usr/bin/pkexec', ['/usr/bin/dpkg', '-i', pendingDebPath], {
+      stdio: ['ignore', 'ignore', 'pipe']
+    });
+    let stderr = '';
+    if (child.stderr) child.stderr.on('data', (d) => { stderr += d.toString(); });
+    let handled = false;
+    child.on('error', (err) => {
+      handled = true;
+      debInstalling = false;
+      console.error('[UPDATE] pkexec failed to launch:', err.message);
+      sendUpdateError('Could not start the installer.');
+    });
+    child.on('exit', (code) => {
+      if (handled) return;
+      if (code === 0) {
+        const deb = pendingDebPath;
+        pendingDebPath = null;
+        try { fs.rmSync(path.dirname(deb), { recursive: true, force: true }); } catch { /* best effort */ }
+        app.relaunch();
+        app.exit(0);
+      } else {
+        // Non-zero includes the user cancelling the password prompt (126/127).
+        debInstalling = false;
+        console.error(`[UPDATE] dpkg -i exited with code ${code}${stderr ? ': ' + stderr.trim() : ''}`);
+        sendUpdateError('Install was cancelled or failed.');
+      }
+    });
+  }
+
   // Update IPC handlers
   ipcMain.handle('update:check', async () => {
     try {
+      // Dev override: compare against the local version.json (no telemetry API / release).
+      if (updateBase()) {
+        const latest = await fetchLatestVersionInfo(getUpdateBranch);
+        const currentVer = app.getVersion();
+        const updateAvailable = !!(latest && latest.version && compareVersions(currentVer, latest.version) < 0);
+        if (updateAvailable) {
+          const mainWindow = getMainWindow();
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('update:available', {
+              currentVersion: currentVer,
+              latestVersion: latest.version,
+              releaseName: latest.releaseName || 'New Update',
+              releaseDate: latest.releaseDate
+            });
+          }
+        }
+        return { checked: true, updateAvailable, currentVersion: currentVer, latestVersion: (latest && latest.version) || currentVer };
+      }
+
       // Step 1: Check with telemetry API (for killswitch and update status)
       console.log('[UPDATE] Checking with telemetry API...');
       const apiResponse = await checkUpdateWithTelemetry();
@@ -335,9 +543,10 @@ function registerAutoUpdateIpc(deps) {
         };
       }
       
-      // Fallback to direct GitHub/electron-updater check
+      // Fallback to direct GitHub/electron-updater check. A .deb install skips
+      // electron-updater (Linux-only supports AppImage) and reads version.json.
       console.log('[UPDATE] API unavailable, falling back to direct check...');
-      if (app.isPackaged && autoUpdater) {
+      if (app.isPackaged && autoUpdater && !isDebInstall()) {
         const result = await autoUpdater.checkForUpdates();
         const updateAvailable = result?.updateInfo?.version && 
           compareVersions(app.getVersion(), result.updateInfo.version) < 0;
@@ -359,6 +568,10 @@ function registerAutoUpdateIpc(deps) {
 
   ipcMain.handle('update:install', async (event) => {
     try {
+      if (isDebInstall()) {
+        // Linux .deb: download the package, install it on restart via pkexec.
+        return await performDebUpdate();
+      }
       if (app.isPackaged) {
         if (autoUpdater) {
           // Both Windows (NSIS) and macOS (Squirrel.Mac) flow through electron-updater.
@@ -393,7 +606,9 @@ function registerAutoUpdateIpc(deps) {
   }
 
   ipcMain.handle('update:installAndRestart', async () => {
-    if (autoUpdater) {
+    if (pendingDebPath) {
+      installDebAndRestart();
+    } else if (autoUpdater) {
       quitAndInstallOrExit();
     } else {
       app.quit();
@@ -401,7 +616,9 @@ function registerAutoUpdateIpc(deps) {
   });
 
   ipcMain.handle('update:exit', async () => {
-    if (app.isPackaged && autoUpdater) {
+    // "Exit" means quit, not install. A pending .deb stays for the next launch's
+    // check; only update:installAndRestart runs the privileged install.
+    if (!pendingDebPath && app.isPackaged && autoUpdater) {
       // Both platforms apply the downloaded update via Squirrel on quit.
       quitAndInstallOrExit();
     } else {

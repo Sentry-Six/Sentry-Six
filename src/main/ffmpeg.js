@@ -69,10 +69,15 @@ function buildFFmpegCandidatePaths() {
       path.join(app.getAppPath(), '..', 'ffmpeg_bin', 'ffmpeg.exe')
     );
   } else {
+    if (app.isPackaged) {
+      paths.push(path.join(process.resourcesPath, 'ffmpeg_bin', 'linux', 'ffmpeg'));
+    }
     paths.push(
-      path.join(__dirname, '..', 'ffmpeg_bin', 'ffmpeg'),
-      path.join(__dirname, 'ffmpeg_bin', 'ffmpeg'),
-      path.join(process.cwd(), 'ffmpeg_bin', 'ffmpeg'),
+      path.join(__dirname, '..', 'ffmpeg_bin', 'linux', 'ffmpeg'),
+      path.join(__dirname, 'ffmpeg_bin', 'linux', 'ffmpeg'),
+      path.join(process.cwd(), 'ffmpeg_bin', 'linux', 'ffmpeg'),
+      path.join(app.getAppPath(), 'ffmpeg_bin', 'linux', 'ffmpeg'),
+      path.join(app.getAppPath(), '..', 'ffmpeg_bin', 'linux', 'ffmpeg'),
       '/usr/bin/ffmpeg',
       '/usr/local/bin/ffmpeg'
     );
