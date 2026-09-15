@@ -12,6 +12,7 @@
     "build:mac": "electron-builder --mac --publish never",
     "build:mac-intel": "electron-builder --mac --x64 --publish never",
     "build:mac-apple-silicon": "electron-builder --mac --arm64 --publish never",
+    "build:linux": "electron-builder --linux --publish never",
     "build:all": "electron-builder --win --mac --publish never"
   },
   "keywords": [
@@ -133,7 +134,27 @@
       }
     },
     "linux": {
-      "icon": "assets/Sentry_Six.png"
+      "icon": "build/icons",
+      "category": "AudioVideo",
+      "maintainer": "Sentry-Six <noreply@sentry-six.com>",
+      "target": [
+        "deb"
+      ],
+      "artifactName": "SentryStudio-${version}-linux-${arch}.${ext}",
+      "extraResources": [
+        {
+          "from": "ffmpeg_bin/linux/ffmpeg",
+          "to": "ffmpeg_bin/linux/ffmpeg"
+        },
+        {
+          "from": "ffmpeg_bin/linux/ffprobe",
+          "to": "ffmpeg_bin/linux/ffprobe"
+        },
+        {
+          "from": "ffmpeg_bin/README.md",
+          "to": "ffmpeg_bin/README.md"
+        }
+      ]
     },
     "files": [
       "src/**/*",
