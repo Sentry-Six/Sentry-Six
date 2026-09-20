@@ -17,6 +17,7 @@ import {
     startExport, cancelExport, confirmCancelExport, clearExportMarkers, renderSharedClipsList
 } from './scripts/features/exportVideo.js';
 import { initAutoUpdate } from './scripts/features/autoUpdate.js';
+import { createSidebarPanelSwitcher, initFootageConverter } from './scripts/features/footageConverter.js';
 import { initWelcomeScreen, resetWelcomeScreen, showWelcomeScreen } from './scripts/features/welcomeScreen.js';
 import { zoomPanState, initZoomPan, resetZoomPan, applyZoomPan, applyMirrorTransforms } from './scripts/ui/zoomPan.js';
 import { initSettingsModalDeps, initSettingsModal, initDevSettingsModal, openDevSettings, initChangelogModal, initSettingsSearch } from './scripts/ui/settingsModal.js';
@@ -44,7 +45,7 @@ import {
 } from './scripts/core/clipBrowser.js';
 import { matchClipsTodrives } from './scripts/core/driveGrouper.js';
 import { initDriveBrowser, renderDriveList, setDriveTagFilter } from './scripts/core/driveBrowser.js';
-import { initI18n, t, onLanguageChange } from './scripts/lib/i18n.js';
+import { getCurrentLanguage, initI18n, t, onLanguageChange } from './scripts/lib/i18n.js';
 import {
     detectDashcamProfile,
     getDashcamProfile,
@@ -129,6 +130,7 @@ const clipsCollapseBtn = $('clipsCollapseBtn');
 // Drives panel elements
 const driveList = $('driveList');
 const clipDriveTabBar = $('clipDriveTabBar');
+const converterWorkspace = $('converterWorkspace');
 const drivesTabCount = $('drivesTabCount');
 const driveTagFilter = $('driveTagFilter');
 const clipBrowserDayfilter = $('clipBrowserDayfilter');
@@ -1560,36 +1562,37 @@ if (settingsShowFsdEvents) {
     });
 }
 
-// Drives tab bar switching
-function switchToClipsTab() {
-    if (!clipList || !driveList || !clipDriveTabBar) return;
-    clipList.style.display = '';
-    driveList.style.display = 'none';
-    if (clipBrowserDayfilter) clipBrowserDayfilter.style.display = '';
-    if (driveTagFilterRow) driveTagFilterRow.style.display = 'none';
-    clipDriveTabBar.querySelectorAll('.clip-drive-tab').forEach(tab => {
-        tab.classList.toggle('active', tab.dataset.panel === 'clips');
-    });
-}
-
-function switchToDrivesTab() {
-    if (!clipList || !driveList || !clipDriveTabBar) return;
-    clipList.style.display = 'none';
-    driveList.style.display = '';
-    if (clipBrowserDayfilter) clipBrowserDayfilter.style.display = 'none';
-    if (driveTagFilterRow) driveTagFilterRow.style.display = '';
-    clipDriveTabBar.querySelectorAll('.clip-drive-tab').forEach(tab => {
-        tab.classList.toggle('active', tab.dataset.panel === 'drives');
-    });
-    renderDriveList();
-}
+// One navigation path owns Clips, Drives, and the persistent Converter workspace.
+// The converter controller is initialized once and remains subscribed while hidden.
+let footageConverterController = null;
+const switchSidebarPanel = createSidebarPanelSwitcher({
+    body: document.body,
+    clipList,
+    driveList,
+    workspace: converterWorkspace,
+    tabs: clipDriveTabBar ? [...clipDriveTabBar.querySelectorAll('.clip-drive-tab')] : [],
+    clipFilter: clipBrowserDayfilter,
+    driveFilter: driveTagFilterRow,
+    chooseFolderButton: chooseFolderBtn,
+    onDrivesOpen: renderDriveList,
+    onConverterOpen: async () => {
+        footageConverterController = await initFootageConverter({
+            api: window.electronAPI,
+            root: document,
+            notify,
+            t,
+            getLocale: getCurrentLanguage,
+            onLanguageChange
+        });
+    },
+    onPanelChange: (panel) => footageConverterController?.setVisible(panel === 'converter')
+});
 
 if (clipDriveTabBar) {
     clipDriveTabBar.addEventListener('click', (e) => {
         const tab = e.target.closest('.clip-drive-tab');
         if (!tab) return;
-        if (tab.dataset.panel === 'clips') switchToClipsTab();
-        else if (tab.dataset.panel === 'drives') switchToDrivesTab();
+        void switchSidebarPanel(tab.dataset.panel);
     });
 }
 
@@ -2010,7 +2013,7 @@ async function clearSentryUsbData() {
         sentryUsb.loaded = false;
         sentryUsb.dataPath = null;
 
-        switchToClipsTab();
+        void switchSidebarPanel('clips');
         updateDrivesTabVisibility();
         renderDriveList(); // Refresh to show the "no data" placeholder
     }

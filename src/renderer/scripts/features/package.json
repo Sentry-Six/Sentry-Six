@@ -1,0 +1,4 @@
+{
+  "type": "module",
+  "//": "Renderer feature modules are browser ESM; this marker lets Node's renderer tests import them with the same semantics."
+}

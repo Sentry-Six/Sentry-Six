@@ -2,6 +2,21 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import * as profiles from '../../src/shared/dashcamProfiles.mjs';
+import {
+  normalizeTeslaCamera,
+  parseTeslaFilename
+} from '../../src/shared/teslaFilename.mjs';
+
+test('shares the Tesla filename parser with non-renderer consumers', () => {
+  assert.deepEqual(parseTeslaFilename('2026-07-17_19-34-53-left.mp4'), {
+    profileId: 'tesla',
+    timestampKey: '2026-07-17_19-34-53',
+    date: '2026-07-17',
+    camera: 'left_repeater'
+  });
+  assert.equal(normalizeTeslaCamera('RIGHT'), 'right_repeater');
+  assert.equal(profiles.parseTeslaFilename, parseTeslaFilename);
+});
 
 test('parses a GMC front clip without requiring side-camera evidence', () => {
   assert.deepEqual(

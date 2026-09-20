@@ -3,6 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const { spawn, spawnSync } = require('child_process');
+const { prepareConcatFiles, concatFileList } = require('./main/exportConcat');
 const { writeCompactDashboardAss, writeDefaultDashboardAss, writeDetailedDashboardAss, writeTeslaMobileDashboardAss, writeTeslaMobileDateAss, writeTeslaMobileDataAss, writeTeslaScreenDashAss, writeMinimapAss } = require('./assGenerator');
 // Pure-JS PNG compositor used for blur masks. Replaces `sharp` so Linux (and other)
 // users don't need the native libvips binaries bundled.
@@ -52,7 +53,9 @@ const { settingsPath, loadSettings, saveSettings, registerSettingsIpc, applyPlay
 const { SUPPORT_SERVER_URL, registerSupportChatIpc } = require('./main/supportChat');
 const { registerDiagnosticsStorageIpc } = require('./main/diagnostics');
 const { UPDATE_CONFIG, autoUpdater, getLatestVersionFromGitHub, registerAutoUpdateIpc, resolveUpdateChannel, setupAutoUpdaterEvents } = require('./main/autoUpdate');
-const { findFFmpegPath, preCacheFFmpegPath, formatExportDuration, detectGpuHardware, detectGpuEncoder, detectHEVCEncoder, findVaapiDevice, getGpuEncoder, setGpuEncoder, getGpuEncoderHEVC, setGpuEncoderHEVC } = require('./main/ffmpeg');
+const { findFFmpegPath, findFFprobePath, preCacheFFmpegPath, formatExportDuration, detectGpuHardware, detectGpuEncoder, detectHEVCEncoder, findVaapiDevice, getGpuEncoder, setGpuEncoder, getGpuEncoderHEVC, setGpuEncoderHEVC } = require('./main/ffmpeg');
+const { registerConverterIpc } = require('./main/converter/ipc');
+const { createConverterLifecycle, createConverterRuntime, startConverterWithRecoveryPrompt } = require('./main/converter/runtime');
 const { calculateMinimapSize, downloadStaticMapBackground, preRenderMinimap } = require('./main/minimap');
 const { createSentryUsbCache } = require('./main/sentryUsbCache');
 const MapProviders = require('./shared/mapProviders');
@@ -131,6 +134,42 @@ const activeExports = {};
 const activeExportPaths = {}; // Track output paths for cleanup on cancel
 const cancelledExports = new Set(); // Track cancelled exports by ID
 let mainWindow = null;
+
+// The converter is composed once in the Electron main process. Its runtime
+// owns the singleton job store, recovery, child processes, and safe shutdown;
+// this file only resolves app paths/tools and connects the IPC boundary.
+const converterLifecycle = createConverterLifecycle({
+  app,
+  initialize: async ({ retainRuntime, runtime: existingRuntime, isQuitting }) => {
+    const ffmpegPath = findFFmpegPath();
+    const ffprobePath = findFFprobePath(ffmpegPath);
+    if (!ffmpegPath || !ffprobePath) {
+      throw Object.assign(new Error('Bundled converter tools are unavailable'), { code: 'CONVERTER_TOOLS_UNAVAILABLE' });
+    }
+    const runtime = existingRuntime || await createConverterRuntime({
+      userDataPath: app.getPath('userData'),
+      tempPath: app.getPath('temp'),
+      ffmpegPath,
+      ffprobePath,
+      spawn,
+      fs,
+      pathApi: path,
+      platform: process.platform,
+      onError: error => console.error('[CONVERTER] Recovery execution failed:', error?.code || 'RECOVERY_FAILED')
+    });
+    retainRuntime(runtime);
+    await runtime.start();
+    if (isQuitting()) throw Object.assign(new Error('Converter shutdown requested'), { code: 'SERVICE_SHUTDOWN' });
+    registerConverterIpc({
+      ipcMain,
+      dialog,
+      service: runtime.service,
+      capabilities: runtime.capabilities
+    });
+    return runtime;
+  },
+  onError: (error) => console.error('[CONVERTER] Shutdown failed:', error?.code || 'SHUTDOWN_FAILED')
+});
 
 // Session-scoped map provider fallback: set when any renderer window reports
 // that Google tile loads are failing, so export tile downloads follow the
@@ -343,6 +382,25 @@ async function performVideoExport(event, exportId, exportData, ffmpegPath) {
 
   const cleanup = () => tempFiles.forEach(f => { try { fs.unlinkSync(f); } catch { } });
 
+  const runPreparationTool = (tool, args) => new Promise((resolve, reject) => {
+    if (cancelledExports.has(exportId)) return reject(new Error('Export cancelled'));
+    const child = spawn(tool, args, { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+    activeExports[exportId] = child;
+    let stdout = '', stderr = '';
+    let timedOut = false;
+    const timeout = setTimeout(() => { timedOut = true; child.kill(); }, 120000);
+    child.stdout.on('data', data => { stdout = (stdout + data).slice(-65536); });
+    child.stderr.on('data', data => { stderr = (stderr + data).slice(-65536); });
+    child.on('error', reject);
+    child.on('close', code => {
+      clearTimeout(timeout);
+      if (activeExports[exportId] === child) delete activeExports[exportId];
+      if (cancelledExports.has(exportId)) return reject(new Error('Export cancelled'));
+      if (timedOut || code !== 0) return reject(new Error(`Export input preparation failed: ${timedOut ? 'timed out' : stderr.slice(-1000)}`));
+      resolve(stdout);
+    });
+  });
+
   // Minimap temp file path (set during pre-render)
   let minimapTempPath = null;
   // Square minimap dimension in pixels — set during pre-render, used later for
@@ -414,8 +472,13 @@ async function performVideoExport(event, exportId, exportData, ffmpegPath) {
           isConcat: false
         });
       } else {
+        const preparedFiles = await prepareConcatFiles(files, {
+          ffmpegPath, ffprobePath: findFFprobePath(ffmpegPath),
+          run: runPreparationTool, tempFiles,
+          isCancelled: () => cancelledExports.has(exportId)
+        });
         const concatPath = path.join(os.tmpdir(), `export_${camera}_${Date.now()}.txt`);
-        fs.writeFileSync(concatPath, files.map(f => `file '${f.replace(/\\/g, '/')}'`).join('\n'));
+        fs.writeFileSync(concatPath, concatFileList(preparedFiles));
         tempFiles.push(concatPath);
 
         const firstSeg = relevantSegments.find(s => s.files?.[camera] === files[0]);
@@ -1889,8 +1952,10 @@ async function performVideoExport(event, exportId, exportData, ffmpegPath) {
             sendComplete(false, { key: 'ui.export.exportFailedGpuEncoderInit' });
           } else if (errLower.includes('invalid argument') && (errLower.includes('error opening output file') || errLower.includes('no such file') || errLower.includes('filename'))) {
             sendComplete(false, { key: 'ui.export.exportFailedInvalidPath' });
-          } else if (errLower.includes('openencodesessionex failed') || errLower.includes('out of memory') || errLower.includes('cannot allocate memory')) {
+          } else if (errLower.includes('openencodesessionex failed')) {
             sendComplete(false, { key: 'ui.export.exportFailedGpuMemory' });
+          } else if (errLower.includes('out of memory') || errLower.includes('cannot allocate memory')) {
+            sendComplete(false, 'Export failed: the video pipeline ran out of memory. Try a shorter export or fewer cameras.');
           } else if (errLower.includes('no nvenc capable devices found') || errLower.includes('cannot load nvenc')) {
             sendComplete(false, { key: 'ui.export.exportFailedGpuUnavailable' });
           } else if (errLower.includes('broken pipe') || errLower.includes('connection reset')) {
@@ -1967,7 +2032,17 @@ app.whenReady().then(async () => {
     }
   }
 
-  createWindow();
+  const converterRuntime = await startConverterWithRecoveryPrompt({
+    lifecycle: converterLifecycle,
+    createWindow,
+    dialog,
+    app,
+    onError: (error) => console.error(
+      '[CONVERTER] Runtime initialization failed:',
+      error?.code || 'INITIALIZATION_FAILED'
+    )
+  });
+  if (!converterRuntime) return;
 
   // Pre-cache FFmpeg path in background after window is ready. preCacheFFmpegPath
   // is now async (uses spawn, not spawnSync) so the main-process event loop
@@ -1992,7 +2067,8 @@ app.on('window-all-closed', () => {
 
 // Clean up all active FFmpeg processes before quitting
 // This prevents orphaned processes that can block the Windows installer
-app.on('before-quit', () => {
+app.on('before-quit', (event) => {
+  void converterLifecycle.beforeQuit(event);
   console.log('[APP] before-quit: cleaning up active exports...');
   const exportIds = Object.keys(activeExports);
   if (exportIds.length > 0) {

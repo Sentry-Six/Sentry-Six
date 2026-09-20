@@ -1,4 +1,14 @@
-export const TESLA_PROFILE_ID = 'tesla';
+import {
+  TESLA_PROFILE_ID,
+  parseTeslaFilename
+} from './teslaFilename.mjs';
+
+export {
+  TESLA_PROFILE_ID,
+  normalizeTeslaCamera,
+  parseTeslaFilename
+} from './teslaFilename.mjs';
+
 export const GMC_PROFILE_ID = 'gm_surroundvision';
 
 const GMC_CAMERA_IDS = {
@@ -25,26 +35,6 @@ const GMC_CAMERA_LABELS = {
   rear: 'Rear',
   interior: 'Interior'
 };
-
-function normalizeTeslaCamera(cameraRaw) {
-  const camera = String(cameraRaw || '').toLowerCase();
-  if (camera === 'left') return 'left_repeater';
-  if (camera === 'right') return 'right_repeater';
-  return camera;
-}
-
-function parseTeslaFilename(filename) {
-  const match = String(filename || '').match(
-    /^(\d{4}-\d{2}-\d{2})_(\d{2}-\d{2}-\d{2})-(.+)\.mp4$/i
-  );
-  if (!match) return null;
-  return {
-    profileId: TESLA_PROFILE_ID,
-    timestampKey: `${match[1]}_${match[2]}`,
-    date: match[1],
-    camera: normalizeTeslaCamera(match[3])
-  };
-}
 
 function parseGmcFilename(filename) {
   const match = String(filename || '').match(

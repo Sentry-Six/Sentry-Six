@@ -11,6 +11,7 @@
     <link rel="stylesheet" href="vendor/leaflet/leaflet.css" />
     <link rel="stylesheet" href="style.css">
     <link rel="stylesheet" href="styles/advancedEditor.css">
+    <link rel="stylesheet" href="styles/footageConverter.css">
 </head>
 
 <body>
@@ -163,16 +164,17 @@
                     </div>
                 </div>
                 <!-- Tab bar - always visible -->
-                <div id="clipDriveTabBar" class="clip-drive-tab-bar">
-                    <button class="clip-drive-tab active" data-panel="clips">Clips</button>
-                    <button class="clip-drive-tab" id="drivesTabBtn" data-panel="drives">
-                        Drives
+                <div id="clipDriveTabBar" class="clip-drive-tab-bar" role="tablist" aria-label="Studio workspaces" data-i18n="ui.converter.workspaceTabs" data-i18n-attr="aria-label">
+                    <button type="button" class="clip-drive-tab active" id="clipsTabBtn" data-panel="clips" role="tab" aria-controls="clipList" aria-selected="true" tabindex="0" data-i18n="ui.converter.navClips">Clips</button>
+                    <button type="button" class="clip-drive-tab" id="drivesTabBtn" data-panel="drives" role="tab" aria-controls="driveList" aria-selected="false" tabindex="-1">
+                        <span data-i18n="ui.converter.navDrives">Drives</span>
                         <span id="drivesTabCount" class="tab-count"></span>
                     </button>
+                    <button type="button" class="clip-drive-tab" id="converterTabBtn" data-panel="converter" role="tab" aria-controls="converterWorkspace" aria-selected="false" tabindex="-1" data-i18n="ui.converter.navConverter">Converter</button>
                 </div>
-                <div id="clipList" class="clip-list"></div>
+                <div id="clipList" class="clip-list" role="tabpanel" aria-labelledby="clipsTabBtn"></div>
                 <!-- Drives list panel -->
-                <div id="driveList" class="drive-list" style="display:none;"></div>
+                <div id="driveList" class="drive-list" role="tabpanel" aria-labelledby="drivesTabBtn" style="display:none;"></div>
             </div>
 
             <!-- Floating Map -->
@@ -480,7 +482,199 @@
                         </div>
                     </div>
                 </div>
-            </div>
+                </div>
+
+            <section id="converterWorkspace" class="converter-workspace" role="tabpanel" aria-labelledby="converterTabBtn" hidden>
+                <div class="converter-bay">
+                    <header class="converter-bay-header">
+                        <div>
+                            <h1 id="converterTitle" data-i18n="ui.converter.navConverter">Converter</h1>
+                            <p class="converter-intro" data-i18n="ui.converter.intro">Convert original Tesla camera files while preserving their telemetry and folder structure.</p>
+                        </div>
+                        <div class="converter-live-state">
+                            <span class="converter-live-dot" aria-hidden="true"></span>
+                            <span id="converterStatus" role="status" aria-live="polite" aria-atomic="true" data-i18n="ui.converter.ready">Ready to configure</span>
+                        </div>
+                    </header>
+
+                    <ol class="converter-pipeline" id="converterPipeline" data-current-phase="idle" aria-label="Conversion pipeline" data-i18n="ui.converter.pipelineLabel" data-i18n-attr="aria-label">
+                        <li class="converter-pipeline-stage" data-converter-phase="discover">
+                            <span class="converter-stage-index">01</span>
+                            <span class="converter-stage-name" data-i18n="ui.converter.discover">Discover</span>
+                        </li>
+                        <li class="converter-pipeline-stage" data-converter-phase="encode">
+                            <span class="converter-stage-index">02</span>
+                            <span class="converter-stage-name" data-i18n="ui.converter.encode">Encode</span>
+                        </li>
+                        <li class="converter-pipeline-stage" data-converter-phase="verify">
+                            <span class="converter-stage-index">03</span>
+                            <span class="converter-stage-name" data-i18n="ui.converter.verify">Verify</span>
+                        </li>
+                        <li class="converter-pipeline-stage" data-converter-phase="save">
+                            <span class="converter-stage-index">04</span>
+                            <span class="converter-stage-name" data-i18n="ui.converter.save">Save</span>
+                        </li>
+                    </ol>
+
+                    <div class="converter-bay-grid">
+                        <form class="converter-config" novalidate>
+                            <div class="converter-section-heading">
+                                <span class="converter-section-icon material-symbols-outlined mi-md" aria-hidden="true">tune</span>
+                                <div>
+                                    <h2 data-i18n="ui.converter.configure">Configure</h2>
+                                    <p data-i18n="ui.converter.configureDetail">Choose the archive, codec, safety profile, and destination before Start.</p>
+                                </div>
+                            </div>
+
+                            <div class="converter-path-stack">
+                                <label class="converter-field" for="converterSourcePath">
+                                    <span class="converter-field-label" data-i18n="ui.converter.sourceFolder">Source folder</span>
+                                    <span class="converter-path-control">
+                                        <input id="converterSourcePath" type="text" readonly placeholder="Choose a TeslaCam folder" data-i18n-placeholder="ui.converter.sourcePlaceholder">
+                                        <button id="converterChooseSource" type="button" class="converter-icon-action" aria-label="Choose source folder" data-i18n="ui.converter.chooseSource" data-i18n-attr="aria-label">
+                                            <span class="material-symbols-outlined mi-md">folder_open</span>
+                                        </button>
+                                    </span>
+                                </label>
+                                <label class="converter-field" for="converterDestinationPath">
+                                    <span class="converter-field-label" data-i18n="ui.converter.destinationFolder">Destination folder</span>
+                                    <span class="converter-path-control">
+                                        <input id="converterDestinationPath" type="text" readonly placeholder="Choose where converted files are saved" data-i18n-placeholder="ui.converter.destinationPlaceholder">
+                                        <button id="converterChooseDestination" type="button" class="converter-icon-action" aria-label="Choose destination folder" data-i18n="ui.converter.chooseDestination" data-i18n-attr="aria-label">
+                                            <span class="material-symbols-outlined mi-md">folder_open</span>
+                                        </button>
+                                    </span>
+                                </label>
+                            </div>
+
+                            <fieldset class="converter-fieldset">
+                                <legend data-i18n="ui.converter.includeGroups">Include groups</legend>
+                                <div class="converter-check-line option-grid option-grid-3">
+                                    <label class="option-card"><input type="checkbox" data-converter-group="RecentClips" checked><span class="option-card-label">RecentClips</span></label>
+                                    <label class="option-card"><input type="checkbox" data-converter-group="SavedClips" checked><span class="option-card-label">SavedClips</span></label>
+                                    <label class="option-card"><input type="checkbox" data-converter-group="SentryClips" checked><span class="option-card-label">SentryClips</span></label>
+                                </div>
+                            </fieldset>
+
+                            <fieldset class="converter-fieldset converter-order-fieldset">
+                                <legend>Processing order</legend>
+                                <div class="converter-order-list" aria-label="Processing order">
+                                    <div class="converter-order-row" data-converter-order-group="SavedClips"><span class="converter-order-rank" data-converter-order-rank aria-hidden="true">1</span><span class="converter-order-name">SavedClips</span><span class="converter-order-actions"><button type="button" class="converter-order-button" data-converter-order-move="up" aria-label="Move SavedClips earlier"><span class="material-symbols-outlined" aria-hidden="true">expand_more</span></button><button type="button" class="converter-order-button" data-converter-order-move="down" aria-label="Move SavedClips later"><span class="material-symbols-outlined" aria-hidden="true">expand_more</span></button></span></div>
+                                    <div class="converter-order-row" data-converter-order-group="SentryClips"><span class="converter-order-rank" data-converter-order-rank aria-hidden="true">2</span><span class="converter-order-name">SentryClips</span><span class="converter-order-actions"><button type="button" class="converter-order-button" data-converter-order-move="up" aria-label="Move SentryClips earlier"><span class="material-symbols-outlined" aria-hidden="true">expand_more</span></button><button type="button" class="converter-order-button" data-converter-order-move="down" aria-label="Move SentryClips later"><span class="material-symbols-outlined" aria-hidden="true">expand_more</span></button></span></div>
+                                    <div class="converter-order-row" data-converter-order-group="RecentClips"><span class="converter-order-rank" data-converter-order-rank aria-hidden="true">3</span><span class="converter-order-name">RecentClips</span><span class="converter-order-actions"><button type="button" class="converter-order-button" data-converter-order-move="up" aria-label="Move RecentClips earlier"><span class="material-symbols-outlined" aria-hidden="true">expand_more</span></button><button type="button" class="converter-order-button" data-converter-order-move="down" aria-label="Move RecentClips later"><span class="material-symbols-outlined" aria-hidden="true">expand_more</span></button></span></div>
+                                </div>
+                            </fieldset>
+
+                            <fieldset class="converter-fieldset">
+                                <legend data-i18n="ui.converter.codec">Codec</legend>
+                                <div class="converter-segments converter-segments-two">
+                                    <label><input type="radio" name="converterCodec" data-converter-codec="h265" checked><span><strong>H.265</strong><small data-i18n="ui.converter.h265Detail">Broader support</small></span></label>
+                                    <label><input type="radio" name="converterCodec" data-converter-codec="av1"><span><strong>AV1</strong><small data-i18n="ui.converter.av1Detail">Newer codec</small></span></label>
+                                </div>
+                            </fieldset>
+
+                            <fieldset class="converter-fieldset">
+                                <legend data-i18n="ui.converter.compressionProfile">Compression profile</legend>
+                                <div class="converter-segments converter-segments-three">
+                                    <label><input type="radio" name="converterProfile" data-converter-profile="conservative"><span><strong data-i18n="ui.converter.highQuality">High Quality</strong><small data-i18n="ui.converter.highQualityDetail">Approximately 5% smaller</small></span></label>
+                                    <label><input type="radio" name="converterProfile" data-converter-profile="balanced" checked><span><strong data-i18n="ui.converter.balanced">Balanced</strong><small data-i18n="ui.converter.balancedDetail">Approximately 20% smaller</small></span></label>
+                                    <label><input type="radio" name="converterProfile" data-converter-profile="aggressive"><span><strong data-i18n="ui.converter.smaller">Smaller</strong><small data-i18n="ui.converter.smallerDetail">Approximately 50% smaller</small></span></label>
+                                </div>
+                                <p class="converter-disclosure" data-i18n="ui.converter.lossyDisclosure">Conversion re-encodes video using lossy compression. Every profile may discard some image detail.</p>
+                            </fieldset>
+
+                            <fieldset class="converter-fieldset converter-output-fieldset">
+                                <legend data-i18n="ui.converter.output">Output</legend>
+                                <div class="converter-output-options">
+                                    <label class="converter-output-option">
+                                        <input type="radio" name="converterOutput" data-converter-output="separate" checked>
+                                        <span><strong data-i18n="ui.converter.separateDestination">Separate destination</strong><small data-i18n="ui.converter.separateDestinationDetail">Keep originals and mirror the TeslaCam tree.</small></span>
+                                    </label>
+                                    <label id="converterReplaceOption" class="converter-output-option converter-output-danger">
+                                        <input id="converterOutputReplace" type="radio" name="converterOutput" data-converter-output="replace">
+                                        <span><strong data-i18n="ui.converter.replaceOriginals">Replace originals after verification</strong><small id="converterReplaceCapability" data-i18n="ui.converter.capabilityChecking">Checking system capability…</small></span>
+                                    </label>
+                                </div>
+                                <label id="converterReplacementConfirmationRow" class="converter-confirm-row" hidden>
+                                    <input id="converterReplacementConfirmation" type="checkbox">
+                                    <span><span id="converterReplacementWarning"></span> <span data-i18n="ui.converter.replacementAcknowledgement">I understand the app makes a backup before replacing each verified original and restores that backup if replacement cannot finish.</span></span>
+                                </label>
+                            </fieldset>
+
+                            <output id="converterEstimate" hidden></output>
+
+                            <div class="converter-actions">
+                                <button id="converterStart" type="button" class="converter-button converter-button-primary" data-i18n="ui.converter.start">Start conversion</button>
+                                <span class="converter-action-divider" aria-hidden="true"></span>
+                                <button id="converterPause" type="button" class="converter-button" disabled data-i18n="ui.converter.pause">Pause</button>
+                                <button id="converterResume" type="button" class="converter-button" disabled data-i18n="ui.converter.resume">Resume</button>
+                                <button id="converterCancel" type="button" class="converter-button converter-button-danger" disabled data-i18n="ui.converter.cancel">Cancel</button>
+                                <button id="converterRetry" type="button" class="converter-button" disabled data-i18n="ui.converter.retryFailed">Retry failed</button>
+                            </div>
+                        </form>
+
+                        <section class="converter-operations" aria-labelledby="converterRunTitle">
+                            <div class="converter-section-heading">
+                                <span class="converter-section-icon material-symbols-outlined mi-md" aria-hidden="true">play_arrow</span>
+                                <div>
+                                    <h2 id="converterRunTitle" data-i18n="ui.converter.liveRun">Live run</h2>
+                                    <p data-i18n="ui.converter.liveRunDetail">Counts grow as folders are discovered. Processed bytes are actual completed work, never an archive estimate.</p>
+                                </div>
+                                <span id="converterElapsed" class="converter-elapsed">00:00</span>
+                            </div>
+
+                            <div id="converterReconnectBanner" class="converter-banner converter-banner-warning" role="status" hidden data-i18n="ui.converter.reconnect">
+                                Waiting for the affected source or destination to reconnect. This job will resume without rescanning the archive.
+                            </div>
+                            <div id="converterCleanupBanner" class="converter-banner converter-banner-info" role="status" hidden></div>
+
+                            <div class="converter-current-file">
+                                <div class="converter-current-label" data-i18n="ui.converter.currentFile">Current file</div>
+                                <div id="converterCurrentFile" class="converter-current-path" data-i18n="ui.converter.noFileActive">No file active</div>
+                                <div class="converter-current-progress-row">
+                                    <div class="converter-current-track" role="progressbar" aria-label="Current file activity" data-i18n="ui.converter.currentFileActivity" data-i18n-attr="aria-label">
+                                        <span id="converterCurrentProgressFill"></span>
+                                    </div>
+                                    <span id="converterCurrentProgress" class="converter-current-progress">—</span>
+                                </div>
+                            </div>
+
+                            <dl class="converter-counters">
+                                <div><dt data-i18n="ui.converter.discovered">Discovered</dt><dd id="converterCountDiscovered">0</dd></div>
+                                <div><dt data-i18n="ui.converter.completed">Completed</dt><dd id="converterCountCompleted">0</dd></div>
+                                <div><dt data-i18n="ui.converter.skipped">Skipped</dt><dd id="converterCountSkipped">0</dd></div>
+                                <div><dt data-i18n="ui.converter.failed">Failed</dt><dd id="converterCountFailed">0</dd></div>
+                                <div><dt data-i18n="ui.converter.waiting">Waiting</dt><dd id="converterCountWaiting">0</dd></div>
+                                <div class="converter-counter-wide"><dt data-i18n="ui.converter.processedBytes">Video processed so far</dt><dd id="converterProcessedBytes">0 B</dd></div>
+                            </dl>
+
+                            <div id="converterErrorRows" class="converter-error-rows" aria-live="polite" hidden></div>
+
+                            <section id="converterSummary" class="converter-summary" aria-labelledby="converterSummaryTitle" hidden>
+                                <div class="converter-summary-header">
+                                    <div>
+                                        <p class="converter-summary-kicker" data-i18n="ui.converter.verifiedResult">Verified result</p>
+                                        <h3 id="converterSummaryTitle" data-i18n="ui.converter.completionTotals">Actual completion totals</h3>
+                                    </div>
+                                    <button id="converterDismissSummary" type="button" class="converter-button converter-button-quiet" data-i18n="ui.converter.dismiss">Dismiss</button>
+                                </div>
+                                <dl class="converter-summary-grid">
+                                    <div><dt data-i18n="ui.converter.converted">Converted</dt><dd id="converterSummaryFiles">0</dd></div>
+                                    <div><dt data-i18n="ui.converter.skipped">Skipped</dt><dd id="converterSummarySkipped">0</dd></div>
+                                    <div><dt data-i18n="ui.converter.failed">Failed</dt><dd id="converterSummaryFailed">0</dd></div>
+                                    <div><dt data-i18n="ui.converter.elapsed">Elapsed</dt><dd id="converterSummaryElapsed">00:00</dd></div>
+                                    <div><dt data-i18n="ui.converter.originalVideo">Original video</dt><dd id="converterSummarySource">0 B</dd></div>
+                                    <div><dt data-i18n="ui.converter.convertedVideo">Converted video</dt><dd id="converterSummaryOutput">0 B</dd></div>
+                                    <div><dt data-i18n="ui.converter.saved">Video size reduction</dt><dd><span id="converterSummarySaved">0 B</span> · <span id="converterSummaryPercent">0%</span></dd></div>
+                                    <div><dt data-i18n="ui.converter.copiedAssets">Copied assets</dt><dd id="converterSummaryAssets">0 B</dd></div>
+                                </dl>
+                                <div id="converterSummaryGroups" class="converter-summary-groups"></div>
+                                <p id="converterSummaryRetention" class="converter-banner"></p>
+                            </section>
+                        </section>
+                    </div>
+                </div>
+            </section>
 
         </div>
 

@@ -42,22 +42,22 @@ async function extractSeiFromBuffer(buffer) {
     
     const seiData = [];
     const mapPath = [];
-    let runningMs = 0;
-    
     for (const frame of frames) {
-        runningMs += frame.duration;
         if (frame.sei) {
-            seiData.push({ timestampMs: runningMs, sei: frame.sei });
+            seiData.push({ timestampMs: frame.timestamp, sei: frame.sei });
             if (hasValidGps(frame.sei)) {
                 const lat = Number(frame.sei.latitudeDeg ?? frame.sei.latitude_deg);
                 const lon = Number(frame.sei.longitudeDeg ?? frame.sei.longitude_deg);
                 const apState = frame.sei.autopilotState ?? frame.sei.autopilot_state;
                 const autopilot = apState != null && apState !== 0 && apState !== 'DISABLED';
-                mapPath.push({ lat, lon, timestampMs: runningMs, autopilot });
+                mapPath.push({ lat, lon, timestampMs: frame.timestamp, autopilot });
             }
         }
     }
     
+    // MP4 samples are in decode order; lookups require presentation-time order.
+    seiData.sort((a, b) => a.timestampMs - b.timestampMs);
+    mapPath.sort((a, b) => a.timestampMs - b.timestampMs);
     return { seiData, mapPath };
 }
 

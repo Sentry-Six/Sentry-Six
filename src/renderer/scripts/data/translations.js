@@ -3,9 +3,119 @@
  * Structure: { languageCode: { category: { key: "value" } } }
  */
 
+// Task 14 intentionally provides the reviewed English converter copy in every
+// locale. This keeps the new surface complete without shipping machine
+// translations or allowing the runtime to fall through to missing-key warnings.
+const converterEnglish = Object.freeze({
+    navClips: "Clips",
+    navDrives: "Drives",
+    navConverter: "Converter",
+    workspaceTabs: "Studio workspaces",
+    eyebrow: "Footage operations",
+    title: "Footage Converter",
+    intro: "Convert original Tesla camera files while preserving their telemetry and folder structure.",
+    ready: "Ready to configure",
+    pipelineLabel: "Conversion pipeline",
+    discover: "Discover",
+    encode: "Encode",
+    verify: "Verify",
+    save: "Save",
+    configure: "Configure",
+    configureDetail: "Choose the archive, codec, safety profile, and destination before Start.",
+    sourceFolder: "Source folder",
+    sourcePlaceholder: "Choose a TeslaCam folder",
+    chooseSource: "Choose source folder",
+    destinationFolder: "Destination folder",
+    destinationPlaceholder: "Choose where converted files are saved",
+    chooseDestination: "Choose destination folder",
+    includeGroups: "Include groups",
+    codec: "Codec",
+    h265Detail: "Broader support",
+    av1Detail: "Newer codec",
+    networkHandling: "Network handling",
+    networkAuto: "Auto",
+    networkStaging: "Stage locally",
+    networkDirect: "Direct",
+    compressionProfile: "Compression profile",
+    highQuality: "High Quality",
+    highQualityDetail: "Approximately 5% smaller",
+    balanced: "Balanced",
+    balancedDetail: "Approximately 20% smaller",
+    smaller: "Smaller",
+    smallerDetail: "Approximately 50% smaller",
+    lossyDisclosure: "Conversion re-encodes video using lossy compression. Every profile may discard some image detail.",
+    output: "Output",
+    separateDestination: "Separate destination",
+    separateDestinationDetail: "Keep originals and mirror the TeslaCam tree.",
+    replaceOriginals: "Replace originals after verification",
+    capabilityChecking: "Checking system capability…",
+    capabilityReplaceAvailable: "Available on this filesystem",
+    capabilityReplaceUnavailable: "Replace originals is not available on this system. Originals remain protected.",
+    replacementAcknowledgement: "I understand the app makes a backup before replacing each verified original and restores that backup if replacement cannot finish.",
+    replacementWarning: "Source {sourceRoot}: each original is backed up before replacement. If replacement fails, the backup is restored so you can roll back safely.",
+    replacementConfirm: "Replace originals in {sourceRoot}? Each original is backed up first, and a failed replacement restores that backup for rollback.",
+    start: "Start conversion",
+    pause: "Pause",
+    resume: "Resume",
+    cancel: "Cancel",
+    retryFailed: "Retry failed",
+    liveRun: "Live run",
+    liveRunDetail: "Counts grow as folders are discovered. Processed bytes are actual completed work, never an archive estimate.",
+    reconnect: "Waiting for the affected source or destination to reconnect. This job will resume without rescanning the archive.",
+    currentFile: "Current file",
+    noFileActive: "No file active",
+    currentFileActivity: "Current file activity",
+    discovered: "Discovered",
+    completed: "Completed",
+    skipped: "Skipped",
+    failed: "Failed",
+    waiting: "Waiting",
+    processedBytes: "Video processed so far",
+    verifiedResult: "Verified result",
+    completionTotals: "Actual completion totals",
+    dismiss: "Dismiss",
+    converted: "Converted",
+    elapsed: "Elapsed",
+    originalVideo: "Original video",
+    convertedVideo: "Converted video",
+    saved: "Video size reduction",
+    summarySeparateRetention: "Video size reduction is not physical storage reclaimed. Originals are retained in separate mode.",
+    summaryRetention: "Video size reduction is not physical storage reclaimed. Retained cleanup artifacts still consume space.",
+    copiedAssets: "Copied assets",
+    statusDiscovering: "Discovering footage",
+    statusWaiting: "Preparing next file",
+    statusStaging: "Staging locally",
+    statusEncoding: "Encoding video",
+    statusWritingTelemetry: "Writing telemetry",
+    statusVerifying: "Verifying telemetry",
+    statusCopying: "Saving verified file",
+    statusReplacing: "Replacing verified original",
+    statusPaused: "Paused at a safe boundary",
+    statusWaitingForConnection: "Waiting for connection",
+    statusCompleted: "Conversion complete",
+    statusCancelled: "Conversion cancelled",
+    statusFailed: "Conversion stopped",
+    statusReady: "Converter ready",
+    progressEncoded: "{duration} encoded",
+    progressWorking: "Working on current file",
+    cleanupPending: "{count} {file} with cleanup pending. Retained artifacts still consume space; hardlinks share disk allocation.",
+    cleanupFileSingular: "file",
+    cleanupFilePlural: "files",
+    summaryGroup: "{count} files · {bytes} video size reduction",
+    folderSelectionFailed: "Folder selection failed: {code}",
+    errorSourceRequired: "Choose a source folder before starting.",
+    errorDestinationRequired: "Choose a destination folder for separate output.",
+    errorGroupRequired: "Select at least one Tesla clip group.",
+    errorReplacementConfirmation: "Acknowledge and confirm replacement before starting.",
+    errorReplacementUnavailable: "Replace originals is not available on this system.",
+    errorActionFailed: "Converter action failed: {code}",
+    cancelConfirm: "Cancel this conversion job after owned temporary files are reconciled?"
+});
+
 export const translations = {
     en: {
         ui: {
+            converter: { ...converterEnglish },
             dropOverlay: { message: "Select your dashcam folder to browse clips", chooseFolder: "Choose Folder" },
             startup: { checkingForUpdates: "Checking for updates..." },
             loading: { scanning: "Scanning folder...", filesFound: "{count} files found" },
@@ -96,6 +206,7 @@ export const translations = {
     },
     es: {
         ui: {
+            converter: { ...converterEnglish },
             dropOverlay: { message: "Seleccione su carpeta de dashcam para explorar clips", chooseFolder: "Elegir Carpeta" },
             loading: { scanning: "Escaneando carpeta...", filesFound: "{count} archivos encontrados" },
             clipBrowser: { title: "Clips", subtitle: "Seleccione una carpeta de dashcam para explorar", dateLabel: "Fecha", selectDate: "Seleccionar Fecha", recent: "Reciente", sentry: "Sentry", saved: "Guardado", segments: "segmentos", segment: "segmento", collapsePanel: "Contraer panel", expandPanel: "Expandir panel", showSidebar: "Mostrar barra lateral", hideSidebar: "Ocultar barra lateral", chooseFolder: "Elegir Carpeta", clipsOn: "clips en", datesAvailable: "fechas disponibles", deleteClip: "Eliminar Clip", deleteConfirmTitle: "¿Eliminar Clip?", deleteConfirmMessage: "¿Está seguro de que desea eliminar permanentemente esta carpeta de clips?", deleteConfirmPath: "Ruta de carpeta:", deleteConfirmWarning: "Esta acción no se puede deshacer.", deleteBtn: "Eliminar", cancelBtn: "Cancelar", deleteSuccess: "Clip eliminado correctamente", deleteFailed: "Error al eliminar clip", deleteFinalConfirmTitle: "¿Está Seguro?", deleteFinalConfirmMessage: "Esto eliminará permanentemente todos los archivos en esta carpeta. ¡No se puede deshacer!", deleteConfirmBtn: "Sí, Eliminar Permanentemente" },
@@ -182,6 +293,7 @@ export const translations = {
     },
     fr: {
         ui: {
+            converter: { ...converterEnglish },
             dropOverlay: { message: "Sélectionnez votre dossier dashcam pour parcourir les clips", chooseFolder: "Choisir un Dossier" },
             loading: { scanning: "Analyse du dossier...", filesFound: "{count} fichiers trouvés" },
             clipBrowser: { title: "Clips", subtitle: "Sélectionnez un dossier dashcam pour parcourir", dateLabel: "Date", selectDate: "Sélectionner une Date", recent: "Récent", sentry: "Sentry", saved: "Enregistré", segments: "segments", segment: "segment", collapsePanel: "Réduire le panneau", expandPanel: "Développer le panneau", showSidebar: "Afficher la barre latérale", hideSidebar: "Masquer la barre latérale", chooseFolder: "Choisir un Dossier", clipsOn: "clips le", datesAvailable: "dates disponibles", deleteClip: "Supprimer le Clip", deleteConfirmTitle: "Supprimer le Clip?", deleteConfirmMessage: "Êtes-vous sûr de vouloir supprimer définitivement ce dossier de clips?", deleteConfirmPath: "Chemin du dossier:", deleteConfirmWarning: "Cette action est irréversible.", deleteBtn: "Supprimer", cancelBtn: "Annuler", deleteSuccess: "Clip supprimé avec succès", deleteFailed: "Échec de la suppression du clip", deleteFinalConfirmTitle: "Êtes-vous Sûr?", deleteFinalConfirmMessage: "Cela supprimera définitivement tous les fichiers de ce dossier. Cette action est irréversible!", deleteConfirmBtn: "Oui, Supprimer Définitivement" },
@@ -227,6 +339,7 @@ export const translations = {
     },
     de: {
         ui: {
+            converter: { ...converterEnglish },
             dropOverlay: { message: "Wählen Sie Ihren Dashcam-Ordner zum Durchsuchen von Clips", chooseFolder: "Ordner Wählen" },
             loading: { scanning: "Ordner wird gescannt...", filesFound: "{count} Dateien gefunden" },
             clipBrowser: { title: "Clips", subtitle: "Wählen Sie einen Dashcam-Ordner zum Durchsuchen", dateLabel: "Datum", selectDate: "Datum Auswählen", recent: "Kürzlich", sentry: "Sentry", saved: "Gespeichert", segments: "Segmente", segment: "Segment", collapsePanel: "Panel reduzieren", expandPanel: "Panel erweitern", showSidebar: "Seitenleiste anzeigen", hideSidebar: "Seitenleiste ausblenden", chooseFolder: "Ordner Wählen", clipsOn: "Clips am", datesAvailable: "Daten verfügbar", deleteClip: "Clip Löschen", deleteConfirmTitle: "Clip löschen?", deleteConfirmMessage: "Sind Sie sicher, dass Sie diesen Clip-Ordner dauerhaft löschen möchten?", deleteConfirmPath: "Ordnerpfad:", deleteConfirmWarning: "Diese Aktion kann nicht rückgängig gemacht werden.", deleteBtn: "Löschen", cancelBtn: "Abbrechen", deleteSuccess: "Clip erfolgreich gelöscht", deleteFailed: "Fehler beim Löschen des Clips", deleteFinalConfirmTitle: "Sind Sie sicher?", deleteFinalConfirmMessage: "Alle Dateien in diesem Ordner werden dauerhaft gelöscht. Dies kann nicht rückgängig gemacht werden!", deleteConfirmBtn: "Ja, dauerhaft löschen" },
@@ -272,6 +385,7 @@ export const translations = {
     },
     zh: {
         ui: {
+            converter: { ...converterEnglish },
             dropOverlay: { message: "选择您的行车记录仪文件夹以浏览片段", chooseFolder: "选择文件夹" },
             loading: { scanning: "正在扫描文件夹...", filesFound: "找到 {count} 个文件" },
             clipBrowser: { title: "片段", subtitle: "选择行车记录仪文件夹以浏览", dateLabel: "日期", selectDate: "选择日期", recent: "最近", sentry: "Sentry", saved: "已保存", segments: "片段", segment: "片段", collapsePanel: "折叠面板", expandPanel: "展开面板", showSidebar: "显示侧边栏", hideSidebar: "隐藏侧边栏", chooseFolder: "选择文件夹", clipsOn: "个片段于", datesAvailable: "个日期可用", deleteClip: "删除片段", deleteConfirmTitle: "删除片段？", deleteConfirmMessage: "您确定要永久删除此片段文件夹吗？", deleteConfirmPath: "文件夹路径：", deleteConfirmWarning: "此操作无法撤销。", deleteBtn: "删除", cancelBtn: "取消", deleteSuccess: "片段已成功删除", deleteFailed: "删除片段失败", deleteFinalConfirmTitle: "您确定吗？", deleteFinalConfirmMessage: "这将永久删除此文件夹中的所有文件。此操作无法撤销！", deleteConfirmBtn: "是，永久删除" },
@@ -317,6 +431,7 @@ export const translations = {
     },
     ja: {
         ui: {
+            converter: { ...converterEnglish },
             dropOverlay: { message: "ドライブレコーダーフォルダを選択してクリップを閲覧", chooseFolder: "フォルダを選択" },
             loading: { scanning: "フォルダをスキャン中...", filesFound: "{count} ファイルが見つかりました" },
             clipBrowser: { title: "クリップ", subtitle: "ドライブレコーダーフォルダを選択して閲覧", dateLabel: "日付", selectDate: "日付を選択", recent: "最近", sentry: "Sentry", saved: "保存済み", segments: "セグメント", segment: "セグメント", collapsePanel: "パネルを折りたたむ", expandPanel: "パネルを展開", showSidebar: "サイドバーを表示", hideSidebar: "サイドバーを非表示", chooseFolder: "フォルダを選択", clipsOn: "クリップ（", datesAvailable: "日付が利用可能", deleteClip: "クリップを削除", deleteConfirmTitle: "クリップを削除しますか？", deleteConfirmMessage: "このクリップフォルダを完全に削除してもよろしいですか？", deleteConfirmPath: "フォルダパス：", deleteConfirmWarning: "この操作は元に戻せません。", deleteBtn: "削除", cancelBtn: "キャンセル", deleteSuccess: "クリップを正常に削除しました", deleteFailed: "クリップの削除に失敗しました", deleteFinalConfirmTitle: "本当によろしいですか？", deleteFinalConfirmMessage: "このフォルダ内のすべてのファイルが完全に削除されます。元に戻せません！", deleteConfirmBtn: "はい、完全に削除" },
@@ -362,6 +477,7 @@ export const translations = {
     },
     ko: {
         ui: {
+            converter: { ...converterEnglish },
             dropOverlay: { message: "클립을 탐색하려면 대시캠 폴더를 선택하세요", chooseFolder: "폴더 선택" },
             loading: { scanning: "폴더 스캔 중...", filesFound: "{count}개 파일 발견" },
             clipBrowser: { title: "클립", subtitle: "대시캠 폴더를 선택하여 탐색", dateLabel: "날짜", selectDate: "날짜 선택", recent: "최근", sentry: "Sentry", saved: "저장됨", segments: "세그먼트", segment: "세그먼트", collapsePanel: "패널 접기", expandPanel: "패널 펼치기", showSidebar: "사이드바 표시", hideSidebar: "사이드바 숨기기", chooseFolder: "폴더 선택", clipsOn: "클립", datesAvailable: "날짜 사용 가능", deleteClip: "클립 삭제", deleteConfirmTitle: "클립 삭제?", deleteConfirmMessage: "이 클립 폴더를 영구적으로 삭제하시겠습니까?", deleteConfirmPath: "폴더 경로:", deleteConfirmWarning: "이 작업은 취소할 수 없습니다.", deleteBtn: "삭제", cancelBtn: "취소", deleteSuccess: "클립이 성공적으로 삭제되었습니다", deleteFailed: "클립 삭제 실패", deleteFinalConfirmTitle: "정말 확실합니까?", deleteFinalConfirmMessage: "이 폴더의 모든 파일이 영구적으로 삭제됩니다. 취소할 수 없습니다!", deleteConfirmBtn: "예, 영구 삭제" },
@@ -407,6 +523,7 @@ export const translations = {
     },
     pt: {
         ui: {
+            converter: { ...converterEnglish },
             dropOverlay: { message: "Selecione sua pasta de dashcam para navegar pelos clipes", chooseFolder: "Escolher Pasta" },
             loading: { scanning: "Escaneando pasta...", filesFound: "{count} arquivos encontrados" },
             clipBrowser: { title: "Clipes", subtitle: "Selecione uma pasta de dashcam para navegar", dateLabel: "Data", selectDate: "Selecionar Data", recent: "Recente", sentry: "Sentry", saved: "Salvo", segments: "segmentos", segment: "segmento", collapsePanel: "Recolher painel", expandPanel: "Expandir painel", showSidebar: "Mostrar barra lateral", hideSidebar: "Ocultar barra lateral", chooseFolder: "Escolher Pasta", clipsOn: "clipes em", datesAvailable: "datas disponíveis", deleteClip: "Excluir Clipe", deleteConfirmTitle: "Excluir Clipe?", deleteConfirmMessage: "Tem certeza de que deseja excluir permanentemente esta pasta de clipes?", deleteConfirmPath: "Caminho da pasta:", deleteConfirmWarning: "Esta ação não pode ser desfeita.", deleteBtn: "Excluir", cancelBtn: "Cancelar", deleteSuccess: "Clipe excluído com sucesso", deleteFailed: "Falha ao excluir clipe", deleteFinalConfirmTitle: "Tem Certeza?", deleteFinalConfirmMessage: "Isso excluirá permanentemente todos os arquivos nesta pasta. Não pode ser desfeito!", deleteConfirmBtn: "Sim, Excluir Permanentemente" },
@@ -452,6 +569,7 @@ export const translations = {
     },
     ru: {
         ui: {
+            converter: { ...converterEnglish },
             dropOverlay: { message: "Выберите папку видеорегистратора для просмотра клипов", chooseFolder: "Выбрать Папку" },
             loading: { scanning: "Сканирование папки...", filesFound: "Найдено файлов: {count}" },
             clipBrowser: { title: "Клипы", subtitle: "Выберите папку видеорегистратора для просмотра", dateLabel: "Дата", selectDate: "Выбрать Дату", recent: "Недавние", sentry: "Sentry", saved: "Сохраненные", segments: "сегментов", segment: "сегмент", collapsePanel: "Свернуть панель", expandPanel: "Развернуть панель", showSidebar: "Показать боковую панель", hideSidebar: "Скрыть боковую панель", chooseFolder: "Выбрать Папку", clipsOn: "клипов за", datesAvailable: "дат доступно", deleteClip: "Удалить Клип", deleteConfirmTitle: "Удалить Клип?", deleteConfirmMessage: "Вы уверены, что хотите навсегда удалить эту папку с клипами?", deleteConfirmPath: "Путь к папке:", deleteConfirmWarning: "Это действие нельзя отменить.", deleteBtn: "Удалить", cancelBtn: "Отмена", deleteSuccess: "Клип успешно удалён", deleteFailed: "Ошибка удаления клипа", deleteFinalConfirmTitle: "Вы уверены?", deleteFinalConfirmMessage: "Это навсегда удалит все файлы в этой папке. Отменить невозможно!", deleteConfirmBtn: "Да, удалить навсегда" },
@@ -497,6 +615,7 @@ export const translations = {
     },
     it: {
         ui: {
+            converter: { ...converterEnglish },
             dropOverlay: { message: "Seleziona la cartella della dashcam per sfogliare i clip", chooseFolder: "Scegli Cartella" },
             loading: { scanning: "Scansione cartella...", filesFound: "{count} file trovati" },
             clipBrowser: { title: "Clip", subtitle: "Seleziona una cartella dashcam per sfogliare", dateLabel: "Data", selectDate: "Seleziona Data", recent: "Recente", sentry: "Sentry", saved: "Salvato", segments: "segmenti", segment: "segmento", collapsePanel: "Comprimi pannello", expandPanel: "Espandi pannello", showSidebar: "Mostra barra laterale", hideSidebar: "Nascondi barra laterale", chooseFolder: "Scegli Cartella", clipsOn: "clip il", datesAvailable: "date disponibili", deleteClip: "Elimina Clip", deleteConfirmTitle: "Elimina Clip?", deleteConfirmMessage: "Sei sicuro di voler eliminare definitivamente questa cartella di clip?", deleteConfirmPath: "Percorso cartella:", deleteConfirmWarning: "Questa azione non può essere annullata.", deleteBtn: "Elimina", cancelBtn: "Annulla", deleteSuccess: "Clip eliminato con successo", deleteFailed: "Eliminazione del clip non riuscita", deleteFinalConfirmTitle: "Sei Sicuro?", deleteFinalConfirmMessage: "Questo eliminerà definitivamente tutti i file in questa cartella. Non può essere annullato!", deleteConfirmBtn: "Sì, Elimina Definitivamente" },
@@ -542,6 +661,7 @@ export const translations = {
     },
     nl: {
         ui: {
+            converter: { ...converterEnglish },
             dropOverlay: { message: "Selecteer uw dashcam-map om clips te bekijken", chooseFolder: "Map Kiezen" },
             loading: { scanning: "Map scannen...", filesFound: "{count} bestanden gevonden" },
             clipBrowser: { title: "Clips", subtitle: "Selecteer een dashcam-map om te bekijken", dateLabel: "Datum", selectDate: "Datum Selecteren", recent: "Recent", sentry: "Sentry", saved: "Opgeslagen", segments: "segmenten", segment: "segment", collapsePanel: "Paneel inklappen", expandPanel: "Paneel uitklappen", showSidebar: "Zijbalk tonen", hideSidebar: "Zijbalk verbergen", chooseFolder: "Map Kiezen", clipsOn: "clips op", datesAvailable: "datums beschikbaar", deleteClip: "Clip Verwijderen", deleteConfirmTitle: "Clip Verwijderen?", deleteConfirmMessage: "Weet u zeker dat u deze clipmap permanent wilt verwijderen?", deleteConfirmPath: "Mappad:", deleteConfirmWarning: "Deze actie kan niet ongedaan worden gemaakt.", deleteBtn: "Verwijderen", cancelBtn: "Annuleren", deleteSuccess: "Clip succesvol verwijderd", deleteFailed: "Clip verwijderen mislukt", deleteFinalConfirmTitle: "Weet u het zeker?", deleteFinalConfirmMessage: "Dit zal alle bestanden in deze map permanent verwijderen. Dit kan niet ongedaan worden gemaakt!", deleteConfirmBtn: "Ja, Permanent Verwijderen" },
@@ -587,6 +707,7 @@ export const translations = {
     },
     pl: {
         ui: {
+            converter: { ...converterEnglish },
             dropOverlay: { message: "Wybierz folder kamery samochodowej, aby przeglądać klipy", chooseFolder: "Wybierz Folder" },
             loading: { scanning: "Skanowanie folderu...", filesFound: "Znaleziono plików: {count}" },
             clipBrowser: { title: "Klipy", subtitle: "Wybierz folder kamery samochodowej, aby przeglądać", dateLabel: "Data", selectDate: "Wybierz Datę", recent: "Ostatnie", sentry: "Sentry", saved: "Zapisane", segments: "segmentów", segment: "segment", collapsePanel: "Zwiń panel", expandPanel: "Rozwiń panel", showSidebar: "Pokaż pasek boczny", hideSidebar: "Ukryj pasek boczny", chooseFolder: "Wybierz Folder", clipsOn: "klipów z", datesAvailable: "dat dostępnych", deleteClip: "Usuń Klip", deleteConfirmTitle: "Usuń Klip?", deleteConfirmMessage: "Czy na pewno chcesz trwale usunąć ten folder z klipami?", deleteConfirmPath: "Ścieżka folderu:", deleteConfirmWarning: "Tej akcji nie można cofnąć.", deleteBtn: "Usuń", cancelBtn: "Anuluj", deleteSuccess: "Klip usunięty pomyślnie", deleteFailed: "Usunięcie klipu nie powiodło się", deleteFinalConfirmTitle: "Czy jesteś pewny?", deleteFinalConfirmMessage: "Spowoduje to trwałe usunięcie wszystkich plików w tym folderze. Nie można cofnąć!", deleteConfirmBtn: "Tak, Usuń Trwale" },
@@ -632,6 +753,7 @@ export const translations = {
     },
     tr: {
         ui: {
+            converter: { ...converterEnglish },
             dropOverlay: { message: "Kliplere göz atmak için dashcam klasörünüzü seçin", chooseFolder: "Klasör Seç" },
             loading: { scanning: "Klasör taranıyor...", filesFound: "{count} dosya bulundu" },
             clipBrowser: { title: "Klipler", subtitle: "Göz atmak için bir dashcam klasörü seçin", dateLabel: "Tarih", selectDate: "Tarih Seç", recent: "Son", sentry: "Sentry", saved: "Kaydedildi", segments: "segment", segment: "segment", collapsePanel: "Paneli daralt", expandPanel: "Paneli genişlet", showSidebar: "Kenar çubuğunu göster", hideSidebar: "Kenar çubuğunu gizle", chooseFolder: "Klasör Seç", clipsOn: "klip", datesAvailable: "tarih mevcut", deleteClip: "Klibi Sil", deleteConfirmTitle: "Klibi Sil?", deleteConfirmMessage: "Bu klip klasörünü kalıcı olarak silmek istediğinizden emin misiniz?", deleteConfirmPath: "Klasör yolu:", deleteConfirmWarning: "Bu işlem geri alınamaz.", deleteBtn: "Sil", cancelBtn: "İptal", deleteSuccess: "Klip başarıyla silindi", deleteFailed: "Klip silinirken hata oluştu", deleteFinalConfirmTitle: "Emin misiniz?", deleteFinalConfirmMessage: "Bu, bu klasördeki tüm dosyaları kalıcı olarak silecektir. Geri alınamaz!", deleteConfirmBtn: "Evet, Kalıcı Olarak Sil" },

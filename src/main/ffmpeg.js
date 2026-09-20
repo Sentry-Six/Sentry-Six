@@ -130,6 +130,41 @@ function findFFmpegPath() {
 }
 
 /**
+ * Resolve FFprobe from the same bundle as an already-resolved FFmpeg binary.
+ * A PATH lookup is retained as a fallback for development/system installs.
+ * This intentionally has no shared cache with FFmpeg discovery, so adding
+ * FFprobe cannot alter any existing FFmpeg path or encoder cache behavior.
+ */
+function findFFprobePath(ffmpegPath = findFFmpegPath()) {
+  const candidates = [];
+  if (ffmpegPath && ffmpegPath !== 'ffmpeg') {
+    const parsed = path.parse(ffmpegPath);
+    const executable = parsed.ext.toLowerCase() === '.exe' ? 'ffprobe.exe' : 'ffprobe';
+    candidates.push(path.join(parsed.dir, executable));
+  }
+  candidates.push('ffprobe');
+
+  for (const candidate of [...new Set(candidates)]) {
+    try {
+      if (candidate !== 'ffprobe' && !fs.existsSync(candidate)) continue;
+      if (candidate !== 'ffprobe') ensureExecutable(candidate);
+      const result = spawnSync(candidate, ['-version'], {
+        timeout: 5000,
+        windowsHide: true,
+        encoding: 'utf8',
+        shell: false
+      });
+      if (!result.error && result.status === 0) return candidate;
+    } catch (err) {
+      console.log(`  Error checking ${candidate}: ${err.message}`);
+    }
+  }
+
+  console.warn('[ERROR] FFprobe not found beside FFmpeg or on PATH');
+  return null;
+}
+
+/**
  * Async version of findFFmpegPath — uses spawn (not spawnSync) so the Node
  * event loop is never blocked. Used by preCacheFFmpegPath so startup IPC
  * (and any pending renderer messages) keep flowing while FFmpeg is probed.
@@ -511,6 +546,7 @@ function setGpuEncoderHEVC(val) { gpuEncoderHEVC = val; }
 
 module.exports = {
   findFFmpegPath,
+  findFFprobePath,
   preCacheFFmpegPath,
   formatExportDuration,
   detectGpuHardware,
