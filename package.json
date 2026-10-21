@@ -25,7 +25,7 @@
   "license": "MIT",
   "type": "commonjs",
   "devDependencies": {
-    "electron": "^39.2.7",
+    "electron": "42.11.16",
     "electron-builder": "^26.6.0",
     "jest": "^30.4.2"
   },
