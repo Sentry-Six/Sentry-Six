@@ -1,6 +1,6 @@
 {
   "name": "sentry-six-revamped",
-  "version": "2026.25.34",
+  "version": "2026.25.35",
   "description": "Sentry Studio - Tesla Dashcam Viewer",
   "main": "src/main.js",
   "scripts": {
@@ -94,17 +94,16 @@
       ],
       "notarize": true,
       "artifactName": "SentryStudio-${version}-macOS.${ext}",
-      "x64ArchFiles": "Contents/Resources/ffmpeg_bin/*",
       "asarUnpack": [
         "node_modules/node-machine-id/**/*"
       ],
       "extraResources": [
         {
-          "from": "ffmpeg_bin/ffmpeg",
+          "from": "ffmpeg_bin/macos/${arch}/ffmpeg",
           "to": "ffmpeg_bin/ffmpeg"
         },
         {
-          "from": "ffmpeg_bin/ffprobe",
+          "from": "ffmpeg_bin/macos/${arch}/ffprobe",
           "to": "ffmpeg_bin/ffprobe"
         },
         {
@@ -169,6 +168,7 @@
       "owner": "Sentry-Six",
       "repo": "Sentry-Six",
       "releaseType": "release"
-    }
+    },
+    "beforePack": "scripts/prepare-macos-ffmpeg.js"
   }
 }

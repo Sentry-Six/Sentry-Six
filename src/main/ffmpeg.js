@@ -45,6 +45,7 @@ function buildFFmpegCandidatePaths() {
       paths.push(path.join(process.resourcesPath, 'ffmpeg_bin', 'ffmpeg'));
     }
     paths.push(
+      path.join(app.getAppPath(), 'ffmpeg_bin', 'macos', process.arch, 'ffmpeg'),
       path.join(__dirname, '..', 'ffmpeg_bin', 'ffmpeg'),
       path.join(__dirname, 'ffmpeg_bin', 'ffmpeg'),
       path.join(process.cwd(), 'ffmpeg_bin', 'ffmpeg'),

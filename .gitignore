@@ -22,6 +22,9 @@ dev-tools/
 .windsurf/workflows/config.md
 sign-mac.sh
 
+# Pinned macOS FFmpeg downloads, prepared by the packaging hook.
+ffmpeg_bin/macos/
+
 .claude/worktrees/
 
 # Test coverage output (contains local absolute paths)

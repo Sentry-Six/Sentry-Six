@@ -194,6 +194,9 @@ jobs:
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
 
+      - name: Verify universal FFmpeg and timestamp export
+        run: node scripts/verify-macos-ffmpeg.js release/mac-universal/Sentry-Studio.app
+
       - name: Upload macOS artifacts
         uses: actions/upload-artifact@v4
         with:

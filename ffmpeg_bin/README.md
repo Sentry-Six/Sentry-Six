@@ -1,67 +1,59 @@
-# FFmpeg Binaries
+# FFmpeg binaries
 
-This folder contains FFmpeg binaries for video export functionality.
+## macOS release builds
 
-## Platform-Specific Setup
+Mac builds bundle FFmpeg and FFprobe 9.0.2 for **both Apple Silicon and Intel**.
+Apple Silicon runs the arm64 slice directly; Rosetta and Homebrew are not required.
+The builds include `drawtext` (timestamps), `ass` (dashboards), and VideoToolbox
+hardware encoders.
 
-### Windows
-FFmpeg binaries (`ffmpeg.exe`, `ffprobe.exe`) are bundled with the app installer.
-No additional setup required.
+`macos-manifest.json` pins the exact download URLs, archive SHA-256 hashes, and
+extracted executable hashes from https://ffmpeg.martin-riedl.de/.
+`scripts/prepare-macos-ffmpeg.js` runs as electron-builder's `beforePack` hook,
+verifies those hashes and the architecture, rejects non-system dynamic library
+dependencies, and sets executable permissions. Downloads are cached in the
+ignored `ffmpeg_bin/macos/{arm64,x64}/` directories.
 
-### macOS
-FFmpeg binaries can be bundled with the macOS app (recommended) or installed via Homebrew as fallback.
+Each architecture is copied to `Contents/Resources/ffmpeg_bin/` in its app.
+electron-builder merges the different Mach-O files into universal executables,
+then signs and notarizes the app. Do not reintroduce an `x64ArchFiles` exception
+for FFmpeg: it allowed Intel-only binaries into the Apple Silicon app.
 
-**Option 1: Bundled (Recommended for Distribution)**
+The release workflow runs `scripts/verify-macos-ffmpeg.js` against the packaged
+app before uploading it. It checks both slices, executable signatures, required
+filters, and a timestamp encode/decode with visible text pixels.
 
-Place the following files in this `ffmpeg_bin/` folder:
-- `ffmpeg` (macOS binary, no extension)
-- `ffprobe` (macOS binary, no extension)
+For development on a Mac, prepare the native binaries before starting Studio:
 
-To obtain universal macOS binaries (works on both Intel and Apple Silicon):
-```bash
-# Download from https://evermeet.cx/ffmpeg/ or build universal binaries:
-# 1. Download ffmpeg and ffprobe from evermeet.cx/ffmpeg (select "universal" build)
-# 2. Extract and copy ffmpeg + ffprobe to this ffmpeg_bin/ folder
-# 3. Make executable: chmod +x ffmpeg ffprobe
+```sh
+node scripts/prepare-macos-ffmpeg.js
+npm start
 ```
 
-The app checks bundled paths first, then falls back to system installations.
+Studio prefers these prepared native binaries over the legacy Intel files at
+this directory's root. Packaged apps prefer their bundled universal executable.
+The root Intel files are retained only for legacy development setups.
 
-**Option 2: Homebrew (Fallback)**
-```bash
-# Install Homebrew if not already installed
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+### Upstream sources and license
 
-# Install FFmpeg
-brew install ffmpeg
-```
+These FFmpeg builds enable GPL and version 3; FFmpeg is distributed under
+GPL-3.0-or-later for this configuration. FFmpeg source for this pinned release:
+https://ffmpeg.org/releases/ffmpeg-9.0.2.tar.xz
 
-The app automatically detects FFmpeg from these locations (in order):
-1. Bundled: `ffmpeg_bin/ffmpeg` (development) or `Resources/ffmpeg_bin/ffmpeg` (packaged)
-2. Homebrew: `/opt/homebrew/bin/ffmpeg` (Apple Silicon) or `/usr/local/bin/ffmpeg` (Intel)
-3. MacPorts: `/opt/local/bin/ffmpeg`
+The provider's build scripts and dependency source recipes:
+https://git.martin-riedl.de/ffmpeg/build-script
 
-### Linux
-```bash
-sudo apt install ffmpeg  # Debian/Ubuntu
-sudo dnf install ffmpeg  # Fedora
-sudo pacman -S ffmpeg    # Arch Linux
-```
+Build configuration and dependency versions are recorded by the provider:
+- Apple Silicon: https://ffmpeg.martin-riedl.de/download/macos/arm64/1789931890_9.0.2/versions.txt
+- Intel: https://ffmpeg.martin-riedl.de/download/macos/amd64/1789931006_9.0.2/versions.txt
 
-## Verification
+## Windows
 
-To verify FFmpeg is installed correctly:
-```bash
-ffmpeg -version
-```
+`ffmpeg.exe` and `ffprobe.exe` are bundled by the Windows installer. No change
+to the Windows binary source or packaging is needed for the macOS fix.
 
-## Troubleshooting
+## Linux
 
-**macOS: "FFmpeg not found" after installing via Homebrew**
-- Restart the app after installing FFmpeg
-- If using Apple Silicon, ensure Homebrew is installed at `/opt/homebrew`
-- Run `which ffmpeg` in Terminal to verify the installation path
-
-**Windows: FFmpeg not detected**
-- Ensure `ffmpeg.exe` is in the `ffmpeg_bin` folder
-- Re-install the app if the bundled FFmpeg is missing
+Install a system FFmpeg build with `drawtext` and `ass` filters, for example
+through the distribution package manager. Verify its features with
+`ffmpeg -hide_banner -filters`.

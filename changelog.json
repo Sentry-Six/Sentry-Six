@@ -1,6 +1,17 @@
 {
   "versions": [
     {
+      "version": "2026.25.35",
+      "date": "2026-10-24",
+      "title": "Native Mac Video Export Fix",
+      "changes": [
+        {
+          "type": "fix",
+          "description": "Fixed timestamp exports failing with error code 8 on Apple Silicon Macs. Studio now bundles native Apple Silicon and Intel FFmpeg/FFprobe with timestamp and dashboard support, so Mac exports no longer depend on Rosetta or Homebrew FFmpeg."
+        }
+      ]
+    },
+    {
       "version": "2026.25.34",
       "date": "2026-10-24",
       "title": "Video Export Compatibility Fix",
