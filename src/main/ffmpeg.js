@@ -102,14 +102,13 @@ function findFFmpegPath() {
         ensureExecutable(p);
       }
 
-      // Don't use shell:true on Windows - it breaks paths with spaces
-      // Only use shell on macOS for symlink handling
-      const isMacLocal = process.platform === 'darwin';
+      // Execute directly: symlinks work without a shell, and app paths can
+      // contain spaces (for example, /Applications/Sentry Studio.app).
       const result = spawnSync(p, ['-version'], {
         timeout: 5000,
         windowsHide: true,
         encoding: 'utf8',
-        shell: isMacLocal  // Only use shell on macOS for symlinks
+        shell: false
       });
 
       console.log(`  Spawn result: status=${result.status}, error=${result.error?.message || 'none'}`);
@@ -138,7 +137,6 @@ function findFFmpegPathAsync() {
   if (cachedFFmpegPath !== undefined) return Promise.resolve(cachedFFmpegPath);
 
   const paths = buildFFmpegCandidatePaths();
-  const isMacLocal = process.platform === 'darwin';
   console.log('[SEARCH] Searching for FFmpeg in:', paths);
 
   // Probe paths sequentially so the first match wins (same order as sync version).
@@ -158,7 +156,7 @@ function findFFmpegPathAsync() {
           const done = (val) => { if (!settled) { settled = true; resolve(val); } };
           let proc;
           try {
-            proc = spawn(p, ['-version'], { windowsHide: true, shell: isMacLocal });
+            proc = spawn(p, ['-version'], { windowsHide: true, shell: false });
           } catch (err) {
             console.log(`  Spawn threw for ${p}: ${err.message}`);
             return done(false);

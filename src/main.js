@@ -1694,7 +1694,7 @@ async function performVideoExport(event, exportId, exportData, ffmpegPath) {
 
       // GPU encoders: use constant frame rate to prevent frame drops.
       if (useGpuNow) {
-        args.push('-vsync', 'cfr');
+        args.push('-fps_mode', 'cfr');
       }
       args.push('-r', FPS.toString());
       args.push('-max_muxing_queue_size', '1024');

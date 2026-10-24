@@ -1,6 +1,21 @@
 {
   "versions": [
     {
+      "version": "2026.25.34",
+      "date": "2026-10-24",
+      "title": "Video Export Compatibility Fix",
+      "changes": [
+        {
+          "type": "fix",
+          "description": "Fixed video exports failing with error code 8 when using newer FFmpeg versions, including Homebrew FFmpeg on macOS. Updated the export command for compatibility with both bundled FFmpeg and newer versions."
+        },
+        {
+          "type": "fix",
+          "description": "Improved detection of bundled FFmpeg when the application path contains spaces."
+        }
+      ]
+    },
+    {
       "version": "2026.25.33",
       "date": "2026-06-15",
       "title": "Export Camera Layout Fix",
