@@ -49,8 +49,7 @@ Build configuration and dependency versions are recorded by the provider:
 
 ## Windows
 
-`ffmpeg.exe` and `ffprobe.exe` are bundled by the Windows installer. No change
-to the Windows binary source or packaging is needed for the macOS fix.
+`ffmpeg.exe` and `ffprobe.exe` are bundled by the Windows installer.
 
 ## Linux
 

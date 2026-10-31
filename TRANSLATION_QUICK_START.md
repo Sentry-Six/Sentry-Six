@@ -11,8 +11,8 @@ First-run experience with language selector!
 - Modal title and all content
 
 ### Settings Modal - **FULLY DYNAMIC** ✨
-- Modal title and tabs (General, Shortcuts, Advanced)
-- All section titles (Layout, Overlays, etc.)
+- Modal title and sections (Display, Playback & Overlays, Shortcuts, Storage, About)
+- All section titles
 - All toggle labels and descriptions
 - All dropdown options
 - All buttons (Browse, Clear, View Changelog, Open Support Chat)
@@ -92,7 +92,7 @@ First-run experience with language selector!
 2. **Open Settings** (gear icon in playback controls)
 
 3. **Change Language** to Spanish:
-   - Settings → General → Language dropdown → Select "Español"
+   - Settings → Display → Language dropdown → Select "Español"
 
 4. **Watch EVERYTHING update instantly!** ✨
    - Settings modal → All Spanish
@@ -130,7 +130,7 @@ First-run experience with language selector!
 
 ### ✅ Fully Translated (Updates Immediately - 95%+)
 - **Welcome Guide** - All 9 steps, navigation, language selector
-- **Settings Modal** - All text elements (General, Shortcuts, Advanced tabs), syncs with Welcome Guide
+- **Settings Modal** - All text elements in every section, syncs with Welcome Guide
 - **Export Modal** - All sections, labels, buttons, descriptions, position dropdowns, blur zone editor, warnings
 - **Dashboard Labels** - Speed units, all autopilot states
 - **Camera Labels** - All 6 cameras in multi-cam view, export layout canvas
@@ -144,7 +144,7 @@ First-run experience with language selector!
 - **Export Warnings** - GPU warning, front camera warning, dashboard prerendered
 
 ### ⏳ Not Yet Translated (5% Remaining)
-- **Playback Controls** - Play, Pause, Skip buttons in main controls bar
+- **Playback Controls** - Play/Pause button in main controls bar
 - **Welcome Guide Previews** - Some static example text in preview mockups
 
 ### 📝 Translation Keys Added
@@ -226,7 +226,7 @@ onLanguageChange((newLang) => {
 ## 🚀 Next Steps to Complete Translation (5% Remaining)
 
 ### 1. Playback Controls
-Add `data-i18n` attributes to Play, Pause, Skip buttons in main controls bar
+Add a translated tooltip to the Play/Pause button in the main controls bar (skip buttons already use `data-i18n-title`)
 
 ### 2. Welcome Guide Preview Text
 Add `data-i18n` attributes to static example text in preview mockups
@@ -250,7 +250,7 @@ That's it! Everything else is already done!
 **Drop Overlay**: ✅ 100% Complete - Updates immediately  
 **Export Notifications**: ✅ 100% Complete - Works perfectly  
 **FFmpeg Status**: ✅ 100% Complete - Updates immediately  
-**Playback Controls**: ⏳ 0% Complete - Needs work (5% of total UI)  
+**Playback Controls**: ⏳ Partial - Skip buttons and speed selector done; Play/Pause remaining  
 
 **Overall Progress: 95%+ Complete!**  
 
@@ -291,20 +291,3 @@ That's it! Everything else is already done!
 ---
 
 **Try it now!** The entire app is fully translated with 95%+ of UI updating instantly. First-time users get a welcome guide with language selector, and all major UI components (Settings, Export, Dashboard, Cameras, Clip Browser, Map) translate without restart. This is a complete multi-language system!
-
-**Latest Updates (January 15, 2026):**
-- 🆕 Welcome Guide with language selector
-- 🆕 Export Modal full translation
-- 🆕 Camera labels translation (including export layout canvas)
-- 🆕 Clip Browser live translation
-- 🆕 Event types translation
-- 🆕 Map controls translation
-- 🆕 Autopilot states translation
-- 🆕 Language sync between components
-- 🆕 Support Chat full translation
-- 🆕 Drop Overlay translation
-- 🆕 Export position dropdown translations
-- 🆕 Blur Zone Editor translations
-- 🆕 FFmpeg status message translations
-- 🆕 Export warning/banner translations
-- 🆕 Settings Shortcuts and Advanced tabs translations

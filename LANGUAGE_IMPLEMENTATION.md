@@ -13,9 +13,9 @@ This document describes the multi-language (internationalization/i18n) system im
 - **Cross-Component Sync**: Language changes in Welcome Guide sync with Settings modal and vice versa
 - **Comprehensive Coverage**: Settings, Export modal, Dashboard, Cameras, Clip Browser, Map, Welcome Guide all translate instantly
 
-## Files Created/Modified
+## Key Files
 
-### New Files
+### Core Modules
 1. **`src/renderer/scripts/lib/i18n.js`**
    - Core internationalization module
    - Functions: `initI18n()`, `t()`, `setLanguage()`, `getCurrentLanguage()`, `getAvailableLanguages()`, `translatePage()`
@@ -24,11 +24,11 @@ This document describes the multi-language (internationalization/i18n) system im
 
 2. **`src/renderer/scripts/data/translations.js`**
    - Translation strings for all 13 supported languages
-   - Organized by category: `ui.dropOverlay`, `ui.loading`, `ui.clipBrowser`, `ui.playback`, `ui.export`, `ui.settings`, `ui.cameras`, `ui.dashboard`, `ui.notifications`, `ui.supportChat`
+   - Organized by category: `ui.dropOverlay`, `ui.startup`, `ui.loading`, `ui.clipBrowser`, `ui.changelog`, `ui.eventTypes`, `ui.map`, `ui.playback`, `ui.export`, `ui.settings`, `ui.cameras`, `ui.dashboard`, `ui.notifications`, `ui.supportChat`, `ui.sharedClips`, plus top-level `welcome` (Welcome Guide) and `welcomeScreen` (privacy notice)
    - Export keys include: position options, blur zone editor, FFmpeg status, warnings
    - Compact format to minimize file size while maintaining readability
 
-### Modified Files
+### Integration Points
 1. **`src/renderer/index.html`**
    - Added language selector dropdown in Settings modal
    - Added `data-i18n` attributes to Settings modal elements
@@ -90,7 +90,7 @@ This document describes the multi-language (internationalization/i18n) system im
 
 ### For Users
 1. Open Settings (gear icon in playback controls)
-2. Go to General tab
+2. Go to the Display section
 3. Find "Language" dropdown
 4. Select desired language
 5. UI updates immediately - no restart required
@@ -133,7 +133,7 @@ const message = t('ui.loading.filesFound', { count: 42 });
 // Returns: "42 files found" (or translated equivalent)
 ```
 
-#### Using Translations in HTML (Future Enhancement)
+#### Using Translations in HTML
 ```html
 <!-- Add data-i18n attribute to elements -->
 <button data-i18n="ui.playback.play">Play</button>
@@ -148,7 +148,7 @@ const message = t('ui.loading.filesFound', { count: 42 });
 ## Translation Coverage
 
 ### Currently Translated (95%+ Complete)
-- **Settings Modal** - All labels, descriptions, buttons, dropdown options (General, Shortcuts, Advanced tabs)
+- **Settings Modal** - All labels, descriptions, buttons, dropdown options across all sections
 - **Export Modal** - All sections, labels, buttons, descriptions, toggles
 - **Export Modal Position Dropdowns** - Bottom Center, Top Left, Top Right, etc.
 - **Export Modal Blur Zone Editor** - Title, instructions, Cancel/Save buttons, blur type options
@@ -167,7 +167,7 @@ const message = t('ui.loading.filesFound', { count: 42 });
 
 ### Not Yet Translated (5% Remaining)
 Only a small number of UI elements remain:
-- **Playback Controls** - Play, Pause, Skip buttons in main controls bar
+- **Playback Controls** - Play/Pause button in main controls bar (skip buttons and speed selector are translated)
 - **Welcome Guide Preview Text** - Some static example text in preview mockups
 
 These can be easily added by:
@@ -218,11 +218,11 @@ If a translation key is missing in the selected language:
 - Translations are loaded once at startup
 - Language switching is instant (no file loading)
 - Translation lookup is O(1) using object property access
-- Minimal memory footprint (~50KB for all languages)
+- All languages live in a single `translations.js` file (~320KB)
 
 ## Future Enhancements
 
-1. **Complete Remaining 5%**: Add `data-i18n` attributes to playback control buttons
+1. **Complete Remaining 5%**: Add a translated tooltip to the Play/Pause button
 2. **Pluralization Support**: Handle singular/plural forms properly (e.g., "1 file" vs "2 files") - Partially implemented for segments
 3. **Number/Currency Formatting**: Locale-specific number formatting
 4. **RTL Language Support**: Add Arabic, Hebrew, etc.
@@ -248,7 +248,8 @@ If a translation key is missing in the selected language:
 - [x] Map controls translate instantly
 - [x] Welcome Guide translates all 9 steps instantly
 - [x] Autopilot states translate (Self Driving, Autosteer, TACC)
-- [ ] Playback control buttons translate (remaining 5%)
+- [x] Skip buttons and speed selector tooltips translate
+- [ ] Play/Pause button translates (remaining 5%)
 
 ## Support
 
@@ -263,22 +264,3 @@ For translation issues or to contribute new languages:
 **Implementation Date**: January 2026  
 **Version**: 2026.3.1+  
 **Status**: 95%+ Complete - Fully functional multi-language system with instant translation
-
-**Latest Updates (January 15, 2026):**
-- ✅ Added Welcome Guide with language selector
-- ✅ Added Export Modal full translation
-- ✅ Added Camera labels translation
-- ✅ Added Clip Browser translation with live updates
-- ✅ Added Event types translation (Manual Save, Honk, etc.)
-- ✅ Added Map controls translation
-- ✅ Added Autopilot states translation (Self Driving, Autosteer, TACC)
-- ✅ Added language sync between Welcome Guide and Settings
-- ✅ Added dynamic clip list re-rendering on language change
-- ✅ Added Support Chat full translation
-- ✅ Added Export Modal position dropdown translations
-- ✅ Added Blur Zone Editor translations
-- ✅ Added FFmpeg status message translations
-- ✅ Added Export warning/banner translations
-- ✅ Added Camera layout canvas label translations
-- ✅ Added Drop Overlay translations
-- ✅ Added Settings Shortcuts and Advanced tabs translations

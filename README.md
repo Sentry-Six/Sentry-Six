@@ -1,4 +1,4 @@
-<h1 align="center">Sentry Drive</h1>
+<h1 align="center">Sentry Studio</h1>
 
 <p align="center">
   <strong>All in one beautiful app.</strong><br>
@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/Sentry-Six/Sentry-Six/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/Sentry-Six/Sentry-Six"></a>
   <a href="https://discord.gg/9QZEzVwdnt"><img alt="Discord" src="https://img.shields.io/badge/Discord-join-5865F2?logo=discord&logoColor=white"></a>
-  <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/License-MIT-yellow.svg"></a>
+  <a href="LICENSE.txt"><img alt="License" src="https://img.shields.io/badge/License-MIT-yellow.svg"></a>
 </p>
 
 ---
@@ -69,14 +69,15 @@ Not affiliated with Tesla, Inc. Unrelated to the Sentry (sentry.io) error-monito
     - Compact dashboard overlays
     - Configurable dashboard size (Small to X-Large)
     - Overlay is pre-rendered for optimal performance
-  - Add a GPS minimap to your export (Alpha)
+  - Add a GPS minimap to your export (Beta)
   - Add a timestamp overlay with multiple date formats
   - Use blur zones to ensure privacy
+  - Export a time-lapse with an adjustable speed multiplier
   - Minimize the export modal and track progress via floating notification
 
 - **Clip Sharing**
   - Generate a shareable link after exporting a clip
-  - Clips are hosted on Sentry Studio servers for 48 hours at clip.sentry-six.com
+  - Clips are hosted on Sentry Studio servers at clip.sentry-six.com for a duration you choose (30 minutes to 7 days, 72 hours by default)
   - Manage your shared clips from the "My Shared Clips" modal
     - Preview, copy link, open in browser, or delete shared clips
   - Available for exports under 5 minutes
@@ -108,9 +109,9 @@ Not affiliated with Tesla, Inc. Unrelated to the Sentry (sentry.io) error-monito
 Sentry Studio includes a privacy-first approach to updates and analytics:
 
 - **Automatic Updates**: The app checks for updates to keep running smoothly with the latest features
-- **Anonymous Version Stats**: A random ID helps us see which versions are most popular so we can fix bugs faster
+- **Anonymous Version Stats**: An anonymized ID (a one-way hash of your device ID) helps us see which versions are most popular so we can fix bugs faster
 - **No Personal Info**: We never collect or send any personal information to our servers
-- **First-Time Notice**: You'll see a one-time notification about these features when you first launch the app
+- **Privacy Notice**: You'll see a notification about these features when you first launch the app, and again if these terms change
 
 This helps us improve Sentry Studio while keeping everything private and transparent.
 
@@ -123,11 +124,11 @@ Have questions, feedback, or want to connect with other users?
 Join our [Discord Server](https://discord.com/invite/9QZEzVwdnt)!
 
 ## Requirements
-- Windows / MacOS 10.12+ / Linux
+- Windows 10+ / macOS 12+ / Linux (run from source; see Manual Installation)
 
 ## Automatic Installation for Windows & MacOS (Recommended, easiest)
-1. Go to the Sentry Studio [Releases](https://github.com/ChadR23/Sentry-Six/releases/) page
-2. Download the SentryStudioSetup.exe (SentryStudio.dmg for MacOS) 
+1. Go to the Sentry Studio [Releases](https://github.com/Sentry-Six/Sentry-Six/releases/) page
+2. Download `SentryStudioSetup<version>.exe` (`SentryStudio-<version>-macOS.dmg` for MacOS, a universal build for Apple Silicon and Intel)
 3. Run the installer
 4. Run Sentry Studio
 
@@ -140,7 +141,9 @@ Join our [Discord Server](https://discord.com/invite/9QZEzVwdnt)!
 2. Extract Sentry Studio to your desired location.
 3. Open a new Terminal (Command Prompt or Power Shell) and head to the Sentry Studio folder `cd C:\users\yourname\downloads\Sentry-Studio`
 4. In your Sentry Studio folder, use the following command: `npm install`
-6. To run Sentry Studio, use `npm start`
+5. To run Sentry Studio, use `npm start`
+
+On Linux, also install a system FFmpeg build with the `drawtext` and `ass` filters. On macOS, prepare the bundled FFmpeg first with `node scripts/prepare-macos-ffmpeg.js`. See [ffmpeg_bin/README.md](ffmpeg_bin/README.md) for details.
 
 ## Usage
 
@@ -162,4 +165,4 @@ Special thanks to [**JeffFromTheIRS**](https://github.com/JeffFromTheIRS) for hi
 
 ## License
 
-MIT License - see LICENSE file for details.
+MIT License - see [LICENSE.txt](LICENSE.txt) for details.

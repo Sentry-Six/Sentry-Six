@@ -58,7 +58,7 @@
 
 ### Static HTML Elements (Very Few Now!)
 Only a small number of UI elements still require restart:
-- Playback control buttons (Play, Pause, Skip) - These are in the main controls bar
+- Play/Pause button in the main controls bar
 - Some static preview text in Welcome Guide examples
 
 **Why?** These few remaining elements don't have `data-i18n` attributes yet.
@@ -74,7 +74,7 @@ Only a small number of UI elements still require restart:
 4. **Complete tour** → Language preference is saved
 
 ### Method 2: Settings Modal (Anytime)
-1. **Open Settings** → General tab → Language dropdown
+1. **Open Settings** → Display section → Language dropdown
 2. **Select a language** (e.g., Spanish)
 3. **Watch everything update instantly:**
    - Settings modal → All text changes to Spanish
@@ -96,7 +96,7 @@ Only a small number of UI elements still require restart:
 
 The translation system is now **95%+ complete** with `data-i18n` attributes added to:
 
-✅ **Settings Modal** - All elements including Shortcuts and Advanced tabs
+✅ **Settings Modal** - All sections
 ✅ **Export Modal** - All sections, labels, buttons, position dropdowns, blur zone editor, warnings
 ✅ **Dashboard** - All labels and states
 ✅ **Camera Labels** - All 6 cameras (including export layout canvas)
@@ -109,7 +109,7 @@ The translation system is now **95%+ complete** with `data-i18n` attributes adde
 The `translatePage()` function automatically updates all these elements when language changes.
 
 **Remaining work (5%):**
-- Playback control buttons (Play, Pause, Skip)
+- Play/Pause button
 - Some static preview text in Welcome Guide examples
 
 ## 🎯 Current Behavior Summary
