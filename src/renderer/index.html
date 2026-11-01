@@ -1154,7 +1154,7 @@
                                         style="margin-top: 8px;">
                                         <span class="info-box-icon"><span class="material-symbols-outlined">warning</span></span>
                                         <span data-i18n="ui.export.shareClipWarning">Sharing is only available for
-                                            exports under 5 minutes</span>
+                                            exports under 10 minutes</span>
                                     </div>
                                 </div>
                             </div>
@@ -2399,8 +2399,8 @@
                                                 <td><span class="security-status-badge badge-local"
                                                         data-i18n="ui.settings.localOnly">Local Only</span></td>
                                                 <td class="security-feature-desc"
-                                                    data-i18n="ui.settings.footagePrivacyDesc">Dashcam clips never leave
-                                                    your local storage.</td>
+                                                    data-i18n="ui.settings.footagePrivacyDesc">Dashcam clips stay in
+                                                    your local storage unless you choose to share one.</td>
                                             </tr>
                                             <tr>
                                                 <td class="security-feature-name"
@@ -2418,8 +2418,8 @@
                                                         data-i18n="ui.settings.hashedSha256">Hashed (SHA-256)</span>
                                                 </td>
                                                 <td class="security-feature-desc"
-                                                    data-i18n="ui.settings.deviceHashDesc">A secure, salted ID used to
-                                                    prevent API spam.</td>
+                                                    data-i18n="ui.settings.deviceHashDesc">A pseudonymous ID (machine ID
+                                                    hashed with a public salt) used to prevent API spam.</td>
                                             </tr>
                                         </tbody>
                                     </table>
@@ -2743,10 +2743,11 @@
                     <div class="soft-tc-text">
                         <h3 id="softTcPrivacyTitle" data-i18n="welcomeScreen.privacyTitle">Privacy & Security</h3>
                         <p id="softTcPrivacyMessage" data-i18n="welcomeScreen.privacyMessage">By using Sentry Studio,
-                            you agree to our Terms of Service and Privacy Policy. Your dashcam footage remains strictly
-                            on your device. To ensure app security and compatibility, Sentry Studio automatically shares
-                            basic system info (OS, App Version, and a secure device hash) during update checks. This
-                            prevents API abuse and ensures you are running the most secure version of the app.</p>
+                            you agree to our Terms of Service and Privacy Policy. Your dashcam footage stays on your
+                            device unless you choose to share a clip. Update checks send your OS, CPU architecture, app
+                            version and a pseudonymous install ID. Map tiles come from Google or OpenStreetMap, which
+                            see roughly where you drive. If you turn on Place Names in Settings, drive start and end
+                            coordinates are sent to OpenStreetMap Nominatim.</p>
                         <div class="soft-tc-links">
                             <a href="#" id="softTcTermsLink" class="soft-tc-link">
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"

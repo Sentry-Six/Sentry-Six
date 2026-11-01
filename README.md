@@ -80,7 +80,7 @@ Not affiliated with Tesla, Inc. Unrelated to the Sentry (sentry.io) error-monito
   - Clips are hosted on Sentry Studio servers at clip.sentry-six.com for a duration you choose (30 minutes to 7 days, 72 hours by default)
   - Manage your shared clips from the "My Shared Clips" modal
     - Preview, copy link, open in browser, or delete shared clips
-  - Available for exports under 5 minutes
+  - Available for exports up to 10 minutes long
  <img width="468.5" height="410" alt="Export Modal" src="https://github.com/user-attachments/assets/0bd241b7-34a3-43fe-b577-e81359cd538e" />
 
 - **Customizable Settings**
@@ -106,14 +106,15 @@ Not affiliated with Tesla, Inc. Unrelated to the Sentry (sentry.io) error-monito
 
 ## Privacy & Updates
 
-Sentry Studio includes a privacy-first approach to updates and analytics:
+Your dashcam footage stays on your computer unless you choose to share a clip. Here's what Sentry Studio sends, and when:
 
-- **Automatic Updates**: The app checks for updates to keep running smoothly with the latest features
-- **Anonymous Version Stats**: An anonymized ID (a one-way hash of your device ID) helps us see which versions are most popular so we can fix bugs faster
-- **No Personal Info**: We never collect or send any personal information to our servers
-- **Privacy Notice**: You'll see a notification about these features when you first launch the app, and again if these terms change
-
-This helps us improve Sentry Studio while keeping everything private and transparent.
+- **Update checks**: On startup and when you click Check Now, the app sends a pseudonymous install ID (a SHA-256 hash of your machine ID with a salt that is public in the source code), your platform, CPU architecture and app version. Records are stored in Canada; a private maintainers' Discord channel gets the platform and version.
+- **Map tiles**: Loaded directly from Google Maps (default) or OpenStreetMap, selectable in Settings; that provider sees roughly where you drive.
+- **Place Names (opt-in)**: When turned on in Settings → Playback & Overlays, drive start and end coordinates are sent to OpenStreetMap Nominatim to look up place names.
+- **Clip sharing (when you share)**: The exported MP4 (up to 3 GB) is uploaded to clip.sentry-six.com for the time you choose (30 minutes to 7 days, 72 hours by default). The original filename is shown on the public clip page and used as the download name. Your IP address, the filename and a delete token are kept until the clip is deleted or expires. Moderators may keep a reported clip up to 30 days past expiry to investigate abuse. Anyone can report a clip from its page.
+- **Diagnostics (when you send them)**: Logs and selected settings, with your home-folder user name redacted from file paths; logs can include details such as event locations. Your IP address is stored with the upload, and diagnostics are deleted after 7 days.
+- **Support chat (when used)**: Messages and attachments create a support ticket that is relayed to a private Discord thread for Sentry Six staff.
+- **Privacy Notice**: You'll see a notice about these features when you first launch the app, and again if they change.
 
 📄 **[Privacy Policy](https://sentry-six.com/privacy)** · **[Terms of Service](https://sentry-six.com/terms)**
 
