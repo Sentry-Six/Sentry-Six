@@ -696,7 +696,7 @@ export function initSettingsModal() {
         };
     }
 
-    // Initialize support chat on startup (for message polling)
+    // Load saved AI Support state and clear any retired support-ticket record
     (async () => {
         try {
             const { checkForActiveTicket } = await import('./supportChat.js');

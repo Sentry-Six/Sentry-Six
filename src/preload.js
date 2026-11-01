@@ -76,13 +76,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Diagnostics
   getDiagnostics: () => ipcRenderer.invoke('diagnostics:get'),
   
-  // Support Chat
-  createSupportTicket: (data) => ipcRenderer.invoke('support:createTicket', data),
-  sendSupportMessage: (data) => ipcRenderer.invoke('support:sendMessage', data),
-  uploadSupportMedia: (data) => ipcRenderer.invoke('support:uploadMedia', data),
-  fetchSupportMessages: (data) => ipcRenderer.invoke('support:fetchMessages', data),
-  closeSupportTicket: (data) => ipcRenderer.invoke('support:closeTicket', data),
-  markSupportRead: (data) => ipcRenderer.invoke('support:markRead', data),
+  // AI Support (the main process adds product, version, and platform context)
+  aiSupportCreateConversation: (data) => ipcRenderer.invoke('aiSupport:createConversation', data),
+  aiSupportFetchMessages: (data) => ipcRenderer.invoke('aiSupport:fetchMessages', data),
+  aiSupportSendMessage: (data) => ipcRenderer.invoke('aiSupport:sendMessage', data),
+  aiSupportDeleteConversation: (data) => ipcRenderer.invoke('aiSupport:deleteConversation', data),
+  aiSupportDecideFileRequest: (data) => ipcRenderer.invoke('aiSupport:decideFileRequest', data),
+  aiSupportUploadDiagnostics: (data) => ipcRenderer.invoke('aiSupport:uploadDiagnostics', data),
   
   // Event listeners
   on: (channel, callback) => {

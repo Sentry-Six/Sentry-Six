@@ -96,9 +96,9 @@ Not affiliated with Tesla, Inc. Unrelated to the Sentry (sentry.io) error-monito
   - 13 languages supported: English, Spanish, French, German, Chinese (Simplified), Japanese, Korean, Portuguese, Russian, Italian, Dutch, Polish, and Turkish
   - Export overlays respect your language setting
 
-- **Built-in Support Chat**
-  - Get help directly within the app
-  - Submit feedback, bug reports, and feature requests
+- **Built-in AI Support**
+  - Ask Sentry Assistant for help directly within the app
+  - Join the Sentry Six Discord any time for help from a person
 
 - **Auto Update**
   - Checks for new updates on start up with a one-click install.
@@ -113,7 +113,7 @@ Your dashcam footage stays on your computer unless you choose to share a clip. H
 - **Place Names (opt-in)**: When turned on in Settings → Playback & Overlays, drive start and end coordinates are sent to OpenStreetMap Nominatim to look up place names.
 - **Clip sharing (when you share)**: The exported MP4 (up to 3 GB) is uploaded to clip.sentry-six.com for the time you choose (30 minutes to 7 days, 72 hours by default). The original filename is shown on the public clip page and used as the download name. Your IP address, the filename and a delete token are kept until the clip is deleted or expires. Moderators may keep a reported clip up to 30 days past expiry to investigate abuse. Anyone can report a clip from its page.
 - **Diagnostics (when you send them)**: Logs and selected settings, with your home-folder user name redacted from file paths; logs can include details such as event locations. Your IP address is stored with the upload, and diagnostics are deleted after 7 days.
-- **Support chat (when used)**: Messages and attachments create a support ticket that is relayed to a private Discord thread for Sentry Six staff.
+- **AI Support (when used)**: Your messages, app version, platform and CPU architecture go to Sentry Six, and Anthropic processes them to write each answer. Redacted chats are stored in Canada for up to 90 days after your last message and may be reviewed by authorized maintainers; **New chat** deletes the current chat. Diagnostics are shared only when you approve a request in the chat, and are deleted within 7 days.
 - **Privacy Notice**: You'll see a notice about these features when you first launch the app, and again if they change.
 
 📄 **[Privacy Policy](https://sentry-six.com/privacy)** · **[Terms of Service](https://sentry-six.com/terms)**
