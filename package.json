@@ -1,6 +1,6 @@
 {
   "name": "sentry-six-revamped",
-  "version": "2026.27.36",
+  "version": "2026.25.35",
   "description": "Sentry Studio - Tesla Dashcam Viewer",
   "main": "src/main.js",
   "scripts": {

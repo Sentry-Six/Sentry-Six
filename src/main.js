@@ -1,4 +1,5 @@
 const { app, BrowserWindow, dialog, ipcMain, shell } = require('electron');
+require('./main/userDataDir').useLegacyUserDataIfNeeded(app);
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
