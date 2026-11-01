@@ -279,6 +279,8 @@ function showUpdateDownloadedState() {
         const restartBtn = document.getElementById('restartAppBtn');
         if (restartBtn) {
             restartBtn.addEventListener('click', () => {
+                // Disable immediately so a second click can't spawn a competing install.
+                restartBtn.disabled = true;
                 if (window.electronAPI?.installAndRestart) {
                     window.electronAPI.installAndRestart();
                 } else if (window.electronAPI?.exitApp) {
@@ -385,6 +387,18 @@ export function initAutoUpdate() {
                 // downloaded update via quitAndInstall().
                 showUpdateDownloadedState();
             }
+        });
+
+        // Install failed or the password prompt was cancelled (Linux .deb path) -
+        // re-enable the button so the user can retry.
+        window.electronAPI.on('update:error', (info) => {
+            getElements();
+            isDownloading = false;
+            if (updateProgressText) updateProgressText.textContent = info?.message || 'Update failed. Please try again.';
+            if (updateModalFooter) updateModalFooter.style.display = '';
+            const restartBtn = document.getElementById('restartAppBtn');
+            if (restartBtn) restartBtn.disabled = false;
+            updateModal?.querySelector('.update-modal')?.classList.remove('updating');
         });
     }
     

@@ -34,3 +34,5 @@ coverage/
 # Release docs / skills / plans (should not be committed)
 docs/
 CLAUDE.md
+# Pinned Linux FFmpeg downloads, prepared by the packaging hook.
+ffmpeg_bin/linux/
