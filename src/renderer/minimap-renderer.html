@@ -462,7 +462,40 @@
         }
         
         let isReady = false;
-        
+
+        // Resolve once the map shows the current view, so a captured frame
+        // never has blank tiles. The export allows 3 s per frame; after one
+        // wait times out (offline, slow tiles) later frames wait briefly
+        // until tiles load in time again.
+        const SETTLE_TIMEOUT_MS = 2000, SETTLE_TIMEOUT_DEGRADED_MS = 250;
+        let settleTimeoutMs = SETTLE_TIMEOUT_MS;
+        function whenMapSettled() {
+            return new Promise((resolve) => {
+                let done = false;
+                const finish = (settled) => {
+                    if (done) return;
+                    done = true;
+                    clearTimeout(timer);
+                    settleTimeoutMs = settled ? SETTLE_TIMEOUT_MS : SETTLE_TIMEOUT_DEGRADED_MS;
+                    requestAnimationFrame(() => resolve());
+                };
+                const timer = setTimeout(() => finish(false), settleTimeoutMs);
+                const glMap = tileLayer && typeof tileLayer.getMaplibreMap === 'function'
+                    ? tileLayer.getMaplibreMap() : null;
+                // maplibre-gl-leaflet moves the GL camera on the next frame.
+                requestAnimationFrame(() => {
+                    if (glMap) {
+                        if (glMap.loaded() && glMap.areTilesLoaded()) finish(true);
+                        else glMap.once('idle', () => finish(true));
+                    } else if (tileLayer && typeof tileLayer.isLoading === 'function' && tileLayer.isLoading()) {
+                        tileLayer.once('load', () => finish(true));
+                    } else {
+                        finish(true);
+                    }
+                });
+            });
+        }
+
         window.addEventListener('DOMContentLoaded', () => {
             initMap();
             isReady = true;
@@ -499,14 +532,14 @@
             
             ipcRenderer.on('minimap:updateByTime', (event, timestampMs) => {
                 updateMarkerByTime(timestampMs);
-                requestAnimationFrame(() => {
+                whenMapSettled().then(() => {
                     if (isReady && ipcRenderer?.send) ipcRenderer.send('minimap:ready');
                 });
             });
-            
+
             ipcRenderer.on('minimap:update', (event, lat, lon, heading) => {
                 updateMarker(lat, lon, heading);
-                requestAnimationFrame(() => {
+                whenMapSettled().then(() => {
                     if (isReady && ipcRenderer?.send) ipcRenderer.send('minimap:ready');
                 });
             });
