@@ -13,7 +13,7 @@ const { PassThrough } = require('stream');
 const https = require('https');
 const { app, ipcMain } = require('electron');
 const { registerAutoUpdateIpc, linuxDebInternals } = require('../../src/main/autoUpdate');
-const { clientFor, parseUpdateManifest, updateBase } = linuxDebInternals;
+const { clientFor, parseUpdateManifest, updateBase, debInstallCommand } = linuxDebInternals;
 
 const VERSION = '2026.99.1';
 const DEB = `SentryStudio-${VERSION}-linux-${process.arch === 'arm64' ? 'arm64' : 'amd64'}.deb`;
@@ -48,6 +48,7 @@ function respond(url, callback) {
 
 const handlers = {};
 const originalPlatform = process.platform;
+const processApiResponse = jest.fn(() => ({ action: 'update_available', new_version: VERSION }));
 
 beforeAll(() => {
   Object.defineProperty(process, 'platform', { value: 'linux' });
@@ -57,8 +58,8 @@ beforeAll(() => {
     getUpdateBranch: jest.fn(() => 'main'),
     loadSettings: jest.fn(() => ({})),
     saveSettings: jest.fn(() => true),
-    checkUpdateWithTelemetry: jest.fn(),
-    processApiResponse: jest.fn()
+    checkUpdateWithTelemetry: jest.fn(async () => ({})),
+    processApiResponse
   });
   for (const [channel, handler] of ipcMain.handle.mock.calls) handlers[channel] = handler;
 });
@@ -138,9 +139,16 @@ describe('update:install on a .deb install', () => {
     expect(result).toEqual({ success: false, error: 'Update package failed verification' });
   });
 
-  test('refuses to install without a manifest entry', async () => {
+  test('says the update is still being published when the release has no manifest yet', async () => {
     const release = `https://github.com/Sentry-Six/Sentry-Six/releases/download/v${VERSION}`;
     delete routes[`${release}/${MANIFEST}`];
+    const result = await handlers['update:install']({});
+    expect(result).toEqual({ success: false, error: 'This update is still being published. Try again in a few minutes.' });
+  });
+
+  test('refuses to install when the manifest does not list the package', async () => {
+    const release = `https://github.com/Sentry-Six/Sentry-Six/releases/download/v${VERSION}`;
+    routes[`${release}/${MANIFEST}`] = { body: manifestFor(sha512(debBytes), debBytes.length).replaceAll(DEB, 'other.deb') };
     const result = await handlers['update:install']({});
     expect(result).toEqual({ success: false, error: 'Could not verify the update package' });
   });
@@ -151,5 +159,36 @@ describe('update:install on a .deb install', () => {
     const result = await handlers['update:install']({});
     expect(result.success).toBe(false);
     expect(result.error).toMatch(/non-HTTPS/);
+  });
+});
+
+describe('update:check on a .deb install', () => {
+  test('reports a newer version once its package is on the release', async () => {
+    const result = await handlers['update:check']();
+    expect(result).toMatchObject({ checked: true, updateAvailable: true, latestVersion: VERSION });
+  });
+
+  test('waits while version.json is ahead of the release files', async () => {
+    const release = `https://github.com/Sentry-Six/Sentry-Six/releases/download/v${VERSION}`;
+    delete routes[`${release}/${MANIFEST}`];
+    const result = await handlers['update:check']();
+    expect(result).toMatchObject({ checked: true, updateAvailable: false });
+  });
+
+  test('the remote kill switch still wins', async () => {
+    processApiResponse.mockReturnValueOnce({ action: 'force_manual', message: 'Reinstall', new_version: VERSION });
+    const result = await handlers['update:check']();
+    expect(result).toMatchObject({ forceManual: true });
+  });
+});
+
+describe('debInstallCommand', () => {
+  test('uses apt-get so new dependencies are installed', () => {
+    expect(debInstallCommand('/tmp/x/app.deb', () => true))
+      .toEqual(['/usr/bin/apt-get', 'install', '-y', '--allow-downgrades', '/tmp/x/app.deb']);
+  });
+
+  test('falls back to dpkg when apt-get is missing', () => {
+    expect(debInstallCommand('/tmp/x/app.deb', () => false)).toEqual(['/usr/bin/dpkg', '-i', '/tmp/x/app.deb']);
   });
 });

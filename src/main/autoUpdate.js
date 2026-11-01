@@ -242,6 +242,25 @@ async function fetchLatestVersionInfo(getUpdateBranch) {
   return getLatestVersionFromGitHub(getUpdateBranch);
 }
 
+// The manifest entry for a version's .deb, or why there isn't one. version.json
+// changes when the release commit lands, before the Linux job uploads the
+// package, so a missing manifest means the release isn't ready yet.
+async function fetchDebManifestEntry(version) {
+  const response = await httpsGet(releaseAssetUrl(version, updateManifestName()));
+  if (response.statusCode === 404) return { notReady: true };
+  const entry = response.statusCode === 200 ? parseUpdateManifest(response.data, debFileName(version)) : null;
+  return entry ? { entry } : {};
+}
+
+// apt-get resolves dependencies a new release adds; dpkg -i would fail on them.
+// Absolute paths so an attacker-controlled PATH can't substitute a binary in the
+// privileged install. --allow-downgrades keeps switching back to stable working.
+function debInstallCommand(debPath, exists = fs.existsSync) {
+  return exists('/usr/bin/apt-get')
+    ? ['/usr/bin/apt-get', 'install', '-y', '--allow-downgrades', debPath]
+    : ['/usr/bin/dpkg', '-i', debPath];
+}
+
 /**
  * Resolve the configured update channel from a settings object.
  *
@@ -576,6 +595,31 @@ function registerAutoUpdateIpc(deps) {
     pendingDebExpected = null;
   }
 
+  /** Report a newer version only when its .deb and manifest are on the release. */
+  async function checkDebUpdate() {
+    const currentVersion = app.getVersion();
+    const latest = await fetchLatestVersionInfo(getUpdateBranch);
+    const latestVersion = latest && isValidVersion(latest.version) ? latest.version : null;
+    if (!latestVersion || compareVersions(currentVersion, latestVersion) >= 0) {
+      return { checked: true, updateAvailable: false, currentVersion, latestVersion: currentVersion };
+    }
+    const manifest = await fetchDebManifestEntry(latestVersion);
+    if (!manifest.entry) {
+      console.log(`[UPDATE] ${latestVersion} has no Linux package on its release yet`);
+      return { checked: true, updateAvailable: false, currentVersion, latestVersion: currentVersion };
+    }
+    const mainWindow = getMainWindow();
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('update:available', {
+        currentVersion,
+        latestVersion,
+        releaseName: latest.releaseName || 'New Update',
+        releaseDate: latest.releaseDate
+      });
+    }
+    return { checked: true, updateAvailable: true, currentVersion, latestVersion };
+  }
+
   /** Download the new .deb; installDebAndRestart installs it on restart. */
   async function performDebUpdate() {
     const sendProgress = (percentage, message) => {
@@ -602,8 +646,11 @@ function registerAutoUpdateIpc(deps) {
       // The package is installed as root, so it must match the sha512 and size
       // electron-builder recorded for it in the release's update manifest.
       const fileName = debFileName(version);
-      const manifestResponse = await httpsGet(releaseAssetUrl(version, updateManifestName()));
-      const expected = manifestResponse.statusCode === 200 ? parseUpdateManifest(manifestResponse.data, fileName) : null;
+      const manifest = await fetchDebManifestEntry(version);
+      if (manifest.notReady) {
+        return { success: false, error: 'This update is still being published. Try again in a few minutes.' };
+      }
+      const expected = manifest.entry;
       if (!expected) {
         return { success: false, error: 'Could not verify the update package' };
       }
@@ -667,9 +714,8 @@ function registerAutoUpdateIpc(deps) {
       return;
     }
     debInstalling = true;
-    // Absolute paths so an attacker-controlled PATH can't substitute either binary
-    // in the privileged install. stderr is captured for diagnostics.
-    const child = spawn('/usr/bin/pkexec', ['/usr/bin/dpkg', '-i', pendingDebPath], {
+    // stderr is captured for diagnostics.
+    const child = spawn('/usr/bin/pkexec', debInstallCommand(pendingDebPath), {
       stdio: ['ignore', 'ignore', 'pipe']
     });
     let stderr = '';
@@ -749,6 +795,9 @@ function registerAutoUpdateIpc(deps) {
         };
       }
       
+      // A .deb install announces an update only once its package is on the release.
+      if (isDebInstall()) return await checkDebUpdate();
+
       // Handle update available from API
       if (processedResult.action === 'update_available') {
         console.log('[UPDATE] Update available from API:', processedResult.new_version);
@@ -1126,5 +1175,5 @@ module.exports = {
   registerAutoUpdateIpc,
   resolveUpdateChannel,
   setupAutoUpdaterEvents,
-  linuxDebInternals: { clientFor, parseUpdateManifest, updateBase }
+  linuxDebInternals: { clientFor, parseUpdateManifest, updateBase, debInstallCommand }
 };
