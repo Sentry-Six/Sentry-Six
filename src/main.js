@@ -53,7 +53,8 @@ const { SUPPORT_SERVER_URL, registerSupportChatIpc } = require('./main/supportCh
 const { registerDiagnosticsStorageIpc } = require('./main/diagnostics');
 const { UPDATE_CONFIG, autoUpdater, getLatestVersionFromGitHub, registerAutoUpdateIpc, setupAutoUpdaterEvents } = require('./main/autoUpdate');
 const { findFFmpegPath, preCacheFFmpegPath, formatExportDuration, detectGpuHardware, detectGpuEncoder, detectHEVCEncoder, findVaapiDevice, getGpuEncoder, setGpuEncoder, getGpuEncoderHEVC, setGpuEncoderHEVC } = require('./main/ffmpeg');
-const { calculateMinimapSize, downloadStaticMapBackground, preRenderMinimap } = require('./main/minimap');
+const { calculateMinimapSize, downloadStaticMapBackground, preRenderMinimap, installTileRequestHeaders } = require('./main/minimap');
+const MapProviders = require('./shared/mapProviders');
 const crypto = require('crypto');
 
 // ============================================
@@ -120,22 +121,12 @@ const activeExportPaths = {}; // Track output paths for cleanup on cancel
 const cancelledExports = new Set(); // Track cancelled exports by ID
 let mainWindow = null;
 
-// Session-scoped map provider fallback: set when any renderer window reports
-// that Google tile loads are failing, so export tile downloads follow the
-// same OSM fallback as the on-screen maps. Cleared on app restart so Google
-// gets retried next launch.
-let mapProviderFallbackActive = false;
-ipcMain.on('map:provider-fallback', () => {
-  if (!mapProviderFallbackActive) {
-    console.log('[MAP] Google tiles unavailable — exports will use OpenStreetMap this session');
-  }
-  mapProviderFallbackActive = true;
-});
-
+// Map provider for exports. Removed providers saved by older releases (the
+// Google entries) normalize to their replacement; the export code picks a
+// raster provider where it must stitch tiles itself.
 function getEffectiveMapProvider() {
-  if (mapProviderFallbackActive) return 'osm';
   const settings = loadSettings();
-  return settings.mapTileProvider || 'google';
+  return MapProviders.normalizeProviderId(settings.mapTileProvider);
 }
 
 function createWindow() {
@@ -163,17 +154,8 @@ function createWindow() {
   });
   mainWindow.setMenuBarVisibility(false);
 
-  // Inject User-Agent and Referer headers for OSM tile requests
-  // OSM now enforces their tile usage policy and blocks requests from file:// origins
-  // that lack proper identification headers
-  mainWindow.webContents.session.webRequest.onBeforeSendHeaders(
-    { urls: ['https://*.tile.openstreetmap.org/*'] },
-    (details, callback) => {
-      details.requestHeaders['User-Agent'] = 'Sentry-Studio/1.0 (Tesla Dashcam Viewer; https://sentry-six.com/sentry-studio)';
-      details.requestHeaders['Referer'] = 'https://sentry-six.com/';
-      callback({ requestHeaders: details.requestHeaders });
-    }
-  );
+  // Identifying headers for map tile requests (see installTileRequestHeaders).
+  installTileRequestHeaders(mainWindow.webContents.session);
 
   mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
 }
@@ -895,6 +877,7 @@ async function performVideoExport(event, exportId, exportData, ffmpegPath) {
           let mapBgPath = null;
           let mapBounds = null;
           let mapZoom = null;
+          let mapAttribution = '';
 
           try {
             const mapResult = await downloadStaticMapBackground(
@@ -908,6 +891,7 @@ async function performVideoExport(event, exportId, exportData, ffmpegPath) {
             mapBgPath = mapResult.imagePath;
             mapBounds = mapResult.bounds;
             mapZoom = mapResult.zoom;
+            mapAttribution = mapResult.attribution || '';
             tempFiles.push(mapBgPath);
             console.log(`[MINIMAP] Downloaded map background: ${mapBgPath}`);
           } catch (mapErr) {
@@ -933,7 +917,8 @@ async function performVideoExport(event, exportId, exportData, ffmpegPath) {
                 standaloneSize: minimapTargetSize,
                 customBounds: mapBounds,
                 includeBackground: false, // Map image is the background
-                mapZoom
+                mapZoom,
+                attribution: mapAttribution // Credit for the map tiles
               }
             );
           } else {

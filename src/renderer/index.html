@@ -9,6 +9,7 @@
          Google Fonts CDN copy was redundant and render-blocking (blank window
          offline / on slow networks). Leaflet is vendored for the same reason. -->
     <link rel="stylesheet" href="vendor/leaflet/leaflet.css" />
+    <link rel="stylesheet" href="vendor/maplibre/maplibre-gl.css" />
     <link rel="stylesheet" href="style.css">
     <link rel="stylesheet" href="styles/advancedEditor.css">
 </head>
@@ -2025,8 +2026,7 @@
                             <div class="select-row">
                                 <span class="select-row-label" data-i18n="ui.settings.mapProvider">Map Provider</span>
                                 <select id="settingsMapProvider" class="settings-select">
-                                    <option value="google" selected data-i18n="ui.settings.mapProviderGoogle">Google Maps</option>
-                                    <option value="google-satellite" data-i18n="ui.settings.mapProviderGoogleSat">Google Satellite</option>
+                                    <option value="versatiles" selected data-i18n="ui.settings.mapProviderVersatiles">VersaTiles (OpenStreetMap)</option>
                                     <option value="osm" data-i18n="ui.settings.mapProviderOsm">OpenStreetMap</option>
                                 </select>
                             </div>
@@ -2745,7 +2745,7 @@
                         <p id="softTcPrivacyMessage" data-i18n="welcomeScreen.privacyMessage">By using Sentry Studio,
                             you agree to our Terms of Service and Privacy Policy. Your dashcam footage stays on your
                             device unless you choose to share a clip. Update checks send your OS, CPU architecture, app
-                            version and a pseudonymous install ID. Map tiles come from Google or OpenStreetMap, which
+                            version and a pseudonymous install ID. Map tiles come from VersaTiles or OpenStreetMap, which
                             see roughly where you drive. If you turn on Place Names in Settings, drive start and end
                             coordinates are sent to OpenStreetMap Nominatim.</p>
                         <div class="soft-tc-links">
@@ -3214,6 +3214,8 @@
 
     <!-- Scripts -->
     <script src="vendor/leaflet/leaflet.js"></script>
+    <script src="vendor/maplibre/maplibre-gl.js"></script>
+    <script src="vendor/maplibre-gl-leaflet/leaflet-maplibre-gl.js"></script>
     <script src="../shared/mapProviders.js"></script>
     <script src="vendor/protobuf.min.js"></script>
     <script src="scripts/data/dashcam-mp4.js"></script>

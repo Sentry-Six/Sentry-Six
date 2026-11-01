@@ -63,9 +63,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getSetting: (key) => ipcRenderer.invoke('settings:get', key),
   setSetting: (key, value) => ipcRenderer.invoke('settings:set', key, value),
 
-  // Map tiles: renderer detected Google tile failure — main process flips
-  // export tile downloads to the OSM fallback for the rest of the session
-  notifyMapProviderFallback: () => ipcRenderer.send('map:provider-fallback'),
   
   // Build environment
   isMas: process.mas === true,

@@ -4,7 +4,15 @@
     <meta charset="UTF-8">
     <title>Minimap Renderer</title>
     <link rel="stylesheet" href="vendor/leaflet/leaflet.css" />
+    <link rel="stylesheet" href="vendor/maplibre/maplibre-gl.css" />
     <script src="vendor/leaflet/leaflet.js"></script>
+    <!-- This window has nodeIntegration, so `module` exists and the UMD
+         bundles below would export to it instead of window. Hide it while
+         they load so window.maplibregl / L.maplibreGL are defined. -->
+    <script>window.__nodeModule = window.module; window.module = undefined;</script>
+    <script src="vendor/maplibre/maplibre-gl.js"></script>
+    <script src="vendor/maplibre-gl-leaflet/leaflet-maplibre-gl.js"></script>
+    <script>window.module = window.__nodeModule; delete window.__nodeModule;</script>
     <script src="../shared/mapProviders.js"></script>
     <style>
         * {
@@ -41,8 +49,9 @@
         .leaflet-container {
             background: #e0e0e0 !important;
         }
-        /* Dark mode: invert tiles then rotate hue back to natural colors */
-        .dark-mode .leaflet-tile-pane {
+        /* Dark raster tiles: invert then rotate hue back to natural colors.
+           Vector maps use the dark style instead. */
+        .dark-mode.raster-filter .leaflet-tile-pane {
             filter: invert(100%) hue-rotate(180deg) brightness(0.85) contrast(1.2);
         }
         .dark-mode .leaflet-container {
@@ -50,6 +59,16 @@
         }
         .leaflet-marker-icon {
             filter: none !important;
+        }
+        #mapCredit {
+            position: absolute;
+            right: 6px;
+            bottom: 4px;
+            z-index: 1000;
+            font: 600 9px/1.2 Arial, sans-serif;
+            color: rgba(255, 255, 255, 0.85);
+            text-shadow: 0 0 2px rgba(0, 0, 0, 0.9);
+            pointer-events: none;
         }
         .arrow-marker-icon {
             background: transparent !important;
@@ -65,6 +84,7 @@
 <body>
     <div id="minimapContainer">
         <div id="minimap"></div>
+        <div id="mapCredit"></div>
     </div>
     
     <script>
@@ -72,7 +92,9 @@
         let mapMarker = null;
         let mapPolyline = null;
         let tileLayer = null;
-        let tileProviderId = (window.MapProviders && window.MapProviders.DEFAULT_PROVIDER_ID) || 'google';
+        let tileProviderId = (window.MapProviders && window.MapProviders.DEFAULT_PROVIDER_ID) || 'osm';
+        let darkMode = false;
+        let vectorFallback = false;
         
         // Arrow size as percentage of minimap size
         const ARROW_SIZE_PERCENT = 0.30;  // 18% of minimap width
@@ -198,8 +220,25 @@
             return current + delta * factor;
         }
         
-        // Tile layer from the shared provider registry (Google by default,
-        // OSM fallback) — see src/shared/mapProviders.js.
+        // Tile layer from the shared provider registry (VersaTiles vector by
+        // default, OSM raster as fallback) — see src/shared/mapProviders.js.
+        function effectiveProvider() {
+            const registry = window.MapProviders;
+            const provider = registry.getProvider(tileProviderId);
+            const vectorOk = typeof L.maplibreGL === 'function' && window.maplibregl;
+            if (provider.type === 'vector' && (vectorFallback || !vectorOk)) {
+                return registry.getRasterProvider(provider.id);
+            }
+            return provider;
+        }
+
+        function fallBackToRaster(reason) {
+            if (vectorFallback) return;
+            vectorFallback = true;
+            console.warn('[MINIMAP] Vector map unavailable (' + reason + ') — using OpenStreetMap tiles');
+            setTileProvider(tileProviderId);
+        }
+
         function buildTileLayer() {
             const layerOptions = {
                 updateWhenIdle: false,
@@ -207,41 +246,65 @@
                 keepBuffer: 8
             };
             if (!window.MapProviders) {
-                // Registry script failed to load — keep the old OSM behavior.
-                return L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                    maxZoom: 19, subdomains: 'abc', ...layerOptions
+                // Registry script failed to load — plain OSM raster tiles.
+                return L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    maxZoom: 19, ...layerOptions
                 });
             }
-            const provider = window.MapProviders.getProvider(tileProviderId);
-            const layer = L.tileLayer(provider.urlTemplate, {
-                maxZoom: Math.min(provider.maxZoom, 19),
-                subdomains: provider.subdomains,
+            const provider = effectiveProvider();
+            const container = document.getElementById('minimapContainer');
+            container.classList.toggle('raster-filter', provider.type !== 'vector');
+            document.getElementById('mapCredit').textContent = provider.exportCredit || '';
+            if (provider.type === 'vector') {
+                const layer = L.maplibreGL({
+                    style: darkMode ? provider.darkStyleUrl : provider.styleUrl,
+                    interactive: false,
+                    // Keep the last frame readable by capturePage.
+                    canvasContextAttributes: { preserveDrawingBuffer: true },
+                    fadeDuration: 0
+                });
+                layer.on('add', () => {
+                    const glMap = layer.getMaplibreMap();
+                    if (!glMap) return fallBackToRaster('no GL map');
+                    let loaded = false;
+                    glMap.once('load', () => { loaded = true; });
+                    glMap.on('error', (e) => {
+                        if (!loaded) fallBackToRaster((e && e.error && e.error.message) || 'style error');
+                    });
+                });
+                return layer;
+            }
+            return L.tileLayer(provider.urlTemplate, {
+                ...window.MapProviders.leafletRasterOptions(provider.id, 19),
                 ...layerOptions
             });
-            // Google's key-less tile endpoint is unofficial: if its tiles fail
-            // before any succeed, fall back to OSM and tell the main process
-            // so the rest of the export follows.
-            if (window.MapProviders.isGoogleProvider(tileProviderId)) {
-                let errors = 0;
-                let loaded = false;
-                layer.on('tileload', () => { loaded = true; });
-                layer.on('tileerror', () => {
-                    if (loaded || ++errors < 3) return;
-                    console.warn('[MINIMAP] Google tiles failing — falling back to OpenStreetMap');
-                    if (ipcRenderer?.send) ipcRenderer.send('map:provider-fallback');
-                    setTileProvider('osm');
-                });
-            }
-            return layer;
         }
 
         function setTileProvider(providerId) {
             tileProviderId = window.MapProviders
-                ? window.MapProviders.getProvider(providerId).id
+                ? window.MapProviders.normalizeProviderId(providerId)
                 : providerId;
             if (map) {
                 if (tileLayer) map.removeLayer(tileLayer);
-                tileLayer = buildTileLayer().addTo(map);
+                try {
+                    tileLayer = buildTileLayer().addTo(map);
+                } catch (err) {
+                    // WebGL unavailable: MapLibre throws while constructing.
+                    tileLayer = null;
+                    fallBackToRaster(err.message);
+                }
+            }
+        }
+
+        function setDarkMode(enabled) {
+            darkMode = !!enabled;
+            document.getElementById('minimapContainer').classList.toggle('dark-mode', darkMode);
+            if (tileLayer && typeof tileLayer.getMaplibreMap === 'function') {
+                const provider = effectiveProvider();
+                const glMap = tileLayer.getMaplibreMap();
+                if (glMap && provider.type === 'vector') {
+                    glMap.setStyle(darkMode ? provider.darkStyleUrl : provider.styleUrl);
+                }
             }
         }
 
@@ -265,7 +328,7 @@
                 markerZoomAnimation: false
             }).setView([0, 0], mapZoom);
 
-            tileLayer = buildTileLayer().addTo(map);
+            setTileProvider(tileProviderId);
         }
         
         // Subdivide a path using Catmull-Rom spline for smoother curves
@@ -427,7 +490,7 @@
 
             ipcRenderer.on('minimap:setDarkMode', (event, enabled) => {
                 console.log('[MINIMAP] Dark mode:', enabled);
-                document.getElementById('minimapContainer').classList.toggle('dark-mode', !!enabled);
+                setDarkMode(enabled);
                 if (ipcRenderer?.send) ipcRenderer.send('minimap:ready');
             });
             

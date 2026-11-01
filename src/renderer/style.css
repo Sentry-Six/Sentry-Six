@@ -1794,6 +1794,36 @@ body>.dashboard-vis-compact.draggable:not(.fixed-to-camera) {
     pointer-events: auto;
 }
 
+/* Map data credits (OpenStreetMap / VersaTiles); kept small but visible. */
+.leaflet-container .leaflet-control-attribution.sentry-map-attribution,
+.sentry-map-attribution {
+    font-size: 8px;
+    line-height: 1.25;
+    padding: 1px 4px;
+    color: rgba(255, 255, 255, 0.75);
+    background: rgba(0, 0, 0, 0.45);
+    border-radius: 4px 0 0 0;
+}
+
+.sentry-map-attribution a {
+    color: rgba(255, 255, 255, 0.9);
+    text-decoration: none;
+}
+
+/* Detached from the (rotating) map element into .map-vis */
+.sentry-map-attribution--detached {
+    position: absolute;
+    left: 50%;
+    bottom: 4px;
+    transform: translateX(-50%);
+    width: max-content;
+    max-width: calc(100% - 28px);
+    text-align: center;
+    border-radius: 6px;
+    z-index: 999;
+    pointer-events: auto;
+}
+
 /* Map re-center button */
 .map-recenter-btn {
     position: absolute;

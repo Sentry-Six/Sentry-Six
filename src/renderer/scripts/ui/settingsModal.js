@@ -288,11 +288,11 @@ export function initSettingsModal() {
         };
     }
 
-    // Map provider dropdown (Google Maps / Google Satellite / OpenStreetMap)
+    // Map provider dropdown (VersaTiles / OpenStreetMap)
     const settingsMapProvider = $('settingsMapProvider');
     if (settingsMapProvider && window.electronAPI?.getSetting) {
         window.electronAPI.getSetting('mapTileProvider').then(saved => {
-            settingsMapProvider.value = window.MapProviders?.getProvider?.(saved)?.id || 'google';
+            settingsMapProvider.value = window.MapProviders?.normalizeProviderId?.(saved) || 'versatiles';
         });
 
         settingsMapProvider.onchange = async () => {

@@ -5,12 +5,15 @@
  * map + Advanced Editor minimap preview). Providers come from the shared
  * registry in src/shared/mapProviders.js (window.MapProviders).
  *
- * Fallback: when a Google provider is active and Google's tile servers turn
- * out to be unreachable (probe failure, or repeated tile errors before the
- * first successful tile), the session falls back to OpenStreetMap on every
- * registered map, shows a toast, and notifies the main process so export
- * tile downloads and the minimap renderer window follow. The saved setting
- * is left untouched — the next launch tries Google again.
+ * The default VersaTiles provider is a vector style drawn by MapLibre GL
+ * inside Leaflet (vendor/maplibre-gl-leaflet). Raster providers use plain
+ * L.tileLayer. Dark mode swaps the vector style to its dark variant; raster
+ * maps keep the older CSS filter (see applyMapDarkMode in script.js).
+ *
+ * Fallback: if the vector style cannot be used (no WebGL, or the style fails
+ * to load before it ever rendered), the session falls back to OpenStreetMap
+ * raster tiles on every registered map and shows a toast. The saved setting
+ * is left untouched — the next launch tries VersaTiles again.
  */
 
 import { notify } from './notifications.js';
@@ -24,11 +27,7 @@ const registeredMaps = new Map();
 let selectedProviderId = null;   // resolved from settings (null until loaded)
 let sessionFallbackActive = false;
 let settingLoadPromise = null;
-let probeStarted = false;
-
-// Tile error accounting for the "errors before first success" rule
-let googleTileErrors = 0;
-let googleTileLoaded = false;
+let darkMode = false;
 
 function registry() {
     return window.MapProviders;
@@ -39,7 +38,12 @@ function loadSelectedProvider() {
         settingLoadPromise = (async () => {
             try {
                 const saved = await window.electronAPI?.getSetting?.(SETTING_KEY);
-                selectedProviderId = registry().getProvider(saved).id;
+                selectedProviderId = registry().normalizeProviderId(saved);
+                // Migrate ids from removed providers (e.g. the old Google
+                // entries) so Settings and exports agree on the new value.
+                if (saved != null && saved !== selectedProviderId) {
+                    window.electronAPI?.setSetting?.(SETTING_KEY, selectedProviderId);
+                }
             } catch {
                 selectedProviderId = registry().DEFAULT_PROVIDER_ID;
             }
@@ -49,85 +53,159 @@ function loadSelectedProvider() {
     return settingLoadPromise;
 }
 
+function vectorRenderingAvailable() {
+    return typeof window.L?.maplibreGL === 'function' && typeof window.maplibregl?.Map === 'function';
+}
+
 export function getEffectiveProviderId() {
     const selected = selectedProviderId || registry().DEFAULT_PROVIDER_ID;
-    return sessionFallbackActive && registry().isGoogleProvider(selected)
-        ? registry().FALLBACK_PROVIDER_ID
-        : selected;
+    if (registry().isVectorProvider(selected) && (sessionFallbackActive || !vectorRenderingAvailable())) {
+        return registry().FALLBACK_PROVIDER_ID;
+    }
+    return selected;
 }
 
 export function getSelectedProviderId() {
     return selectedProviderId || registry().DEFAULT_PROVIDER_ID;
 }
 
+/**
+ * True when the visible maps draw a vector style, which handles dark mode
+ * natively (no CSS filter needed).
+ */
+export function isVectorMapActive() {
+    return registry().isVectorProvider(getEffectiveProviderId());
+}
+
+/**
+ * True when raster tiles should get the dark-mode CSS filter.
+ */
+export function wantsDarkFilter() {
+    return !isVectorMapActive();
+}
+
 function createLayer(providerId, opts = {}) {
     const p = registry().getProvider(providerId);
+    if (p.type === 'vector') {
+        const layer = window.L.maplibreGL({
+            style: darkMode && opts.followDarkMode ? p.darkStyleUrl : p.styleUrl,
+            maxZoom: Math.min(p.maxZoom, opts.maxZoomCap ?? p.maxZoom),
+            // The GL map only mirrors Leaflet; Leaflet handles all input.
+            interactive: false
+        });
+        layer._sentryVector = true;
+        return layer;
+    }
     return window.L.tileLayer(p.urlTemplate, {
-        maxZoom: Math.min(p.maxZoom, opts.maxZoomCap ?? p.maxZoom),
-        subdomains: p.subdomains,
+        ...registry().leafletRasterOptions(providerId, opts.maxZoomCap),
         ...(opts.layerOptions || {})
     });
 }
 
-function watchLayerForFailure(layer, providerId) {
-    if (!registry().isGoogleProvider(providerId)) return;
-    layer.on('tileload', () => { googleTileLoaded = true; });
-    layer.on('tileerror', () => {
-        if (googleTileLoaded || sessionFallbackActive) return;
-        googleTileErrors++;
-        if (googleTileErrors >= 3) {
-            triggerFallback('repeated tile errors');
-        }
+function watchVectorLayer(layer) {
+    if (!layer?._sentryVector) return;
+    const glMap = layer.getMaplibreMap?.();
+    if (!glMap) {
+        triggerFallback('vector map did not start');
+        return;
+    }
+    let rendered = false;
+    glMap.once('load', () => { rendered = true; });
+    glMap.on('error', (e) => {
+        // Individual tile errors after the style loaded are transient; only
+        // a style that never loads means the provider is unusable.
+        if (rendered || sessionFallbackActive) return;
+        console.warn('[MAP] Vector style error:', e?.error?.message || e);
+        triggerFallback('style failed to load');
     });
 }
 
-// Probe one known tile via an <img> load (no CORS restrictions) so a blocked
-// Google endpoint is detected even before the map requests visible tiles.
-function probeGoogleReachable() {
-    return new Promise(resolve => {
-        const img = new Image();
-        const timer = setTimeout(() => { img.src = ''; resolve(false); }, 5000);
-        img.onload = () => { clearTimeout(timer); resolve(true); };
-        img.onerror = () => { clearTimeout(timer); resolve(false); };
-        img.src = registry().GOOGLE_PROBE_URL;
-    });
+// maplibre-gl-leaflet reports the style's source credits itself but ignores
+// a custom attribution and does not withdraw its credits on removal, so the
+// VersaTiles credit and the cleanup are handled here.
+function removeLayerFromMap(map, entry) {
+    if (!entry.layer) return;
+    const credits = entry.layer._sentryVector
+        ? [entry.layer.getAttribution?.(), entry.extraAttribution]
+        : [];
+    map.removeLayer(entry.layer);
+    for (const credit of credits) {
+        if (credit) map.attributionControl?.removeAttribution(credit);
+    }
+    entry.layer = null;
+    entry.extraAttribution = null;
 }
 
-function maybeStartProbe() {
-    if (probeStarted || !registry().isGoogleProvider(getEffectiveProviderId())) return;
-    probeStarted = true;
-    probeGoogleReachable().then(ok => {
-        // A tileload in the meantime also proves reachability — only fall
-        // back when nothing from Google has loaded.
-        if (!ok && !googleTileLoaded && !sessionFallbackActive) {
-            triggerFallback('probe failed');
+function addLayerToMap(map, entry, providerId) {
+    try {
+        entry.layer = createLayer(providerId, entry.opts);
+        entry.layer.addTo(map);
+        if (entry.layer._sentryVector) {
+            entry.extraAttribution = registry().getProvider(providerId).attribution;
+            map.attributionControl?.addAttribution(entry.extraAttribution);
         }
-    });
+        watchVectorLayer(entry.layer);
+    } catch (err) {
+        // WebGL unavailable or MapLibre failed to construct.
+        console.warn('[MAP] Failed to create map layer:', err);
+        if (registry().isVectorProvider(providerId) && !sessionFallbackActive) {
+            entry.layer = null;
+            triggerFallback('vector map unavailable');
+        }
+    }
 }
 
 function triggerFallback(reason) {
     if (sessionFallbackActive) return;
     sessionFallbackActive = true;
-    console.warn(`[MAP] Google tiles unavailable (${reason}) — falling back to OpenStreetMap for this session`);
+    console.warn(`[MAP] VersaTiles map unavailable (${reason}) — using OpenStreetMap tiles for this session`);
     applyEffectiveProviderToAllMaps();
     try {
         notify(t('ui.settings.mapProviderFallbackNotice'), { type: 'warn', timeoutMs: 6000 });
     } catch { /* toast is best-effort */ }
-    window.electronAPI?.notifyMapProviderFallback?.();
+    window.applyMapDarkMode?.(darkMode);
 }
 
 function applyEffectiveProviderToAllMaps() {
     const effective = getEffectiveProviderId();
     for (const [map, entry] of registeredMaps) {
         try {
-            if (entry.layer) map.removeLayer(entry.layer);
-            entry.layer = createLayer(effective, entry.opts);
-            watchLayerForFailure(entry.layer, effective);
-            entry.layer.addTo(map);
+            removeLayerFromMap(map, entry);
         } catch (err) {
-            console.warn('[MAP] Failed to swap tile layer:', err);
+            console.warn('[MAP] Failed to remove tile layer:', err);
+            entry.layer = null;
         }
+        addLayerToMap(map, entry, effective);
     }
+}
+
+// Map data credits must stay visible (OpenStreetMap ODbL, CC BY sources).
+// The control can live outside the map element so it does not rotate with
+// the heading-up map.
+function ensureAttribution(map, container) {
+    if (map.attributionControl) return;
+    map.attributionControl = window.L.control.attribution({ prefix: false }).addTo(map);
+    const el = map.attributionControl.getContainer();
+    el.classList.add('sentry-map-attribution');
+    if (container) {
+        el.classList.add('sentry-map-attribution--detached');
+        container.appendChild(el);
+    }
+}
+
+// Attribution links open in the system browser instead of navigating the
+// app window.
+let attributionLinksHandled = false;
+function handleAttributionLinks() {
+    if (attributionLinksHandled) return;
+    attributionLinksHandled = true;
+    document.addEventListener('click', (e) => {
+        const link = e.target?.closest?.('.sentry-map-attribution a[href]');
+        if (!link) return;
+        e.preventDefault();
+        e.stopPropagation();
+        if (/^https:\/\//.test(link.href)) window.electronAPI?.openExternal?.(link.href);
+    }, true);
 }
 
 /**
@@ -136,18 +214,18 @@ function applyEffectiveProviderToAllMaps() {
  * The layer is added asynchronously (after the saved setting loads).
  *
  * @param {Object} map - Leaflet map instance
- * @param {Object} opts - { maxZoomCap?: number, layerOptions?: Object }
+ * @param {Object} opts - { maxZoomCap?: number, layerOptions?: Object,
+ *   followDarkMode?: boolean (use the dark vector style in map dark mode),
+ *   attributionContainer?: Element (host the credits outside the map) }
  */
 export function attachTileLayer(map, opts = {}) {
     const entry = { layer: null, opts };
+    ensureAttribution(map, opts.attributionContainer);
+    handleAttributionLinks();
     registeredMaps.set(map, entry);
-    loadSelectedProvider().then(() => {
+    return loadSelectedProvider().then(() => {
         if (!registeredMaps.has(map)) return; // detached before setting loaded
-        const effective = getEffectiveProviderId();
-        entry.layer = createLayer(effective, opts);
-        watchLayerForFailure(entry.layer, effective);
-        entry.layer.addTo(map);
-        maybeStartProbe();
+        addLayerToMap(map, entry, getEffectiveProviderId());
     });
 }
 
@@ -159,16 +237,35 @@ export function detachTileLayer(map) {
 }
 
 /**
+ * Map dark mode changed. Vector maps that follow dark mode switch style;
+ * returns true when the change was handled without a CSS filter.
+ */
+export function setMapDarkMode(enabled) {
+    const next = !!enabled;
+    const changed = next !== darkMode;
+    darkMode = next;
+    if (!isVectorMapActive()) return false;
+    if (!changed) return true;
+    const p = registry().getProvider(getEffectiveProviderId());
+    for (const entry of registeredMaps.values()) {
+        if (!entry.opts.followDarkMode || !entry.layer?._sentryVector) continue;
+        try {
+            entry.layer.getMaplibreMap()?.setStyle(darkMode ? p.darkStyleUrl : p.styleUrl);
+        } catch (err) {
+            console.warn('[MAP] Failed to switch map style:', err);
+        }
+    }
+    return true;
+}
+
+/**
  * User picked a provider in Settings: persist it and swap all live maps.
- * An explicit choice also clears the session fallback so Google gets a
- * fresh chance (and a fresh probe) immediately.
+ * An explicit choice also clears the session fallback so VersaTiles gets a
+ * fresh chance immediately.
  */
 export async function setMapTileProvider(id) {
-    selectedProviderId = registry().getProvider(id).id;
+    selectedProviderId = registry().normalizeProviderId(id);
     sessionFallbackActive = false;
-    googleTileErrors = 0;
-    googleTileLoaded = false;
-    probeStarted = false;
     settingLoadPromise = Promise.resolve(selectedProviderId);
     try {
         await window.electronAPI?.setSetting?.(SETTING_KEY, selectedProviderId);
@@ -176,5 +273,6 @@ export async function setMapTileProvider(id) {
         console.warn('[MAP] Failed to persist map provider setting:', err);
     }
     applyEffectiveProviderToAllMaps();
-    maybeStartProbe();
+    // Re-apply dark mode: vector styles handle it, raster maps use a filter.
+    window.applyMapDarkMode?.(darkMode);
 }

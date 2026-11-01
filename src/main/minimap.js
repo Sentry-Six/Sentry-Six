@@ -6,6 +6,21 @@ const https = require('https');
 const { spawn } = require('child_process');
 const MapProviders = require('../shared/mapProviders');
 
+// Identify Sentry Studio to tile servers. The OSMF tile policy requires an
+// identifying User-Agent, and a Referer for web views, on tile.openstreetmap.org.
+function installTileRequestHeaders(session) {
+  session.webRequest.onBeforeSendHeaders(
+    { urls: MapProviders.TILE_REQUEST_URL_PATTERNS },
+    (details, callback) => {
+      details.requestHeaders['User-Agent'] = MapProviders.USER_AGENT;
+      if (details.url.startsWith('https://tile.openstreetmap.org/')) {
+        details.requestHeaders['Referer'] = MapProviders.REFERER;
+      }
+      callback({ requestHeaders: details.requestHeaders });
+    }
+  );
+}
+
 // Calculate minimap size based on output resolution (square aspect ratio)
 function calculateMinimapSize(outputWidth, outputHeight, sizeOption = 'medium') {
   const sizeMultipliers = {
@@ -30,8 +45,11 @@ function calculateMinimapSize(outputWidth, outputHeight, sizeOption = 'medium') 
 
 // ============================================
 // STATIC MAP TILE DOWNLOADING FOR ASS MINIMAP
-// Downloads map tiles (Google by default, OSM fallback — see
-// src/shared/mapProviders.js) and creates a composite background image
+// Downloads raster map tiles (OpenStreetMap — the raster stand-in for the
+// VersaTiles vector default, see src/shared/mapProviders.js) and creates a
+// composite background image. A handful of tiles (at most 16) per
+// user-started export, sent with an identifying User-Agent, keeps this
+// within the OSMF tile usage policy.
 // ============================================
 
 /**
@@ -106,11 +124,9 @@ async function downloadMapTile(x, y, zoom, outputPath, providerId = 'osm', reque
 
     // The UA identifies us to any tile server (Node sends none by default);
     // the Referer is part of OSM's tile usage policy and only sent there.
-    const headers = {
-      'User-Agent': 'Sentry-Studio/1.0 (Tesla Dashcam Viewer; https://sentry-six.com/sentry-studio)'
-    };
-    if (!MapProviders.isGoogleProvider(providerId)) {
-      headers['Referer'] = 'https://sentry-six.com/';
+    const headers = { 'User-Agent': MapProviders.USER_AGENT };
+    if (MapProviders.getRasterProvider(providerId).id === 'osm') {
+      headers['Referer'] = MapProviders.REFERER;
     }
 
     const file = fs.createWriteStream(outputPath);
@@ -201,33 +217,16 @@ async function downloadStaticMapBackground(exportId, mapPath, targetSize, ffmpeg
   fs.mkdirSync(tempDir, { recursive: true });
   
   const tilePaths = [];
-  const tileSize = 256; // OSM tiles are 256x256
-  
+  // Vector providers resolve to their raster stand-in.
+  const activeProvider = MapProviders.getRasterProvider(providerId);
+  const tileSize = activeProvider.tileSize || 256;
+
   try {
-    // Download all tiles. If Google's (unofficial, key-less) tile endpoint
-    // fails mid-batch, retry that tile on OSM and keep the rest of the batch
-    // on OSM so the stitched background comes from a single provider style.
-    let activeProviderId = MapProviders.getProvider(providerId).id;
     let requestIndex = 0;
     for (let ty = topLeftTile.y; ty <= bottomRightTile.y; ty++) {
       for (let tx = topLeftTile.x; tx <= bottomRightTile.x; tx++) {
-        const tilePath = path.join(tempDir, `tile_${tx}_${ty}.png`);
-        try {
-          await downloadMapTile(tx, ty, zoom, tilePath, activeProviderId, requestIndex++);
-        } catch (tileErr) {
-          if (!MapProviders.isGoogleProvider(activeProviderId)) throw tileErr;
-          console.warn(`[MAP] ${activeProviderId} tile failed (${tileErr.message}) — switching batch to OpenStreetMap`);
-          activeProviderId = MapProviders.FALLBACK_PROVIDER_ID;
-          // Discard any Google tiles already downloaded so styles don't mix
-          for (const t of tilePaths) {
-            try { fs.unlinkSync(t.path); } catch {}
-            await downloadMapTile(
-              t.tileX, t.tileY, zoom, t.path, activeProviderId, requestIndex++
-            );
-            await new Promise(r => setTimeout(r, 100));
-          }
-          await downloadMapTile(tx, ty, zoom, tilePath, activeProviderId, requestIndex++);
-        }
+        const tilePath = path.join(tempDir, `tile_${tx}_${ty}.${activeProvider.fileExt || 'png'}`);
+        await downloadMapTile(tx, ty, zoom, tilePath, activeProvider.id, requestIndex++);
         tilePaths.push({
           path: tilePath,
           tileX: tx,
@@ -241,7 +240,7 @@ async function downloadStaticMapBackground(exportId, mapPath, targetSize, ffmpeg
       }
     }
     
-    console.log(`[MAP] Downloaded ${tilePaths.length} tiles`);
+    console.log(`[MAP] Downloaded ${tilePaths.length} tiles from ${activeProvider.id}`);
     
     // Use FFmpeg to stitch tiles together and apply dark theme
     const stitchedWidth = tilesX * tileSize;
@@ -324,7 +323,9 @@ async function downloadStaticMapBackground(exportId, mapPath, targetSize, ffmpeg
     return {
       imagePath: outputPath,
       bounds: actualBounds,
-      zoom
+      zoom,
+      // Short on-video credit for the stitched tiles
+      attribution: activeProvider.exportCredit || ''
     };
   } catch (err) {
     // Cleanup on error
@@ -371,14 +372,7 @@ async function createMinimapRenderer(minimapWidth, minimapHeight) {
     });
     
     // Inject headers for OSM tile requests (same as main window)
-    minimapWindow.webContents.session.webRequest.onBeforeSendHeaders(
-      { urls: ['https://*.tile.openstreetmap.org/*'] },
-      (details, callback) => {
-        details.requestHeaders['User-Agent'] = 'Sentry-Studio/1.0 (Tesla Dashcam Viewer; https://sentry-six.com/sentry-studio)';
-        details.requestHeaders['Referer'] = 'https://sentry-six.com/';
-        callback({ requestHeaders: details.requestHeaders });
-      }
-    );
+    installTileRequestHeaders(minimapWindow.webContents.session);
 
     const timeout = setTimeout(() => {
       console.error('[MINIMAP] Renderer load timeout');
@@ -581,5 +575,6 @@ async function preRenderMinimap(exportId, seiData, mapPath, startTimeMs, endTime
 module.exports = {
   calculateMinimapSize,
   downloadStaticMapBackground,
+  installTileRequestHeaders,
   preRenderMinimap
 };

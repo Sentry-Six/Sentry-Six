@@ -1037,6 +1037,7 @@ Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour,
 Style: MinimapBg,Arial,20,&H00000000,&H00000000,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,0,0,7,0,0,0,1
 Style: MinimapPath,Arial,20,&H00FF7200,&H00FF7200,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,0,0,7,0,0,0,1
 Style: MinimapMarker,Arial,20,&H000048FF,&H000048FF,&H00FFFFFF,&H00000000,0,0,0,0,100,100,0,0,1,2,0,7,0,0,0,1
+Style: MinimapCredit,Arial,10,&H30FFFFFF,&H30FFFFFF,&H60000000,&H00000000,0,0,0,0,100,100,0,0,1,1,0,3,0,0,0,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -1444,7 +1445,8 @@ function generateMinimapAss(seiData, mapPath, startTimeMs, endTimeMs, options) {
     standaloneSize = 256,    // Size of the standalone minimap
     customBounds = null,     // Custom GPS bounds (e.g., from map tiles)
     includeBackground = true, // Whether to include the dark background
-    mapZoom = null           // Tile zoom level (for scaling line thickness)
+    mapZoom = null,          // Tile zoom level (for scaling line thickness)
+    attribution = ''         // Map data credit drawn in the corner (e.g. "© OpenStreetMap")
   } = options;
 
   const durationMs = endTimeMs - startTimeMs;
@@ -1508,7 +1510,28 @@ function generateMinimapAss(seiData, mapPath, startTimeMs, endTimeMs, options) {
     assContent += markers + '\n';
   }
 
+  const credit = generateMinimapAttribution(attribution, mapX, mapY, mapSize, durationMs);
+  if (credit) {
+    assContent += credit + '\n';
+  }
+
   return assContent;
+}
+
+/**
+ * Small map-data credit in the minimap's bottom-right corner, required by
+ * the tile sources' licences (OpenStreetMap ODbL, CC BY imagery).
+ */
+function generateMinimapAttribution(text, mapX, mapY, mapSize, durationMs) {
+  const clean = String(text || '').replace(/[{}\\\r\n]/g, '').trim();
+  if (!clean) return '';
+  const fontSize = Math.max(8, Math.round(mapSize * 0.035));
+  const pad = Math.max(2, Math.round(fontSize * 0.3));
+  const x = mapX + mapSize - pad;
+  const y = mapY + mapSize - pad;
+  const startTime = formatAssTime(0);
+  const endTime = formatAssTime(durationMs);
+  return `Dialogue: 3,${startTime},${endTime},MinimapCredit,,0,0,0,,{\\an3\\pos(${x},${y})\\fs${fontSize}}${clean}`;
 }
 
 /**
@@ -3097,5 +3120,6 @@ module.exports = {
   writeTeslaMobileDateAss,
   writeTeslaMobileDataAss,
   writeTeslaScreenDashAss,
-  writeMinimapAss
+  writeMinimapAss,
+  generateMinimapAss
 };

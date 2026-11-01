@@ -28,8 +28,8 @@ export const translations = {
                 layout: "Layout", classicSidebar: "Classic Sidebar", classicSidebarDesc: "Docked sidebar that doesn't overlap video",
                 overlays: "Overlays", dashboard: "Dashboard Overlay", dashboardDesc: "Show speed, gear, and telemetry data",
                 gpsMap: "GPS Map", gpsMapDesc: "Show route map with vehicle position", mapStyle: "Map Style", mapStyleLight: "Light", mapStyleDark: "Dark",
-                mapProvider: "Map Provider", mapProviderGoogle: "Google Maps", mapProviderGoogleSat: "Google Satellite", mapProviderOsm: "OpenStreetMap", placeNames: "Place Names", placeNamesDesc: "Look up drive start and end points with OpenStreetMap", openSource: "Open Source", ffmpegLicense: "FFmpeg (GPLv3)",
-                mapProviderFallbackNotice: "Google Maps unavailable — using OpenStreetMap",
+                mapProvider: "Map Provider", mapProviderVersatiles: "VersaTiles (OpenStreetMap)", mapProviderOsm: "OpenStreetMap", placeNames: "Place Names", placeNamesDesc: "Look up drive start and end points with OpenStreetMap", openSource: "Open Source", ffmpegLicense: "FFmpeg (GPLv3)",
+                mapProviderFallbackNotice: "Map style unavailable — using OpenStreetMap tiles",
                 dashboardStyle: "Dashboard Style", dashboardLayout: "Dashboard Layout", dashboardLayoutDesc: "Default or compact style", default: "Default",
                 acceleratorDisplay: "Accelerator Display", acceleratorDisplayDesc: "Pedal visualization style",
                 solidColor: "Solid Color", iconBar: "Icon Bar", sideBar: "Side Bar",
@@ -84,10 +84,10 @@ export const translations = {
         welcomeScreen: {
             title: "Welcome to Sentry Studio",
             privacyTitle: "Privacy & Security",
-            privacyMessage: "By using Sentry Studio, you agree to our Terms of Service and Privacy Policy. Your dashcam footage stays on your device unless you choose to share a clip. Update checks send your OS, CPU architecture, app version and a pseudonymous install ID. Map tiles come from Google or OpenStreetMap, which see roughly where you drive. If you turn on Place Names in Settings, drive start and end coordinates are sent to OpenStreetMap Nominatim.",
+            privacyMessage: "By using Sentry Studio, you agree to our Terms of Service and Privacy Policy. Your dashcam footage stays on your device unless you choose to share a clip. Update checks send your OS, CPU architecture, app version and a pseudonymous install ID. Map tiles come from VersaTiles or OpenStreetMap, which see roughly where you drive. If you turn on Place Names in Settings, drive start and end coordinates are sent to OpenStreetMap Nominatim.",
             returningTitle: "Quick Update: Privacy & Security",
             returningSubtitle: "What Changed",
-            returningMessage: "Your dashcam footage stays on your device unless you choose to share a clip. Update checks send your OS, CPU architecture, app version and a pseudonymous install ID. Map tiles come from Google or OpenStreetMap, which see roughly where you drive. If you turn on Place Names in Settings, drive start and end coordinates are sent to OpenStreetMap Nominatim.",
+            returningMessage: "Your dashcam footage stays on your device unless you choose to share a clip. Update checks send your OS, CPU architecture, app version and a pseudonymous install ID. Map tiles come from VersaTiles or OpenStreetMap, which see roughly where you drive. If you turn on Place Names in Settings, drive start and end coordinates are sent to OpenStreetMap Nominatim.",
             termsLink: "Terms of Service",
             privacyLink: "Privacy Policy",
             acceptButton: "Accept & Continue"
@@ -170,10 +170,10 @@ export const translations = {
         welcomeScreen: {
             title: "Bienvenido a Sentry Studio",
             privacyTitle: "Privacidad y Seguridad",
-            privacyMessage: "Al usar Sentry Studio, aceptas nuestros Términos de Servicio y Política de Privacidad. Tus grabaciones de dashcam permanecen en tu dispositivo, salvo que decidas compartir un clip. Las verificaciones de actualización envían tu SO, la arquitectura de la CPU, la versión de la app y un ID de instalación seudónimo. Las teselas del mapa provienen de Google u OpenStreetMap, que ven aproximadamente por dónde conduces. Si activas \"Nombres de Lugares\" en Configuración, las coordenadas de inicio y fin de los trayectos se envían a OpenStreetMap Nominatim.",
+            privacyMessage: "Al usar Sentry Studio, aceptas nuestros Términos de Servicio y Política de Privacidad. Tus grabaciones de dashcam permanecen en tu dispositivo, salvo que decidas compartir un clip. Las verificaciones de actualización envían tu SO, la arquitectura de la CPU, la versión de la app y un ID de instalación seudónimo. Las teselas del mapa provienen de VersaTiles u OpenStreetMap, que ven aproximadamente por dónde conduces. Si activas \"Nombres de Lugares\" en Configuración, las coordenadas de inicio y fin de los trayectos se envían a OpenStreetMap Nominatim.",
             returningTitle: "Actualización Rápida: Privacidad y Seguridad",
             returningSubtitle: "Qué Cambió",
-            returningMessage: "Tus grabaciones de dashcam permanecen en tu dispositivo, salvo que decidas compartir un clip. Las verificaciones de actualización envían tu SO, la arquitectura de la CPU, la versión de la app y un ID de instalación seudónimo. Las teselas del mapa provienen de Google u OpenStreetMap, que ven aproximadamente por dónde conduces. Si activas \"Nombres de Lugares\" en Configuración, las coordenadas de inicio y fin de los trayectos se envían a OpenStreetMap Nominatim.",
+            returningMessage: "Tus grabaciones de dashcam permanecen en tu dispositivo, salvo que decidas compartir un clip. Las verificaciones de actualización envían tu SO, la arquitectura de la CPU, la versión de la app y un ID de instalación seudónimo. Las teselas del mapa provienen de VersaTiles u OpenStreetMap, que ven aproximadamente por dónde conduces. Si activas \"Nombres de Lugares\" en Configuración, las coordenadas de inicio y fin de los trayectos se envían a OpenStreetMap Nominatim.",
             termsLink: "Términos de Servicio",
             privacyLink: "Política de Privacidad",
             acceptButton: "Aceptar y Continuar"
@@ -215,12 +215,12 @@ export const translations = {
         welcomeScreen: {
             title: "Bienvenue dans Sentry Studio",
             privacyTitle: "Confidentialité et Sécurité",
-            privacyMessage: "En utilisant Sentry Studio, vous acceptez nos Conditions d'Utilisation et notre Politique de Confidentialité. Vos enregistrements dashcam restent sur votre appareil, sauf si vous choisissez de partager un clip. Les vérifications de mise à jour envoient votre OS, l'architecture du processeur, la version de l'app et un identifiant d'installation pseudonyme. Les tuiles de carte proviennent de Google ou d'OpenStreetMap, qui voient approximativement où vous roulez. Si vous activez « Noms de Lieux » dans les Paramètres, les coordonnées de départ et d'arrivée des trajets sont envoyées à OpenStreetMap Nominatim.",
+            privacyMessage: "En utilisant Sentry Studio, vous acceptez nos Conditions d'Utilisation et notre Politique de Confidentialité. Vos enregistrements dashcam restent sur votre appareil, sauf si vous choisissez de partager un clip. Les vérifications de mise à jour envoient votre OS, l'architecture du processeur, la version de l'app et un identifiant d'installation pseudonyme. Les tuiles de carte proviennent de VersaTiles ou d'OpenStreetMap, qui voient approximativement où vous roulez. Si vous activez « Noms de Lieux » dans les Paramètres, les coordonnées de départ et d'arrivée des trajets sont envoyées à OpenStreetMap Nominatim.",
             termsLink: "Conditions d'Utilisation",
             privacyLink: "Politique de Confidentialité",
             returningTitle: "Mise à jour rapide : Confidentialité et Sécurité",
             returningSubtitle: "Ce qui a changé",
-            returningMessage: "Vos enregistrements dashcam restent sur votre appareil, sauf si vous choisissez de partager un clip. Les vérifications de mise à jour envoient votre OS, l'architecture du processeur, la version de l'app et un identifiant d'installation pseudonyme. Les tuiles de carte proviennent de Google ou d'OpenStreetMap, qui voient approximativement où vous roulez. Si vous activez « Noms de Lieux » dans les Paramètres, les coordonnées de départ et d'arrivée des trajets sont envoyées à OpenStreetMap Nominatim.",
+            returningMessage: "Vos enregistrements dashcam restent sur votre appareil, sauf si vous choisissez de partager un clip. Les vérifications de mise à jour envoient votre OS, l'architecture du processeur, la version de l'app et un identifiant d'installation pseudonyme. Les tuiles de carte proviennent de VersaTiles ou d'OpenStreetMap, qui voient approximativement où vous roulez. Si vous activez « Noms de Lieux » dans les Paramètres, les coordonnées de départ et d'arrivée des trajets sont envoyées à OpenStreetMap Nominatim.",
             acceptButton: "Accepter et Continuer"
         }
     },
@@ -260,12 +260,12 @@ export const translations = {
         welcomeScreen: {
             title: "Willkommen bei Sentry Studio",
             privacyTitle: "Datenschutz und Sicherheit",
-            privacyMessage: "Durch die Nutzung von Sentry Studio stimmen Sie unseren Nutzungsbedingungen und unserer Datenschutzrichtlinie zu. Ihre Dashcam-Aufnahmen bleiben auf Ihrem Gerät, es sei denn, Sie teilen einen Clip. Update-Prüfungen senden Ihr Betriebssystem, die CPU-Architektur, die App-Version und eine pseudonyme Installations-ID. Kartenkacheln kommen von Google oder OpenStreetMap, die dadurch ungefähr sehen, wo Sie fahren. Wenn Sie „Ortsnamen“ in den Einstellungen aktivieren, werden Start- und Zielkoordinaten der Fahrten an OpenStreetMap Nominatim gesendet.",
+            privacyMessage: "Durch die Nutzung von Sentry Studio stimmen Sie unseren Nutzungsbedingungen und unserer Datenschutzrichtlinie zu. Ihre Dashcam-Aufnahmen bleiben auf Ihrem Gerät, es sei denn, Sie teilen einen Clip. Update-Prüfungen senden Ihr Betriebssystem, die CPU-Architektur, die App-Version und eine pseudonyme Installations-ID. Kartenkacheln kommen von VersaTiles oder OpenStreetMap, die dadurch ungefähr sehen, wo Sie fahren. Wenn Sie „Ortsnamen“ in den Einstellungen aktivieren, werden Start- und Zielkoordinaten der Fahrten an OpenStreetMap Nominatim gesendet.",
             termsLink: "Nutzungsbedingungen",
             privacyLink: "Datenschutzrichtlinie",
             returningTitle: "Kurzes Update: Datenschutz und Sicherheit",
             returningSubtitle: "Was sich geändert hat",
-            returningMessage: "Ihre Dashcam-Aufnahmen bleiben auf Ihrem Gerät, es sei denn, Sie teilen einen Clip. Update-Prüfungen senden Ihr Betriebssystem, die CPU-Architektur, die App-Version und eine pseudonyme Installations-ID. Kartenkacheln kommen von Google oder OpenStreetMap, die dadurch ungefähr sehen, wo Sie fahren. Wenn Sie „Ortsnamen“ in den Einstellungen aktivieren, werden Start- und Zielkoordinaten der Fahrten an OpenStreetMap Nominatim gesendet.",
+            returningMessage: "Ihre Dashcam-Aufnahmen bleiben auf Ihrem Gerät, es sei denn, Sie teilen einen Clip. Update-Prüfungen senden Ihr Betriebssystem, die CPU-Architektur, die App-Version und eine pseudonyme Installations-ID. Kartenkacheln kommen von VersaTiles oder OpenStreetMap, die dadurch ungefähr sehen, wo Sie fahren. Wenn Sie „Ortsnamen“ in den Einstellungen aktivieren, werden Start- und Zielkoordinaten der Fahrten an OpenStreetMap Nominatim gesendet.",
             acceptButton: "Akzeptieren und Fortfahren"
         }
     },
@@ -305,12 +305,12 @@ export const translations = {
         welcomeScreen: {
             title: "欢迎使用 Sentry Studio",
             privacyTitle: "隐私与安全",
-            privacyMessage: "使用 Sentry Studio 即表示您同意我们的服务条款和隐私政策。除非您选择分享片段，否则您的行车记录仪录像将保留在您的设备上。更新检查会发送您的操作系统、CPU 架构、应用版本和一个假名化安装 ID。地图图块来自 Google 或 OpenStreetMap，它们可以大致看到您的行驶区域。如果您在设置中开启“地名”，行程的起点和终点坐标将发送至 OpenStreetMap Nominatim。",
+            privacyMessage: "使用 Sentry Studio 即表示您同意我们的服务条款和隐私政策。除非您选择分享片段，否则您的行车记录仪录像将保留在您的设备上。更新检查会发送您的操作系统、CPU 架构、应用版本和一个假名化安装 ID。地图图块来自 VersaTiles 或 OpenStreetMap，它们可以大致看到您的行驶区域。如果您在设置中开启“地名”，行程的起点和终点坐标将发送至 OpenStreetMap Nominatim。",
             termsLink: "服务条款",
             privacyLink: "隐私政策",
             returningTitle: "快速更新：隐私与安全",
             returningSubtitle: "更新内容",
-            returningMessage: "除非您选择分享片段，否则您的行车记录仪录像将保留在您的设备上。更新检查会发送您的操作系统、CPU 架构、应用版本和一个假名化安装 ID。地图图块来自 Google 或 OpenStreetMap，它们可以大致看到您的行驶区域。如果您在设置中开启“地名”，行程的起点和终点坐标将发送至 OpenStreetMap Nominatim。",
+            returningMessage: "除非您选择分享片段，否则您的行车记录仪录像将保留在您的设备上。更新检查会发送您的操作系统、CPU 架构、应用版本和一个假名化安装 ID。地图图块来自 VersaTiles 或 OpenStreetMap，它们可以大致看到您的行驶区域。如果您在设置中开启“地名”，行程的起点和终点坐标将发送至 OpenStreetMap Nominatim。",
             acceptButton: "接受并继续"
         }
     },
@@ -350,12 +350,12 @@ export const translations = {
         welcomeScreen: {
             title: "Sentry Studio へようこそ",
             privacyTitle: "プライバシーとセキュリティ",
-            privacyMessage: "Sentry Studio を使用することで、利用規約とプライバシーポリシーに同意したものとみなされます。クリップを共有しない限り、ドライブレコーダーの映像はお使いのデバイスに保存されたままです。アップデート確認では、OS、CPU アーキテクチャ、アプリバージョン、仮名のインストール ID が送信されます。地図タイルは Google または OpenStreetMap から読み込まれ、提供元にはおおよその走行エリアがわかります。設定で「地名」をオンにすると、走行の出発地点と到着地点の座標が OpenStreetMap Nominatim に送信されます。",
+            privacyMessage: "Sentry Studio を使用することで、利用規約とプライバシーポリシーに同意したものとみなされます。クリップを共有しない限り、ドライブレコーダーの映像はお使いのデバイスに保存されたままです。アップデート確認では、OS、CPU アーキテクチャ、アプリバージョン、仮名のインストール ID が送信されます。地図タイルは VersaTiles または OpenStreetMap から読み込まれ、提供元にはおおよその走行エリアがわかります。設定で「地名」をオンにすると、走行の出発地点と到着地点の座標が OpenStreetMap Nominatim に送信されます。",
             termsLink: "利用規約",
             privacyLink: "プライバシーポリシー",
             returningTitle: "クイックアップデート：プライバシーとセキュリティ",
             returningSubtitle: "変更点",
-            returningMessage: "クリップを共有しない限り、ドライブレコーダーの映像はお使いのデバイスに保存されたままです。アップデート確認では、OS、CPU アーキテクチャ、アプリバージョン、仮名のインストール ID が送信されます。地図タイルは Google または OpenStreetMap から読み込まれ、提供元にはおおよその走行エリアがわかります。設定で「地名」をオンにすると、走行の出発地点と到着地点の座標が OpenStreetMap Nominatim に送信されます。",
+            returningMessage: "クリップを共有しない限り、ドライブレコーダーの映像はお使いのデバイスに保存されたままです。アップデート確認では、OS、CPU アーキテクチャ、アプリバージョン、仮名のインストール ID が送信されます。地図タイルは VersaTiles または OpenStreetMap から読み込まれ、提供元にはおおよその走行エリアがわかります。設定で「地名」をオンにすると、走行の出発地点と到着地点の座標が OpenStreetMap Nominatim に送信されます。",
             acceptButton: "承諾して続行"
         }
     },
@@ -395,12 +395,12 @@ export const translations = {
         welcomeScreen: {
             title: "Sentry Studio에 오신 것을 환영합니다",
             privacyTitle: "개인정보 및 보안",
-            privacyMessage: "Sentry Studio를 사용하면 서비스 약관 및 개인정보 보호정책에 동의하는 것입니다. 클립을 공유하지 않는 한 대시캠 영상은 기기에 남아 있습니다. 업데이트 확인 시 OS, CPU 아키텍처, 앱 버전 및 가명 설치 ID가 전송됩니다. 지도 타일은 Google 또는 OpenStreetMap에서 불러오며, 해당 제공업체는 대략적인 주행 지역을 알 수 있습니다. 설정에서 \"장소 이름\"을 켜면 주행의 출발 및 도착 좌표가 OpenStreetMap Nominatim으로 전송됩니다.",
+            privacyMessage: "Sentry Studio를 사용하면 서비스 약관 및 개인정보 보호정책에 동의하는 것입니다. 클립을 공유하지 않는 한 대시캠 영상은 기기에 남아 있습니다. 업데이트 확인 시 OS, CPU 아키텍처, 앱 버전 및 가명 설치 ID가 전송됩니다. 지도 타일은 VersaTiles 또는 OpenStreetMap에서 불러오며, 해당 제공업체는 대략적인 주행 지역을 알 수 있습니다. 설정에서 \"장소 이름\"을 켜면 주행의 출발 및 도착 좌표가 OpenStreetMap Nominatim으로 전송됩니다.",
             termsLink: "서비스 약관",
             privacyLink: "개인정보 보호정책",
             returningTitle: "빠른 업데이트: 개인정보 및 보안",
             returningSubtitle: "변경 사항",
-            returningMessage: "클립을 공유하지 않는 한 대시캠 영상은 기기에 남아 있습니다. 업데이트 확인 시 OS, CPU 아키텍처, 앱 버전 및 가명 설치 ID가 전송됩니다. 지도 타일은 Google 또는 OpenStreetMap에서 불러오며, 해당 제공업체는 대략적인 주행 지역을 알 수 있습니다. 설정에서 \"장소 이름\"을 켜면 주행의 출발 및 도착 좌표가 OpenStreetMap Nominatim으로 전송됩니다.",
+            returningMessage: "클립을 공유하지 않는 한 대시캠 영상은 기기에 남아 있습니다. 업데이트 확인 시 OS, CPU 아키텍처, 앱 버전 및 가명 설치 ID가 전송됩니다. 지도 타일은 VersaTiles 또는 OpenStreetMap에서 불러오며, 해당 제공업체는 대략적인 주행 지역을 알 수 있습니다. 설정에서 \"장소 이름\"을 켜면 주행의 출발 및 도착 좌표가 OpenStreetMap Nominatim으로 전송됩니다.",
             acceptButton: "동의하고 계속하기"
         }
     },
@@ -440,12 +440,12 @@ export const translations = {
         welcomeScreen: {
             title: "Bem-vindo ao Sentry Studio",
             privacyTitle: "Privacidade e Segurança",
-            privacyMessage: "Ao usar o Sentry Studio, você concorda com nossos Termos de Serviço e Política de Privacidade. Suas gravações de dashcam permanecem no seu dispositivo, a menos que você opte por compartilhar um clipe. As verificações de atualização enviam seu SO, a arquitetura da CPU, a versão do app e um ID de instalação pseudônimo. Os blocos do mapa vêm do Google ou do OpenStreetMap, que veem aproximadamente por onde você dirige. Se você ativar \"Nomes de Lugares\" nas Configurações, as coordenadas de início e fim das viagens são enviadas ao OpenStreetMap Nominatim.",
+            privacyMessage: "Ao usar o Sentry Studio, você concorda com nossos Termos de Serviço e Política de Privacidade. Suas gravações de dashcam permanecem no seu dispositivo, a menos que você opte por compartilhar um clipe. As verificações de atualização enviam seu SO, a arquitetura da CPU, a versão do app e um ID de instalação pseudônimo. Os blocos do mapa vêm do VersaTiles ou do OpenStreetMap, que veem aproximadamente por onde você dirige. Se você ativar \"Nomes de Lugares\" nas Configurações, as coordenadas de início e fim das viagens são enviadas ao OpenStreetMap Nominatim.",
             termsLink: "Termos de Serviço",
             privacyLink: "Política de Privacidade",
             returningTitle: "Atualização Rápida: Privacidade e Segurança",
             returningSubtitle: "O que Mudou",
-            returningMessage: "Suas gravações de dashcam permanecem no seu dispositivo, a menos que você opte por compartilhar um clipe. As verificações de atualização enviam seu SO, a arquitetura da CPU, a versão do app e um ID de instalação pseudônimo. Os blocos do mapa vêm do Google ou do OpenStreetMap, que veem aproximadamente por onde você dirige. Se você ativar \"Nomes de Lugares\" nas Configurações, as coordenadas de início e fim das viagens são enviadas ao OpenStreetMap Nominatim.",
+            returningMessage: "Suas gravações de dashcam permanecem no seu dispositivo, a menos que você opte por compartilhar um clipe. As verificações de atualização enviam seu SO, a arquitetura da CPU, a versão do app e um ID de instalação pseudônimo. Os blocos do mapa vêm do VersaTiles ou do OpenStreetMap, que veem aproximadamente por onde você dirige. Se você ativar \"Nomes de Lugares\" nas Configurações, as coordenadas de início e fim das viagens são enviadas ao OpenStreetMap Nominatim.",
             acceptButton: "Aceitar e Continuar"
         }
     },
@@ -485,12 +485,12 @@ export const translations = {
         welcomeScreen: {
             title: "Добро пожаловать в Sentry Studio",
             privacyTitle: "Конфиденциальность и Безопасность",
-            privacyMessage: "Используя Sentry Studio, вы соглашаетесь с нашими Условиями использования и Политикой конфиденциальности. Записи вашего видеорегистратора остаются на вашем устройстве, если вы сами не решите поделиться клипом. При проверке обновлений передаются ОС, архитектура процессора, версия приложения и псевдонимизированный идентификатор установки. Фрагменты карты загружаются с серверов Google или OpenStreetMap, и поставщик карт примерно видит, где вы ездите. Если вы включите «Названия Мест» в настройках, координаты начала и конца поездок будут отправляться в OpenStreetMap Nominatim.",
+            privacyMessage: "Используя Sentry Studio, вы соглашаетесь с нашими Условиями использования и Политикой конфиденциальности. Записи вашего видеорегистратора остаются на вашем устройстве, если вы сами не решите поделиться клипом. При проверке обновлений передаются ОС, архитектура процессора, версия приложения и псевдонимизированный идентификатор установки. Фрагменты карты загружаются с серверов VersaTiles или OpenStreetMap, и поставщик карт примерно видит, где вы ездите. Если вы включите «Названия Мест» в настройках, координаты начала и конца поездок будут отправляться в OpenStreetMap Nominatim.",
             termsLink: "Условия использования",
             privacyLink: "Политика конфиденциальности",
             returningTitle: "Быстрое обновление: Конфиденциальность и Безопасность",
             returningSubtitle: "Что изменилось",
-            returningMessage: "Записи вашего видеорегистратора остаются на вашем устройстве, если вы сами не решите поделиться клипом. При проверке обновлений передаются ОС, архитектура процессора, версия приложения и псевдонимизированный идентификатор установки. Фрагменты карты загружаются с серверов Google или OpenStreetMap, и поставщик карт примерно видит, где вы ездите. Если вы включите «Названия Мест» в настройках, координаты начала и конца поездок будут отправляться в OpenStreetMap Nominatim.",
+            returningMessage: "Записи вашего видеорегистратора остаются на вашем устройстве, если вы сами не решите поделиться клипом. При проверке обновлений передаются ОС, архитектура процессора, версия приложения и псевдонимизированный идентификатор установки. Фрагменты карты загружаются с серверов VersaTiles или OpenStreetMap, и поставщик карт примерно видит, где вы ездите. Если вы включите «Названия Мест» в настройках, координаты начала и конца поездок будут отправляться в OpenStreetMap Nominatim.",
             acceptButton: "Принять и Продолжить"
         }
     },
@@ -530,12 +530,12 @@ export const translations = {
         welcomeScreen: {
             title: "Benvenuto in Sentry Studio",
             privacyTitle: "Privacy e Sicurezza",
-            privacyMessage: "Utilizzando Sentry Studio, accetti i nostri Termini di Servizio e l'Informativa sulla Privacy. Le tue registrazioni dashcam rimangono sul tuo dispositivo, a meno che tu non scelga di condividere un clip. I controlli degli aggiornamenti inviano il tuo SO, l'architettura della CPU, la versione dell'app e un ID di installazione pseudonimo. I riquadri della mappa provengono da Google o OpenStreetMap, che vedono approssimativamente dove guidi. Se attivi \"Nomi dei Luoghi\" nelle Impostazioni, le coordinate di partenza e arrivo dei viaggi vengono inviate a OpenStreetMap Nominatim.",
+            privacyMessage: "Utilizzando Sentry Studio, accetti i nostri Termini di Servizio e l'Informativa sulla Privacy. Le tue registrazioni dashcam rimangono sul tuo dispositivo, a meno che tu non scelga di condividere un clip. I controlli degli aggiornamenti inviano il tuo SO, l'architettura della CPU, la versione dell'app e un ID di installazione pseudonimo. I riquadri della mappa provengono da VersaTiles o OpenStreetMap, che vedono approssimativamente dove guidi. Se attivi \"Nomi dei Luoghi\" nelle Impostazioni, le coordinate di partenza e arrivo dei viaggi vengono inviate a OpenStreetMap Nominatim.",
             termsLink: "Termini di Servizio",
             privacyLink: "Informativa sulla Privacy",
             returningTitle: "Aggiornamento Rapido: Privacy e Sicurezza",
             returningSubtitle: "Cosa è Cambiato",
-            returningMessage: "Le tue registrazioni dashcam rimangono sul tuo dispositivo, a meno che tu non scelga di condividere un clip. I controlli degli aggiornamenti inviano il tuo SO, l'architettura della CPU, la versione dell'app e un ID di installazione pseudonimo. I riquadri della mappa provengono da Google o OpenStreetMap, che vedono approssimativamente dove guidi. Se attivi \"Nomi dei Luoghi\" nelle Impostazioni, le coordinate di partenza e arrivo dei viaggi vengono inviate a OpenStreetMap Nominatim.",
+            returningMessage: "Le tue registrazioni dashcam rimangono sul tuo dispositivo, a meno che tu non scelga di condividere un clip. I controlli degli aggiornamenti inviano il tuo SO, l'architettura della CPU, la versione dell'app e un ID di installazione pseudonimo. I riquadri della mappa provengono da VersaTiles o OpenStreetMap, che vedono approssimativamente dove guidi. Se attivi \"Nomi dei Luoghi\" nelle Impostazioni, le coordinate di partenza e arrivo dei viaggi vengono inviate a OpenStreetMap Nominatim.",
             acceptButton: "Accetta e Continua"
         }
     },
@@ -575,12 +575,12 @@ export const translations = {
         welcomeScreen: {
             title: "Welkom bij Sentry Studio",
             privacyTitle: "Privacy en Beveiliging",
-            privacyMessage: "Door Sentry Studio te gebruiken, gaat u akkoord met onze Servicevoorwaarden en ons Privacybeleid. Uw dashcambeelden blijven op uw apparaat, tenzij u ervoor kiest een clip te delen. Updatecontroles verzenden uw OS, CPU-architectuur, app-versie en een pseudonieme installatie-ID. Kaarttegels komen van Google of OpenStreetMap, die daardoor ongeveer zien waar u rijdt. Als u \"Plaatsnamen\" in Instellingen inschakelt, worden de begin- en eindcoördinaten van ritten naar OpenStreetMap Nominatim gestuurd.",
+            privacyMessage: "Door Sentry Studio te gebruiken, gaat u akkoord met onze Servicevoorwaarden en ons Privacybeleid. Uw dashcambeelden blijven op uw apparaat, tenzij u ervoor kiest een clip te delen. Updatecontroles verzenden uw OS, CPU-architectuur, app-versie en een pseudonieme installatie-ID. Kaarttegels komen van VersaTiles of OpenStreetMap, die daardoor ongeveer zien waar u rijdt. Als u \"Plaatsnamen\" in Instellingen inschakelt, worden de begin- en eindcoördinaten van ritten naar OpenStreetMap Nominatim gestuurd.",
             termsLink: "Servicevoorwaarden",
             privacyLink: "Privacybeleid",
             returningTitle: "Snelle Update: Privacy en Beveiliging",
             returningSubtitle: "Wat er is Veranderd",
-            returningMessage: "Uw dashcambeelden blijven op uw apparaat, tenzij u ervoor kiest een clip te delen. Updatecontroles verzenden uw OS, CPU-architectuur, app-versie en een pseudonieme installatie-ID. Kaarttegels komen van Google of OpenStreetMap, die daardoor ongeveer zien waar u rijdt. Als u \"Plaatsnamen\" in Instellingen inschakelt, worden de begin- en eindcoördinaten van ritten naar OpenStreetMap Nominatim gestuurd.",
+            returningMessage: "Uw dashcambeelden blijven op uw apparaat, tenzij u ervoor kiest een clip te delen. Updatecontroles verzenden uw OS, CPU-architectuur, app-versie en een pseudonieme installatie-ID. Kaarttegels komen van VersaTiles of OpenStreetMap, die daardoor ongeveer zien waar u rijdt. Als u \"Plaatsnamen\" in Instellingen inschakelt, worden de begin- en eindcoördinaten van ritten naar OpenStreetMap Nominatim gestuurd.",
             acceptButton: "Accepteren en Doorgaan"
         }
     },
@@ -620,12 +620,12 @@ export const translations = {
         welcomeScreen: {
             title: "Witamy w Sentry Studio",
             privacyTitle: "Prywatność i Bezpieczeństwo",
-            privacyMessage: "Korzystając z Sentry Studio, zgadzasz się z naszymi Warunkami Usługi i Polityką Prywatności. Twoje nagrania z kamery samochodowej pozostają na Twoim urządzeniu, chyba że zdecydujesz się udostępnić klip. Sprawdzanie aktualizacji wysyła system operacyjny, architekturę procesora, wersję aplikacji i pseudonimizowany identyfikator instalacji. Kafelki map pochodzą od Google lub OpenStreetMap, więc ich dostawca widzi w przybliżeniu, gdzie jeździsz. Jeśli włączysz „Nazwy Miejsc” w Ustawieniach, współrzędne początku i końca przejazdów będą wysyłane do OpenStreetMap Nominatim.",
+            privacyMessage: "Korzystając z Sentry Studio, zgadzasz się z naszymi Warunkami Usługi i Polityką Prywatności. Twoje nagrania z kamery samochodowej pozostają na Twoim urządzeniu, chyba że zdecydujesz się udostępnić klip. Sprawdzanie aktualizacji wysyła system operacyjny, architekturę procesora, wersję aplikacji i pseudonimizowany identyfikator instalacji. Kafelki map pochodzą od VersaTiles lub OpenStreetMap, więc ich dostawca widzi w przybliżeniu, gdzie jeździsz. Jeśli włączysz „Nazwy Miejsc” w Ustawieniach, współrzędne początku i końca przejazdów będą wysyłane do OpenStreetMap Nominatim.",
             termsLink: "Warunki Usługi",
             privacyLink: "Polityka Prywatności",
             returningTitle: "Szybka Aktualizacja: Prywatność i Bezpieczeństwo",
             returningSubtitle: "Co się Zmieniło",
-            returningMessage: "Twoje nagrania z kamery samochodowej pozostają na Twoim urządzeniu, chyba że zdecydujesz się udostępnić klip. Sprawdzanie aktualizacji wysyła system operacyjny, architekturę procesora, wersję aplikacji i pseudonimizowany identyfikator instalacji. Kafelki map pochodzą od Google lub OpenStreetMap, więc ich dostawca widzi w przybliżeniu, gdzie jeździsz. Jeśli włączysz „Nazwy Miejsc” w Ustawieniach, współrzędne początku i końca przejazdów będą wysyłane do OpenStreetMap Nominatim.",
+            returningMessage: "Twoje nagrania z kamery samochodowej pozostają na Twoim urządzeniu, chyba że zdecydujesz się udostępnić klip. Sprawdzanie aktualizacji wysyła system operacyjny, architekturę procesora, wersję aplikacji i pseudonimizowany identyfikator instalacji. Kafelki map pochodzą od VersaTiles lub OpenStreetMap, więc ich dostawca widzi w przybliżeniu, gdzie jeździsz. Jeśli włączysz „Nazwy Miejsc” w Ustawieniach, współrzędne początku i końca przejazdów będą wysyłane do OpenStreetMap Nominatim.",
             acceptButton: "Akceptuj i Kontynuuj"
         }
     },
@@ -665,12 +665,12 @@ export const translations = {
         welcomeScreen: {
             title: "Sentry Studio'ya Hoş Geldiniz",
             privacyTitle: "Gizlilik ve Güvenlik",
-            privacyMessage: "Sentry Studio'yu kullanarak Hizmet Şartlarımızı ve Gizlilik Politikamızı kabul etmiş olursunuz. Bir klibi paylaşmayı seçmediğiniz sürece dashcam kayıtlarınız cihazınızda kalır. Güncelleme kontrolleri işletim sisteminizi, CPU mimarinizi, uygulama sürümünü ve takma adlı bir kurulum kimliğini gönderir. Harita karoları Google veya OpenStreetMap'ten gelir; bu sağlayıcı nerede araç kullandığınızı yaklaşık olarak görür. Ayarlar'da \"Yer Adları\" seçeneğini açarsanız, sürüşlerin başlangıç ve bitiş koordinatları OpenStreetMap Nominatim'e gönderilir.",
+            privacyMessage: "Sentry Studio'yu kullanarak Hizmet Şartlarımızı ve Gizlilik Politikamızı kabul etmiş olursunuz. Bir klibi paylaşmayı seçmediğiniz sürece dashcam kayıtlarınız cihazınızda kalır. Güncelleme kontrolleri işletim sisteminizi, CPU mimarinizi, uygulama sürümünü ve takma adlı bir kurulum kimliğini gönderir. Harita karoları VersaTiles veya OpenStreetMap'ten gelir; bu sağlayıcı nerede araç kullandığınızı yaklaşık olarak görür. Ayarlar'da \"Yer Adları\" seçeneğini açarsanız, sürüşlerin başlangıç ve bitiş koordinatları OpenStreetMap Nominatim'e gönderilir.",
             termsLink: "Hizmet Şartları",
             privacyLink: "Gizlilik Politikası",
             returningTitle: "Hızlı Güncelleme: Gizlilik ve Güvenlik",
             returningSubtitle: "Neler Değişti",
-            returningMessage: "Bir klibi paylaşmayı seçmediğiniz sürece dashcam kayıtlarınız cihazınızda kalır. Güncelleme kontrolleri işletim sisteminizi, CPU mimarinizi, uygulama sürümünü ve takma adlı bir kurulum kimliğini gönderir. Harita karoları Google veya OpenStreetMap'ten gelir; bu sağlayıcı nerede araç kullandığınızı yaklaşık olarak görür. Ayarlar'da \"Yer Adları\" seçeneğini açarsanız, sürüşlerin başlangıç ve bitiş koordinatları OpenStreetMap Nominatim'e gönderilir.",
+            returningMessage: "Bir klibi paylaşmayı seçmediğiniz sürece dashcam kayıtlarınız cihazınızda kalır. Güncelleme kontrolleri işletim sisteminizi, CPU mimarinizi, uygulama sürümünü ve takma adlı bir kurulum kimliğini gönderir. Harita karoları VersaTiles veya OpenStreetMap'ten gelir; bu sağlayıcı nerede araç kullandığınızı yaklaşık olarak görür. Ayarlar'da \"Yer Adları\" seçeneğini açarsanız, sürüşlerin başlangıç ve bitiş koordinatları OpenStreetMap Nominatim'e gönderilir.",
             acceptButton: "Kabul Et ve Devam Et"
         }
     }
