@@ -2874,6 +2874,8 @@ ipcMain.handle('sentryUsb:loadAndGroup', async (_event, filePath) => {
 // persistent disk cache so each unique spot is looked up once.
 let _geocodeInited = false;
 ipcMain.handle('geo:reverseGeocode', async (_event, { lat, lng } = {}) => {
+  // Lookups send drive endpoints to OpenStreetMap, so they wait for opt-in.
+  if (loadSettings().placeNameLookup !== true) return { label: null };
   try {
     const geocode = require('./main/geocode.cjs');
     if (!_geocodeInited) {

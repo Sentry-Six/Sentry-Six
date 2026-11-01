@@ -321,6 +321,17 @@ export function initSettingsModal() {
         };
     }
 
+    // Place-name lookups are off until the user opts in (main process enforces it too).
+    const settingsPlaceNames = $('settingsPlaceNames');
+    if (settingsPlaceNames && window.electronAPI?.getSetting) {
+        window.electronAPI.getSetting('placeNameLookup').then(saved => {
+            settingsPlaceNames.checked = saved === true;
+        });
+        settingsPlaceNames.onchange = async () => {
+            await window.electronAPI.setSetting('placeNameLookup', settingsPlaceNames.checked);
+        };
+    }
+
     // Metric toggle
     if (settingsMetricToggle) {
         settingsMetricToggle.onchange = () => {
