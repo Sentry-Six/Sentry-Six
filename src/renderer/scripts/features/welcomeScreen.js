@@ -37,11 +37,11 @@ function applyModalVariant(isReturningUser) {
     if (isReturningUser) {
         if (titleEl) titleEl.textContent = t('welcomeScreen.returningTitle') || 'Quick Update: Privacy & Security';
         if (subtitleEl) subtitleEl.textContent = t('welcomeScreen.returningSubtitle') || 'What Changed';
-        if (messageEl) messageEl.textContent = t('welcomeScreen.returningMessage') || "Your dashcam footage stays on your device unless you choose to share a clip. Update checks send your OS, CPU architecture, app version and a pseudonymous install ID. Map tiles come from VersaTiles or OpenStreetMap, which see roughly where you drive. If you turn on Place Names in Settings, drive start and end coordinates are sent to OpenStreetMap Nominatim.";
+        if (messageEl) messageEl.textContent = t('welcomeScreen.returningMessage') || "Your dashcam footage stays on your device unless you choose to share a clip. Update checks send your OS, CPU architecture, app version and a pseudonymous install ID. Map tiles come from tiles.sentryusb.com or OpenStreetMap, which see roughly where you drive. If you turn on Place Names in Settings, drive start and end coordinates are sent to OpenStreetMap Nominatim.";
     } else {
         if (titleEl) titleEl.textContent = t('welcomeScreen.title') || 'Welcome to Sentry Studio';
         if (subtitleEl) subtitleEl.textContent = t('welcomeScreen.privacyTitle') || 'Privacy & Security';
-        if (messageEl) messageEl.textContent = t('welcomeScreen.privacyMessage') || "By using Sentry Studio, you agree to our Terms of Service and Privacy Policy. Your dashcam footage stays on your device unless you choose to share a clip. Update checks send your OS, CPU architecture, app version and a pseudonymous install ID. Map tiles come from VersaTiles or OpenStreetMap, which see roughly where you drive. If you turn on Place Names in Settings, drive start and end coordinates are sent to OpenStreetMap Nominatim.";
+        if (messageEl) messageEl.textContent = t('welcomeScreen.privacyMessage') || "By using Sentry Studio, you agree to our Terms of Service and Privacy Policy. Your dashcam footage stays on your device unless you choose to share a clip. Update checks send your OS, CPU architecture, app version and a pseudonymous install ID. Map tiles come from tiles.sentryusb.com or OpenStreetMap, which see roughly where you drive. If you turn on Place Names in Settings, drive start and end coordinates are sent to OpenStreetMap Nominatim.";
     }
 }
 

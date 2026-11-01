@@ -288,7 +288,7 @@ export function initSettingsModal() {
         };
     }
 
-    // Map provider dropdown (VersaTiles / OpenStreetMap)
+    // Map provider dropdown (SentryUSB VersaTiles server / OpenStreetMap)
     const settingsMapProvider = $('settingsMapProvider');
     if (settingsMapProvider && window.electronAPI?.getSetting) {
         window.electronAPI.getSetting('mapTileProvider').then(saved => {

@@ -18,8 +18,11 @@ describe('map provider registry', () => {
     const p = MapProviders.getProvider(undefined);
     expect(p.id).toBe('versatiles');
     expect(p.type).toBe('vector');
-    expect(p.styleUrl).toBe('https://tiles.versatiles.org/assets/styles/colorful/style.json');
-    expect(p.darkStyleUrl).toBe('https://tiles.versatiles.org/assets/styles/colorful-dark/style.json');
+    expect(MapProviders.TILE_ORIGIN).toBe('https://tiles.sentryusb.com');
+    expect(p.styleUrl).toBe('https://tiles.sentryusb.com/assets/styles/colorful/style.json');
+    expect(p.darkStyleUrl).toBe('https://tiles.sentryusb.com/assets/styles/colorful-dark/style.json');
+    expect(p.attribution).toMatch(/VersaTiles.*OpenStreetMap/);
+    expect(p.attribution).not.toMatch(/WorldCover/);
   });
 
   test('migrates removed provider ids', () => {

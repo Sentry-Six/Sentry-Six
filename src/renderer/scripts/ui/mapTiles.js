@@ -5,7 +5,7 @@
  * map + Advanced Editor minimap preview). Providers come from the shared
  * registry in src/shared/mapProviders.js (window.MapProviders).
  *
- * The default VersaTiles provider is a vector style drawn by MapLibre GL
+ * The default provider is the SentryUSB VersaTiles vector style drawn by MapLibre GL
  * inside Leaflet (vendor/maplibre-gl-leaflet). Raster providers use plain
  * L.tileLayer. Dark mode swaps the vector style to its dark variant; raster
  * maps keep the older CSS filter (see applyMapDarkMode in script.js).
@@ -91,7 +91,10 @@ function createLayer(providerId, opts = {}) {
             style: darkMode && opts.followDarkMode ? p.darkStyleUrl : p.styleUrl,
             maxZoom: Math.min(p.maxZoom, opts.maxZoomCap ?? p.maxZoom),
             // The GL map only mirrors Leaflet; Leaflet handles all input.
-            interactive: false
+            interactive: false,
+            // maplibre-gl-leaflet reports this string to Leaflet's
+            // attribution control in place of the style's source credits.
+            attributionControl: { customAttribution: p.attribution }
         });
         layer._sentryVector = true;
         return layer;
@@ -109,6 +112,9 @@ function watchVectorLayer(layer) {
         triggerFallback('vector map did not start');
         return;
     }
+    // The VersaTiles styles ask for a globe at low zoom; Leaflet is Web
+    // Mercator, so the GL map must stay Mercator to line up.
+    glMap.on('style.load', () => glMap.setProjection({ type: 'mercator' }));
     let rendered = false;
     glMap.once('load', () => { rendered = true; });
     glMap.on('error', (e) => {
@@ -120,30 +126,16 @@ function watchVectorLayer(layer) {
     });
 }
 
-// maplibre-gl-leaflet reports the style's source credits itself but ignores
-// a custom attribution and does not withdraw its credits on removal, so the
-// VersaTiles credit and the cleanup are handled here.
 function removeLayerFromMap(map, entry) {
     if (!entry.layer) return;
-    const credits = entry.layer._sentryVector
-        ? [entry.layer.getAttribution?.(), entry.extraAttribution]
-        : [];
     map.removeLayer(entry.layer);
-    for (const credit of credits) {
-        if (credit) map.attributionControl?.removeAttribution(credit);
-    }
     entry.layer = null;
-    entry.extraAttribution = null;
 }
 
 function addLayerToMap(map, entry, providerId) {
     try {
         entry.layer = createLayer(providerId, entry.opts);
         entry.layer.addTo(map);
-        if (entry.layer._sentryVector) {
-            entry.extraAttribution = registry().getProvider(providerId).attribution;
-            map.attributionControl?.addAttribution(entry.extraAttribution);
-        }
         watchVectorLayer(entry.layer);
     } catch (err) {
         // WebGL unavailable or MapLibre failed to construct.

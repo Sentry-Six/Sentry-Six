@@ -266,6 +266,8 @@
                 layer.on('add', () => {
                     const glMap = layer.getMaplibreMap();
                     if (!glMap) return fallBackToRaster('no GL map');
+                    // Leaflet is Web Mercator; the styles ask for a globe.
+                    glMap.on('style.load', () => glMap.setProjection({ type: 'mercator' }));
                     let loaded = false;
                     glMap.once('load', () => { loaded = true; });
                     glMap.on('error', (e) => {

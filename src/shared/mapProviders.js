@@ -10,19 +10,17 @@
  *  - Via require() in the main process for export tile downloads.
  *
  * Providers:
- *  - 'versatiles' (default): OpenStreetMap vector tiles from the free public
- *    VersaTiles server, drawn by MapLibre GL inside Leaflet
- *    (maplibre-gl-leaflet). Vector tiles stop at z14 and are overzoomed, so
- *    a follow-the-car map needs far fewer requests than raster tiles.
+ *  - 'versatiles' (default): OpenStreetMap vector tiles from the
+ *    SentryUSB VersaTiles server (TILE_ORIGIN), drawn by MapLibre GL inside
+ *    Leaflet (maplibre-gl-leaflet). Vector tiles stop at z14 and are
+ *    overzoomed, so a follow-the-car map needs few requests.
  *  - 'osm': the OpenStreetMap Foundation's standard raster tiles. Also the
  *    raster stand-in for 'versatiles' wherever a bitmap is stitched in the
  *    main process (export static map: a handful of tiles per user-started
  *    export, sent with an identifying User-Agent per the OSMF tile policy).
  *
  * Saved ids from older releases ('google', 'google-satellite') migrate to
- * the default via normalizeProviderId(). There is no satellite option: the
- * free VersaTiles imagery is global only to about z12 (high-resolution
- * orthophotos cover parts of Europe), too coarse for street-level replay.
+ * the default via normalizeProviderId().
  */
 (function (root, factory) {
   const api = factory();
@@ -36,25 +34,24 @@
     root.MapProviders = api;
   }
 })(typeof self !== 'undefined' ? self : this, function () {
-  const VERSATILES_ORIGIN = 'https://tiles.versatiles.org';
+  // The SentryUSB self-hosted VersaTiles server: OpenStreetMap vector tiles,
+  // styles, glyphs and sprites in the public server's path layout.
+  const TILE_ORIGIN = 'https://tiles.sentryusb.com';
   const OSM_ATTRIBUTION = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
   const VERSATILES_LINK = '<a href="https://versatiles.org/">VersaTiles</a>';
 
   const PROVIDERS = {
     'versatiles': {
       id: 'versatiles',
-      label: 'VersaTiles (OpenStreetMap)',
+      label: 'tiles.sentryusb.com (OpenStreetMap)',
       type: 'vector',
-      styleUrl: VERSATILES_ORIGIN + '/assets/styles/colorful/style.json',
-      darkStyleUrl: VERSATILES_ORIGIN + '/assets/styles/colorful-dark/style.json',
+      styleUrl: TILE_ORIGIN + '/assets/styles/colorful/style.json',
+      darkStyleUrl: TILE_ORIGIN + '/assets/styles/colorful-dark/style.json',
       maxZoom: 20,
-      // The styles' sources carry the OSM/ESA WorldCover credits; MapLibre
-      // reports them to Leaflet's attribution control.
-      attribution: VERSATILES_LINK,
+      attribution: VERSATILES_LINK + ' | ' + OSM_ATTRIBUTION,
       // Raster provider used where a bitmap must be stitched (export).
       rasterFallbackId: 'osm',
-      // Credit drawn on exported minimaps. Those render at street zoom,
-      // where only OpenStreetMap data (no low-zoom landcover) is visible.
+      // Credit drawn on exported minimaps
       exportCredit: '\u00a9 OpenStreetMap'
     },
     'osm': {
@@ -89,7 +86,7 @@
   // URL filters for webRequest header injection.
   const TILE_REQUEST_URL_PATTERNS = [
     'https://tile.openstreetmap.org/*',
-    VERSATILES_ORIGIN + '/*'
+    TILE_ORIGIN + '/*'
   ];
 
   function normalizeProviderId(id) {
@@ -160,7 +157,7 @@
     USER_AGENT,
     REFERER,
     TILE_REQUEST_URL_PATTERNS,
-    VERSATILES_ORIGIN,
+    TILE_ORIGIN,
     normalizeProviderId,
     getProvider,
     getRasterProvider,
