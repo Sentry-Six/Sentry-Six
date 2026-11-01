@@ -148,7 +148,7 @@ const message = t('ui.loading.filesFound', { count: 42 });
 ## Translation Coverage
 
 ### Currently Translated (95%+ Complete)
-- **Settings Modal** - All labels, descriptions, buttons, dropdown options across all sections
+- **Settings Modal** - All labels, descriptions, buttons, dropdown options in every section except Sentry USB, which is still English only
 - **Export Modal** - All sections, labels, buttons, descriptions, toggles
 - **Export Modal Position Dropdowns** - Bottom Center, Top Left, Top Right, etc.
 - **Export Modal Blur Zone Editor** - Title, instructions, Cancel/Save buttons, blur type options
