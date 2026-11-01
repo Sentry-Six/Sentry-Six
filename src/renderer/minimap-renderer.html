@@ -6,13 +6,14 @@
     <link rel="stylesheet" href="vendor/leaflet/leaflet.css" />
     <link rel="stylesheet" href="vendor/maplibre/maplibre-gl.css" />
     <script src="vendor/leaflet/leaflet.js"></script>
-    <!-- This window has nodeIntegration, so `module` exists and the UMD
-         bundles below would export to it instead of window. Hide it while
-         they load so window.maplibregl / L.maplibreGL are defined. -->
-    <script>window.__nodeModule = window.module; window.module = undefined;</script>
-    <script src="vendor/maplibre/maplibre-gl.js"></script>
-    <script src="vendor/maplibre-gl-leaflet/leaflet-maplibre-gl.js"></script>
-    <script>window.module = window.__nodeModule; delete window.__nodeModule;</script>
+    <script type="importmap">{"imports": {
+        "leaflet": "./vendor/maplibre-gl-leaflet/leaflet-global.mjs",
+        "maplibre-gl": "./vendor/maplibre/maplibre-gl.mjs",
+        "maplibre-gl-leaflet": "./vendor/maplibre-gl-leaflet/leaflet-maplibre-gl.mjs"
+    }}</script>
+    <!-- Defines window.maplibregl and L.maplibreGL before DOMContentLoaded,
+         when the map is created. -->
+    <script type="module" src="scripts/lib/maplibreGlobals.mjs"></script>
     <script src="../shared/mapProviders.js"></script>
     <style>
         * {

@@ -3214,8 +3214,12 @@
 
     <!-- Scripts -->
     <script src="vendor/leaflet/leaflet.js"></script>
-    <script src="vendor/maplibre/maplibre-gl.js"></script>
-    <script src="vendor/maplibre-gl-leaflet/leaflet-maplibre-gl.js"></script>
+    <script type="importmap">{"imports": {
+        "leaflet": "./vendor/maplibre-gl-leaflet/leaflet-global.mjs",
+        "maplibre-gl": "./vendor/maplibre/maplibre-gl.mjs",
+        "maplibre-gl-leaflet": "./vendor/maplibre-gl-leaflet/leaflet-maplibre-gl.mjs"
+    }}</script>
+    <script type="module" src="scripts/lib/maplibreGlobals.mjs"></script>
     <script src="../shared/mapProviders.js"></script>
     <script src="vendor/protobuf.min.js"></script>
     <script src="scripts/data/dashcam-mp4.js"></script>

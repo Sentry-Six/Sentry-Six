@@ -53,8 +53,13 @@ function loadSelectedProvider() {
     return settingLoadPromise;
 }
 
+// MapLibre GL needs WebGL2.
+let webgl2Support;
 function vectorRenderingAvailable() {
-    return typeof window.L?.maplibreGL === 'function' && typeof window.maplibregl?.Map === 'function';
+    if (webgl2Support === undefined) {
+        try { webgl2Support = !!document.createElement('canvas').getContext('webgl2'); } catch { webgl2Support = false; }
+    }
+    return webgl2Support && typeof window.L?.maplibreGL === 'function' && typeof window.maplibregl?.Map === 'function';
 }
 
 export function getEffectiveProviderId() {
