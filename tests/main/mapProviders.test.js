@@ -20,7 +20,7 @@ describe('map provider registry', () => {
     expect(p.type).toBe('vector');
     expect(MapProviders.TILE_ORIGIN).toBe('https://tiles.sentryusb.com');
     expect(p.styleUrl).toBe('https://tiles.sentryusb.com/assets/styles/colorful/style.json');
-    expect(p.darkStyleUrl).toBe('https://tiles.sentryusb.com/assets/styles/colorful-dark/style.json');
+    expect(p.darkStyleUrl).toBe('https://tiles.sentryusb.com/assets/styles/sentry-dark/style.json');
     expect(p.attribution).toMatch(/VersaTiles.*OpenStreetMap/);
     expect(p.attribution).not.toMatch(/WorldCover/);
   });

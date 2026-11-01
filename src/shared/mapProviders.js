@@ -46,7 +46,7 @@
       label: 'tiles.sentryusb.com (OpenStreetMap)',
       type: 'vector',
       styleUrl: TILE_ORIGIN + '/assets/styles/colorful/style.json',
-      darkStyleUrl: TILE_ORIGIN + '/assets/styles/colorful-dark/style.json',
+      darkStyleUrl: TILE_ORIGIN + '/assets/styles/sentry-dark/style.json',
       maxZoom: 20,
       attribution: VERSATILES_LINK + ' | ' + OSM_ATTRIBUTION,
       // Raster provider used where a bitmap must be stitched (export).
