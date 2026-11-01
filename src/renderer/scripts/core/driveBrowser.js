@@ -5,6 +5,7 @@
 
 import { escapeHtml } from '../lib/utils.js';
 import { formatDriveDistance } from './driveGrouper.js';
+import { createOwnedResourceSlot } from '../../../shared/asyncLifecycle.mjs';
 
 // Injected dependencies
 let getState = null;
@@ -36,6 +37,7 @@ let selectedDriveId = null;
  */
 export function renderDriveList() {
     if (!driveList) return;
+    geocodeObserverSlot.clear();
 
     const driveState = getDriveState?.();
     // Loading state: show while a parse/group is in-flight so the user knows
@@ -237,19 +239,21 @@ function applyDriveLocations(item, drive) {
 }
 
 // Geocode only cards near the viewport (Nominatim allows 1 req/s).
-let geocodeObserver = null;
+const geocodeObserverSlot = createOwnedResourceSlot(observer => observer.disconnect());
 function observeForGeocoding(item) {
     if (!window.electronAPI?.reverseGeocode) return;
-    if (!geocodeObserver) {
-        geocodeObserver = new IntersectionObserver((entries) => {
+    let observer = geocodeObserverSlot.get();
+    if (!observer) {
+        observer = new IntersectionObserver((entries) => {
             for (const e of entries) {
                 if (!e.isIntersecting) continue;
-                geocodeObserver.unobserve(e.target);
+                observer.unobserve(e.target);
                 if (e.target._drive) applyDriveLocations(e.target, e.target._drive);
             }
         }, { root: driveList, rootMargin: '300px' });
+        geocodeObserverSlot.replace(observer);
     }
-    geocodeObserver.observe(item);
+    observer.observe(item);
 }
 
 /**

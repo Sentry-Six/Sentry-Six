@@ -35,10 +35,22 @@ describe('findSeiAtTime semantics', () => {
     expect(findSeiAtTime(data, 150).idx).toBe(1); // 100 and 200 equidistant
   });
 
-  test('clamps to first/last sample outside the range', () => {
+  test('clamps to the nearest endpoint just outside the range, within the staleness window', () => {
     const data = makeSeiData([100, 200, 300]);
-    expect(findSeiAtTime(data, -50).idx).toBe(0);
-    expect(findSeiAtTime(data, 9999).idx).toBe(2);
+    expect(findSeiAtTime(data, -50).idx).toBe(0);   // 150ms before first sample
+    expect(findSeiAtTime(data, 1500).idx).toBe(2);  // 1200ms after last sample
+  });
+
+  test('returns null when the nearest sample is staler than the threshold (parked / no telemetry)', () => {
+    // A parked Tesla records video but no telemetry, so lookups land far from
+    // any sample. Past maxStaleMs (default 3s) the lookup must report "no data"
+    // (null) rather than clamping to a stale driving value — that drove the
+    // dashboard showing PARKED instead of a frozen gear/speed.
+    const data = makeSeiData([100, 200, 300]);
+    expect(findSeiAtTime(data, 9999)).toBeNull();       // 9.7s past the last sample
+    expect(findSeiAtTime(data, -100000)).toBeNull();    // long before the first sample
+    // The threshold is configurable; a generous window still clamps to nearest.
+    expect(findSeiAtTime(data, 9999, 60000).idx).toBe(2);
   });
 
   test('handles a single sample', () => {

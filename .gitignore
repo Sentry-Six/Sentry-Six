@@ -26,6 +26,7 @@ sign-mac.sh
 ffmpeg_bin/macos/
 
 .claude/worktrees/
+.worktrees/
 
 # Test coverage output (contains local absolute paths)
 coverage/

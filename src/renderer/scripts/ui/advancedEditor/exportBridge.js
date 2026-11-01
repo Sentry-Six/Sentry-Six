@@ -8,7 +8,7 @@
 import { advancedEditorState, parseTileId } from './state.js';
 import { filePathToUrl } from '../../lib/utils.js';
 import { parseTimestampKeyToEpochMs } from '../../core/clipBrowser.js';
-import { translateMessage, showExportCompletePanel, openExportModal, setSimpleModalAeMode } from '../../features/exportVideo.js';
+import { translateMessage, showExportCompletePanel, openExportModal, setSimpleModalAeMode, wallMsToContiguousSec } from '../../features/exportVideo.js';
 import { notify } from '../notifications.js';
 
 // Quality preset → reference canvas width in pixels.
@@ -64,6 +64,10 @@ export async function runAdvancedExport() {
         showError('No clip loaded.');
         return;
     }
+    if (state.library?.capabilities?.export === false) {
+        notify('Export support for this vehicle profile is coming later.', { type: 'info' });
+        return;
+    }
 
     // A simple-modal export may already be running (the AE stays reachable
     // while one encodes) — starting another would clobber its progress
@@ -88,8 +92,21 @@ export async function runAdvancedExport() {
 
     // ----- 1. Time range from current playback window -----
     const totalSec = (nativeVideo.cumulativeStarts || []).slice(-1)[0] || 0;
-    const startSec = advancedEditorState.playback.startSec || 0;
-    const endSec   = advancedEditorState.playback.endSec || totalSec;
+    let startSec = advancedEditorState.playback.startSec || 0;
+    let endSec   = advancedEditorState.playback.endSec || totalSec;
+    // Prefer the wall-clock marker anchors (immune to timeline re-probing) so the
+    // AE export locks to the marked frames and doesn't drift on long drives, just
+    // like the simple export. The AE inherits the simple-modal markers; only
+    // override when BOTH anchors resolve against the current timeline, else keep
+    // the playback window.
+    {
+        const sWall = exportStateRef.startMarkerWallMs, eWall = exportStateRef.endMarkerWallMs;
+        if (sWall != null && eWall != null) {
+            const a = wallMsToContiguousSec(Math.min(sWall, eWall));
+            const b = wallMsToContiguousSec(Math.max(sWall, eWall));
+            if (a != null && b != null) { startSec = a; endSec = b; }
+        }
+    }
     const startTimeMs = Math.round(startSec * 1000);
     const endTimeMs   = Math.round(endSec   * 1000);
 
@@ -217,8 +234,11 @@ export async function runAdvancedExport() {
 
         // ----- 6. Build overlayData (normalized 0-1) -----
         const overlayData = {};
+        // The dashboard already renders the date/time, so a separate timestamp
+        // burn-in is redundant — mutually exclusive, mirroring the simple export.
+        const includeTimestamp = settings.includeTimestamp && !settings.includeDashboard;
         const tsTile = advancedEditorState.tiles.get('overlay:timestamp');
-        if (settings.includeTimestamp && tsTile) {
+        if (includeTimestamp && tsTile) {
             overlayData.timestamp = { x: tsTile.x, y: tsTile.y, w: tsTile.w, h: tsTile.h };
         }
         const dashTile = advancedEditorState.tiles.get('overlay:dashboard');
@@ -264,10 +284,9 @@ export async function runAdvancedExport() {
             dashboardDateLabelScale: settings.dashboardDateLabelScale,
             dashboardDateValueScale: settings.dashboardDateValueScale,
             accelPedMode: window._accelPedMode || 'iconbar',
-            // Unlike the simple modal, the AE allows timestamp + dashboard
-            // together (each is its own tile) — main.js composes the drawtext
-            // timestamp on top of the dashboard for advanced layouts.
-            includeTimestamp: settings.includeTimestamp,
+            // Timestamp and dashboard are mutually exclusive (the dashboard
+            // already shows the date/time), matching the simple export modal.
+            includeTimestamp,
             timestampPosition: 'custom',
             timestampDateFormat: window._dateFormat || 'mdy',
             timestampTimeFormat: window._timeFormat || '12h',

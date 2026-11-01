@@ -1038,6 +1038,32 @@ canvas,
     align-items: center;
 }
 
+/* Pre-release channel opt-in warning. Shape and glass chrome come from
+   .modal-content / .modal-header / .modal-footer exactly like the delete
+   dialogs; only the width, the amber caution icon (this is a caution, not a
+   destructive action), and the body text are its own. */
+.prerelease-warn-modal {
+    max-width: 460px;
+}
+
+.prerelease-warn-icon {
+    color: var(--warning-color);
+}
+
+.prerelease-warn-message {
+    margin: 0;
+    color: var(--text-color);
+    font-size: 14px;
+    line-height: 1.5;
+}
+
+/* Standing "you are on pre-releases" state, mirroring Sentry Drive's beta
+   warning chip. The toggle's existing description is promoted to a warning
+   while enrolled rather than adding a second string to translate. */
+.toggle-row-desc--warning {
+    color: var(--warning-color);
+}
+
 .btn-danger {
     background: rgba(248, 113, 113, 0.10);
     color: #fca5a5;
@@ -1363,6 +1389,34 @@ canvas,
 .dashboard-vis.user-hidden,
 .map-vis.user-hidden {
     display: none !important;
+}
+
+/* Telemetry gap (parked): Tesla embeds no telemetry while parked, so rather
+   than freeze the last driving values we drop the gauges and show PARKED to the
+   LEFT of the recording time. The time stays — it comes from the clip
+   timestamp, not SEI. Mirrors the exported-video behaviour. */
+.parked-label-compact { display: none; }
+.dashboard-vis-compact.telemetry-parked .vis-content-compact {
+    justify-content: center;
+    gap: clamp(10px, 3%, 30px);
+}
+.dashboard-vis-compact.telemetry-parked .brake-icon-compact,
+.dashboard-vis-compact.telemetry-parked .gear-state-compact,
+.dashboard-vis-compact.telemetry-parked .turn-signal-compact,
+.dashboard-vis-compact.telemetry-parked .speed-display-compact,
+.dashboard-vis-compact.telemetry-parked .autopilot-label-compact,
+.dashboard-vis-compact.telemetry-parked .steering-wrapper-compact,
+.dashboard-vis-compact.telemetry-parked .accel-pedal-container-compact {
+    display: none;
+}
+.dashboard-vis-compact.telemetry-parked .parked-label-compact {
+    display: block;
+    order: -1; /* sit to the LEFT of the recording time */
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    color: #fff;
+    font-size: clamp(13px, 1.7em, 24px);
+    white-space: nowrap;
 }
 
 .dashboard-vis {
@@ -6689,7 +6743,17 @@ body>.dashboard-vis-compact.draggable:not(.fixed-to-camera) {
 .settings-horizontal-body {
     display: flex;
     padding: 0 !important;
-    max-height: 520px;
+    /* Fixed height (not max-height) so the modal stays the same size across
+       tabs — short sections leave empty space, tall ones scroll in
+       .settings-content rather than growing the modal. Capped for short
+       viewports.
+       flex: 0 0 auto is required: this element is also .modal-body { flex: 1 },
+       and in the .modal-content flex column that flex-basis:0% makes the
+       browser size it to content (ignoring the height) — so without this the
+       modal still resizes per tab. */
+    flex: 0 0 auto;
+    height: 520px;
+    max-height: calc(100vh - 120px);
     overflow: hidden;
 }
 
@@ -6777,6 +6841,14 @@ body>.dashboard-vis-compact.draggable:not(.fixed-to-camera) {
     flex: 1;
     padding: 16px 20px;
     overflow-y: auto;
+    /* Always reserve the scrollbar gutter. The webkit scrollbar below is a
+       classic (space-taking) one, so without this any section tall enough to
+       scroll — System & Security once "Learn More" expands its table, for
+       example — steals the scrollbar's width from the content box and the
+       panel visibly narrows mid-interaction. The width companion to the fixed
+       height on .settings-horizontal-body, which stops the modal resizing
+       between tabs. */
+    scrollbar-gutter: stable;
     scrollbar-width: thin;
     scrollbar-color: var(--scrollbar-thumb) transparent;
 }
@@ -6822,6 +6894,60 @@ body>.dashboard-vis-compact.draggable:not(.fixed-to-camera) {
 
 .settings-horizontal-body .settings-accordion:not(.open) {
     display: none;
+}
+
+/* Subtabs within a settings section (Playback & Overlays: Dashboard / Map / UI) */
+.settings-subtab-bar {
+    display: flex;
+    gap: 4px;
+    padding: 4px;
+    margin-bottom: 14px;
+    background: var(--modal-header-bg);
+    border: 1px solid var(--border-subtle);
+    border-radius: 10px;
+}
+
+.settings-subtab-btn {
+    flex: 1;
+    padding: 7px 10px;
+    border: none;
+    border-radius: 7px;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.settings-subtab-btn:hover {
+    background: var(--surface-hover);
+    color: var(--text-color);
+}
+
+.settings-subtab-btn.active {
+    background: var(--accent-bg);
+    color: var(--accent-color);
+}
+
+/* Only the active subtab's panel shows… */
+.settings-subtab-panel {
+    display: none;
+}
+
+.settings-subtab-panel.active {
+    display: block;
+}
+
+/* …except while searching: reveal every panel so the row-level search filter
+   can match across subtabs, and hide the subtab bar itself. */
+.settings-content.settings-searching .settings-subtab-bar {
+    display: none;
+}
+
+.settings-content.settings-searching .settings-subtab-panel {
+    display: block;
 }
 
 /* Enhanced modal chrome for settings */
@@ -7202,13 +7328,18 @@ body>.dashboard-vis-compact.draggable:not(.fixed-to-camera) {
 }
 
 /* Support chat button styling */
+/* Solid app green with white text. Was a Discord-blurple gradient, the last
+   holdout from before the accent moved to green. The id beats .btn-primary's
+   near-black label, so the white is set here explicitly. */
 .settings-modal #openSupportChatFromSettings {
-    background: linear-gradient(135deg, #5865f2 0%, var(--settings-accent) 100%);
+    background: var(--settings-accent);
+    color: #fff;
     border: none;
 }
 
 .settings-modal #openSupportChatFromSettings:hover {
-    box-shadow: 0 4px 20px rgba(88, 101, 242, 0.4);
+    background: var(--accent-solid-hover);
+    box-shadow: 0 4px 20px var(--settings-accent-glow);
     transform: translateY(-1px);
 }
 
@@ -7991,4 +8122,10 @@ body>.dashboard-vis-compact.draggable:not(.fixed-to-camera) {
     pointer-events: none; /* belt + suspenders alongside `inert` */
     transition: opacity 0.15s ease;
 }
+
+/* Keep profile-defined blank/missing camera slots in the grid without showing
+   a stale video frame or allowing focus/drag interactions. */
+.multi-tile.empty-camera-slot {
+    visibility: hidden;
+    pointer-events: none;
 }

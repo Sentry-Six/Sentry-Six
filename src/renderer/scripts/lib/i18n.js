@@ -186,6 +186,10 @@ export function getAvailableLanguages() {
  */
 export function onLanguageChange(callback) {
     languageChangeListeners.push(callback);
+    return () => {
+        const index = languageChangeListeners.indexOf(callback);
+        if (index !== -1) languageChangeListeners.splice(index, 1);
+    };
 }
 
 /**

@@ -6,9 +6,14 @@
 import { notify } from '../ui/notifications.js';
 import { MULTI_LAYOUTS, DEFAULT_MULTI_LAYOUT } from '../lib/multiLayouts.js';
 import { t } from '../lib/i18n.js';
+import {
+    getCameraLabel,
+    getDashcamProfile
+} from '../../../shared/dashcamProfiles.mjs';
 
-// Custom camera order state
-let customCameraOrder = null;
+// Custom camera orders are isolated by profile so a Tesla preference can never
+// remap a GMC layout (and vice versa).
+let customCameraOrders = {};
 
 // Dependencies set via init
 let getMultiCamGrid = null;
@@ -39,9 +44,12 @@ export function initCameraRearrange(deps) {
  * Get the current custom camera order
  */
 export function getCustomCameraOrder() {
-    return customCameraOrder;
+    return customCameraOrders[getActiveProfileId()] || null;
 }
 
+function getActiveProfileId() {
+    return getState?.()?.library?.profileId || 'tesla';
+}
 
 /**
  * Initialize custom camera order from settings
@@ -49,14 +57,19 @@ export function getCustomCameraOrder() {
 export async function initCustomCameraOrder() {
     if (window.electronAPI?.getSetting) {
         try {
-            const saved = await window.electronAPI.getSetting('customCameraOrder');
-            if (saved) {
-                customCameraOrder = saved;
-                console.log('Loaded custom camera order:', customCameraOrder);
+            const savedByProfile = await window.electronAPI.getSetting('customCameraOrdersByProfile');
+            if (savedByProfile && typeof savedByProfile === 'object') {
+                customCameraOrders = savedByProfile;
+            } else {
+                // One-time compatibility read: the legacy setting belongs to Tesla.
+                const legacyTeslaOrder = await window.electronAPI.getSetting('customCameraOrder');
+                customCameraOrders = legacyTeslaOrder ? { tesla: legacyTeslaOrder } : {};
+                if (legacyTeslaOrder) saveCustomCameraOrder();
             }
+            console.log('Loaded profile camera orders:', customCameraOrders);
         } catch (e) {
             console.warn('Failed to load custom camera order:', e);
-            customCameraOrder = null;
+            customCameraOrders = {};
         }
     }
 }
@@ -66,7 +79,7 @@ export async function initCustomCameraOrder() {
  */
 export function saveCustomCameraOrder() {
     if (window.electronAPI?.setSetting) {
-        window.electronAPI.setSetting('customCameraOrder', customCameraOrder);
+        window.electronAPI.setSetting('customCameraOrdersByProfile', customCameraOrders);
     }
 }
 
@@ -77,7 +90,7 @@ export function resetCameraOrder() {
     const state = getState?.();
     const nativeVideo = getNativeVideo?.();
     
-    customCameraOrder = null;
+    delete customCameraOrders[getActiveProfileId()];
     saveCustomCameraOrder();
     updateTileLabels();
     updateEventCameraHighlight?.();
@@ -96,14 +109,15 @@ export function getEffectiveSlots() {
     const multi = getMulti?.();
     const layout = MULTI_LAYOUTS[multi?.layoutId] || MULTI_LAYOUTS[DEFAULT_MULTI_LAYOUT];
     const baseSlots = layout?.slots || [];
+    const customCameraOrder = getCustomCameraOrder();
     
     if (!customCameraOrder) {
         return baseSlots;
     }
     
     return baseSlots.map(slotDef => {
-        const customCamera = customCameraOrder[slotDef.slot];
-        if (customCamera) {
+        if (Object.prototype.hasOwnProperty.call(customCameraOrder, slotDef.slot)) {
+            const customCamera = customCameraOrder[slotDef.slot];
             const originalSlotDef = baseSlots.find(s => s.camera === customCamera);
             return {
                 ...slotDef,
@@ -220,11 +234,13 @@ export function initCameraDragAndDrop() {
             
             if (!sourceSlotDef || !targetSlotDef) return;
             
+            let customCameraOrder = getCustomCameraOrder();
             if (!customCameraOrder) {
                 customCameraOrder = {};
                 effectiveSlots.forEach(s => {
                     customCameraOrder[s.slot] = s.camera;
                 });
+                customCameraOrders[getActiveProfileId()] = customCameraOrder;
             }
             
             const sourceCamera = customCameraOrder[draggedSlot];
@@ -284,6 +300,10 @@ export function updateTileLabels() {
  * Get translated camera name
  */
 function getCameraTranslation(camera) {
+    const profileId = getActiveProfileId();
+    if (!getDashcamProfile(profileId).localizedCameraLabels) {
+        return getCameraLabel(profileId, camera);
+    }
     if (camera === 'front') return t('ui.cameras.front');
     if (camera === 'back') return t('ui.cameras.back');
     if (camera === 'left_repeater') return t('ui.cameras.leftRepeater');

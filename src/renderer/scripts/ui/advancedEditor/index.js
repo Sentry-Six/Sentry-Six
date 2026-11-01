@@ -19,6 +19,7 @@ import {
     applyDashboardScales
 } from './overlayPreviews.js';
 import { initExportBridge, runAdvancedExport } from './exportBridge.js';
+import { createLifecycleSession } from '../../../../shared/asyncLifecycle.mjs';
 
 let deps = null;
 let modalEl = null;
@@ -28,6 +29,7 @@ let resetLayoutBtnEl = null;
 let disclaimerEl = null;
 let disclaimerDismissEl = null;
 let initialized = false;
+let editorSession = null;
 
 const AE_DISCLAIMER_SETTING = 'aeOverlayDisclaimerDismissed';
 
@@ -121,7 +123,7 @@ export function initAdvancedEditor(injected) {
         onChange: (field, value) => {
             if (field === 'selectedCameras') {
                 syncCameraTiles();
-                reloadVideos();
+                reloadVideos(editorSession?.signal);
             } else if (field === 'includeTimestamp') {
                 if (value) { addOverlayTile('timestamp'); mountOverlay('timestamp'); }
                 else       { unmountOverlay('timestamp'); removeOverlayTile('timestamp'); }
@@ -131,6 +133,11 @@ export function initAdvancedEditor(injected) {
                 const style = advancedEditorState.settings.dashboardStyle;
                 const keys = dashboardTilesForStyle(style);
                 if (value) {
+                    // Timestamp and dashboard are mutually exclusive — the sidebar
+                    // has already unchecked + locked the timestamp toggle, so drop
+                    // its now-suppressed tile from the canvas.
+                    unmountOverlay('timestamp');
+                    removeOverlayTile('timestamp');
                     for (const k of keys) {
                         addOverlayTile(k);
                         mountOverlay(k, style);
@@ -176,6 +183,10 @@ export function initAdvancedEditor(injected) {
 export async function openAdvancedEditor() {
     if (!modalEl) { console.warn('[AE] Modal element not found.'); return; }
 
+    editorSession?.dispose();
+    const session = createLifecycleSession();
+    editorSession = session;
+
     // Pause main app's videos so we're not decoding 12 streams.
     pauseMainAppVideos();
 
@@ -189,8 +200,10 @@ export async function openAdvancedEditor() {
     if (disclaimerEl) {
         try {
             const dismissed = await window.electronAPI?.getSetting?.(AE_DISCLAIMER_SETTING);
+            if (!session.isActive()) return;
             disclaimerEl.classList.toggle('hidden', !!dismissed);
         } catch {
+            if (!session.isActive()) return;
             // If the setting read fails, default to showing the disclaimer.
             disclaimerEl.classList.remove('hidden');
         }
@@ -200,8 +213,8 @@ export async function openAdvancedEditor() {
     // export modal (exportVideo.js:803-818): double RAF, cloneNode to strip
     // any prior listeners, plain click handler that toggles `.open`. No
     // stopPropagation, no delegation — matches what works upstream.
-    requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
+    session.requestFrame(() => {
+        session.requestFrame(() => {
             modalEl.querySelectorAll('.collapsible-header').forEach(header => {
                 const newHeader = header.cloneNode(true);
                 header.parentNode.replaceChild(newHeader, header);
@@ -228,6 +241,7 @@ export async function openAdvancedEditor() {
     }
 
     await loadSidebarState();
+    if (!session.isActive()) return;
 
     // Defensive re-wire of camera toggles on every open. If init somehow
     // missed wiring them (race with DOM ready, upstream error, etc.) this
@@ -239,20 +253,33 @@ export async function openAdvancedEditor() {
     // onChange firing can compute the correct previous→next tile diff.
     prevDashboardStyle = advancedEditorState.settings.dashboardStyle || 'compact';
 
-    requestAnimationFrame(async () => {
+    session.requestFrame(() => {
+        initializeOpenSession(session).catch(err => {
+            if (session.isActive()) console.warn('[AE] Open setup failed:', err);
+        });
+    });
+}
+
+async function initializeOpenSession(session) {
+        if (!session.isActive()) return;
         // Tesla Mobile uses two tiles — both flagged in overlaysEnabled when
         // the dashboard is on AND the style is tesla-mobile.
         const dashOn = advancedEditorState.settings.includeDashboard;
         const isTeslaMobile = advancedEditorState.settings.dashboardStyle === 'tesla-mobile';
+        // Timestamp and dashboard are mutually exclusive — the dashboard already
+        // shows the date/time (mirrors the simple export). Suppress the timestamp
+        // whenever the dashboard is on.
+        const tsOn = advancedEditorState.settings.includeTimestamp && !dashOn;
         await buildLayout({
             selectedCameras: advancedEditorState.settings.selectedCameras,
             overlaysEnabled: {
-                timestamp:     advancedEditorState.settings.includeTimestamp,
+                timestamp:     tsOn,
                 dashboard:     dashOn,
                 dashboardDate: dashOn && isTeslaMobile,
                 minimap:       advancedEditorState.settings.includeMinimap,
             },
         });
+        if (!session.isActive()) return;
         onCanvasResize();
 
         // The modal animates in over a few frames, and the canvas (which uses
@@ -262,14 +289,14 @@ export async function openAdvancedEditor() {
         // (Without these, tiles render at the canvas's INITIAL size and only
         // get corrected when the user first clicks a tile — onTileMouseDown
         // calls measureCanvas again.)
-        requestAnimationFrame(() => {
-            requestAnimationFrame(() => onCanvasResize());
+        session.requestFrame(() => {
+            session.requestFrame(() => onCanvasResize());
         });
-        setTimeout(onCanvasResize, 100);
-        setTimeout(onCanvasResize, 300);
+        session.setTimeout(onCanvasResize, 100);
+        session.setTimeout(onCanvasResize, 300);
 
         // Mount overlay previews for any overlays that are enabled at open time.
-        if (advancedEditorState.settings.includeTimestamp) mountOverlay('timestamp');
+        if (tsOn) mountOverlay('timestamp');
         if (advancedEditorState.settings.includeDashboard) {
             const style = advancedEditorState.settings.dashboardStyle;
             for (const k of dashboardTilesForStyle(style)) {
@@ -279,7 +306,8 @@ export async function openAdvancedEditor() {
         if (advancedEditorState.settings.includeMinimap)   mountOverlay('minimap');
 
         // Load videos and seed the timeline range from export markers.
-        await reloadVideos();
+        await reloadVideos(session.signal);
+        if (!session.isActive()) return;
         refreshAfterLoad();
 
         // Once videos are loaded and the playhead is at startSec, push one SEI
@@ -287,11 +315,13 @@ export async function openAdvancedEditor() {
         // stays on whatever values it cloned from the live floating panel
         // (which is driven by the MAIN player's currentTime, not AE's).
         updateAllOverlays(advancedEditorState.playback.currentSec || 0);
-    });
 }
 
 export function closeAdvancedEditor() {
     if (!modalEl) return;
+    editorSession?.dispose();
+    editorSession = null;
+    advancedEditorState.isOpen = false;
     // Snapshot the current layout BEFORE disposing — buildLayout reads this
     // on next open so the user's tile positions survive close→reopen.
     // In-memory only, cleared on app restart.
@@ -299,7 +329,6 @@ export function closeAdvancedEditor() {
     disposeVideos();
     unmountAllOverlays();
     modalEl.classList.add('hidden');
-    advancedEditorState.isOpen = false;
 }
 
 export function isAdvancedEditorOpen() {
@@ -328,6 +357,8 @@ function detectAvailableCameras() {
 // from the floating "Reset Layout" button. Settings (style, scales, overlay
 // toggles) are NOT touched — only tile positions and the camera selection.
 async function resetLayout() {
+    const session = editorSession;
+    if (!session?.isActive()) return;
     const available = detectAvailableCameras();
     if (available && available.size > 0) {
         advancedEditorState.settings.selectedCameras = new Set(available);
@@ -347,18 +378,21 @@ async function resetLayout() {
     const settings = advancedEditorState.settings;
     const dashOn = settings.includeDashboard;
     const isTeslaMobile = settings.dashboardStyle === 'tesla-mobile';
+    // Timestamp and dashboard are mutually exclusive (see openAdvancedEditor).
+    const tsOn = settings.includeTimestamp && !dashOn;
     await buildLayout({
         selectedCameras: settings.selectedCameras,
         overlaysEnabled: {
-            timestamp:     settings.includeTimestamp,
+            timestamp:     tsOn,
             dashboard:     dashOn,
             dashboardDate: dashOn && isTeslaMobile,
             minimap:       settings.includeMinimap,
         },
     });
+    if (!session.isActive()) return;
     onCanvasResize();
 
-    if (settings.includeTimestamp) mountOverlay('timestamp');
+    if (tsOn) mountOverlay('timestamp');
     if (settings.includeDashboard) {
         const style = settings.dashboardStyle;
         for (const k of dashboardTilesForStyle(style)) {
@@ -372,7 +406,7 @@ async function resetLayout() {
     updateAllOverlays(advancedEditorState.playback.currentSec || 0);
 
     // Reload video sources too — the selection may have changed.
-    await reloadVideos();
+    await reloadVideos(session.signal);
 }
 
 function syncCameraTiles() {
@@ -387,7 +421,7 @@ function syncCameraTiles() {
     }
 }
 
-async function reloadVideos() {
+async function reloadVideos(signal) {
     const nativeVideo = deps?.getNativeVideo?.();
     const exportState = deps?.getExportState?.();
     if (!nativeVideo || !exportState) return;
@@ -403,9 +437,11 @@ async function reloadVideos() {
     await loadVideosForCanvas({
         cameras: advancedEditorState.settings.selectedCameras,
         startSec,
-        endSec
+        endSec,
+        signal
     });
 
+    if (signal?.aborted) return;
     refreshAfterLoad();
 }
 

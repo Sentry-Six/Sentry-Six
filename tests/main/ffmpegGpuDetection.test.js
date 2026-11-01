@@ -7,6 +7,8 @@
 
 jest.mock('child_process');
 
+const fs = require('fs');
+
 /**
  * Fresh require of the module so its internal cache state is reset.
  * Returns the module plus the spawnSync mock instance it captured.
@@ -70,5 +72,49 @@ describe('detectHEVCEncoder caching', () => {
     const second = ffmpeg.detectHEVCEncoder('ffmpeg');
     expect(second).toBeNull();
     expect(spawnSync.mock.calls.length).toBe(callsAfterFirst);
+  });
+});
+
+describe('findFFprobePath', () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  test('prefers a working ffprobe executable beside a resolved bundled FFmpeg path', () => {
+    const bundledFfmpeg = process.platform === 'win32'
+      ? 'C:\\Program Files\\Sentry Studio\\ffmpeg_bin\\ffmpeg.exe'
+      : '/opt/Sentry Studio/ffmpeg_bin/ffmpeg';
+    const bundledFfprobe = process.platform === 'win32'
+      ? 'C:\\Program Files\\Sentry Studio\\ffmpeg_bin\\ffprobe.exe'
+      : '/opt/Sentry Studio/ffmpeg_bin/ffprobe';
+    jest.spyOn(fs, 'existsSync').mockImplementation((candidate) => candidate === bundledFfprobe);
+    const { ffmpeg, spawnSync } = loadFfmpegModule({ status: 0, stdout: 'ffprobe version test' });
+
+    expect(ffmpeg.findFFprobePath(bundledFfmpeg)).toBe(bundledFfprobe);
+    expect(spawnSync).toHaveBeenCalledWith(
+      bundledFfprobe,
+      ['-version'],
+      expect.objectContaining({ shell: false, windowsHide: true })
+    );
+  });
+
+  test('falls back to ffprobe on PATH when the sibling executable is absent', () => {
+    jest.spyOn(fs, 'existsSync').mockReturnValue(false);
+    const { ffmpeg, spawnSync } = loadFfmpegModule({ status: 0, stdout: 'ffprobe version test' });
+
+    expect(ffmpeg.findFFprobePath('C:\\bundled\\ffmpeg.exe')).toBe('ffprobe');
+    expect(spawnSync).toHaveBeenCalledTimes(1);
+    expect(spawnSync).toHaveBeenCalledWith(
+      'ffprobe',
+      ['-version'],
+      expect.objectContaining({ shell: false, windowsHide: true })
+    );
+  });
+
+  test('returns null when neither sibling nor PATH ffprobe completes its version probe', () => {
+    jest.spyOn(fs, 'existsSync').mockReturnValue(false);
+    const { ffmpeg } = loadFfmpegModule({ status: 1, stderr: 'not found' });
+
+    expect(ffmpeg.findFFprobePath('/bundle/ffmpeg')).toBeNull();
   });
 });

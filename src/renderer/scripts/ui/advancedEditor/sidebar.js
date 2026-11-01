@@ -129,7 +129,37 @@ function wireQualityRadios() {
     });
 }
 
+// The dashboard already renders the date/time, so a separate timestamp burn-in
+// is redundant. Mirror the simple export modal: when the dashboard is on, force
+// the timestamp off and lock its toggle. Runs on load and on every change.
+function enforceTimestampDashboardExclusion() {
+    const tsChk = document.getElementById('aeIncludeTimestamp');
+    const dashChk = document.getElementById('aeIncludeDashboard');
+    if (!tsChk || !dashChk) return;
+    const tsRow = tsChk.closest('.toggle-row');
+
+    if (dashChk.checked) {
+        tsChk.disabled = true;
+        tsRow?.classList.add('disabled');
+        // Only mutate/persist when something actually needs clearing, so repeated
+        // refreshes while the dashboard stays on don't spam setSetting.
+        if (tsChk.checked || advancedEditorState.settings.includeTimestamp) {
+            tsChk.checked = false;
+            advancedEditorState.settings.includeTimestamp = false;
+            if (window.electronAPI?.setSetting) {
+                window.electronAPI.setSetting('exportIncludeTimestamp', false)
+                    .catch(err => console.warn('[AE] persist timestamp lock failed', err));
+            }
+        }
+    } else {
+        tsChk.disabled = false;
+        tsRow?.classList.remove('disabled');
+    }
+}
+
 function refreshOptionVisibility() {
+    enforceTimestampDashboardExclusion();
+
     const dashOpts = document.getElementById('aeDashboardOptions');
     const dashChk = document.getElementById('aeIncludeDashboard');
     if (dashOpts && dashChk) dashOpts.classList.toggle('hidden', !dashChk.checked);

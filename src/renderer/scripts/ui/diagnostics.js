@@ -3,6 +3,7 @@
  * Collects logs, system info, and uploads to get short shareable Support IDs
  */
 
+import { formatError } from '../lib/utils.js';
 
 // In-memory log storage. Capped as ring buffers: console output is captured
 // for the whole session and playback is chatty (~10 lines per segment
@@ -70,7 +71,7 @@ export function initDiagnostics() {
 
     // Capture unhandled promise rejections
     window.addEventListener('unhandledrejection', (event) => {
-        captureError([`Unhandled Promise Rejection: ${event.reason}`]);
+        captureError([`Unhandled Promise Rejection: ${formatError(event.reason)}`]);
     });
 
     originalConsole.log('[Diagnostics] Console capture initialized');

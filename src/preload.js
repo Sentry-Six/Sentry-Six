@@ -3,6 +3,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 // Map to track wrapper functions for proper listener removal
 // Key: original callback, Value: wrapper function registered with ipcRenderer
 const listenerWrappers = new Map();
+let converterProgressListenerCount = 0;
 
 contextBridge.exposeInMainWorld('electronAPI', {
   // Folder/file operations
@@ -15,6 +16,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   readFile: (filePath) => ipcRenderer.invoke('fs:readFile', filePath),
   loadSentryUsbDrives: (filePath) => ipcRenderer.invoke('sentryUsb:loadAndGroup', filePath),
   getSentryUsbDriveDetail: (driveId) => ipcRenderer.invoke('sentryUsb:getDriveDetail', driveId),
+  clearSentryUsbDrives: () => ipcRenderer.invoke('sentryUsb:clear'),
   reverseGeocode: (coords) => ipcRenderer.invoke('geo:reverseGeocode', coords),
   exists: (filePath) => ipcRenderer.invoke('fs:exists', filePath),
   stat: (filePath) => ipcRenderer.invoke('fs:stat', filePath),
@@ -28,7 +30,41 @@ contextBridge.exposeInMainWorld('electronAPI', {
   startExport: (exportId, exportData) => ipcRenderer.invoke('export:start', exportId, exportData),
   cancelExport: (exportId) => ipcRenderer.invoke('export:cancel', exportId),
   checkFFmpeg: () => ipcRenderer.invoke('ffmpeg:check'),
-  
+
+  // Footage converter operations. Keep this surface named and data-oriented;
+  // renderer code never receives a generic converter invoke primitive.
+  chooseConverterFolder: (purpose, defaultPath) => ipcRenderer.invoke(
+    'converter:chooseFolder',
+    defaultPath === undefined ? { purpose } : { purpose, defaultPath }
+  ),
+  startConverter: (config) => ipcRenderer.invoke('converter:start', config),
+  getCurrentConverterJob: () => ipcRenderer.invoke('converter:getCurrent'),
+  pauseConverter: (jobId) => ipcRenderer.invoke('converter:pause', { jobId }),
+  resumeConverter: (jobId) => ipcRenderer.invoke('converter:resume', { jobId }),
+  cancelConverter: (jobId) => ipcRenderer.invoke('converter:cancel', { jobId }),
+  retryFailedConverter: (jobId) => ipcRenderer.invoke('converter:retryFailed', { jobId }),
+  dismissConverterSummary: (jobId) => ipcRenderer.invoke('converter:dismissSummary', { jobId }),
+  getConverterCapabilities: () => ipcRenderer.invoke('converter:getCapabilities'),
+  onConverterProgress: (callback) => {
+    if (typeof callback !== 'function') throw new TypeError('callback must be a function');
+    const wrapper = (_event, payload) => callback(payload);
+    let subscribed = true;
+    ipcRenderer.on('converter:progress', wrapper);
+    converterProgressListenerCount += 1;
+    if (converterProgressListenerCount === 1) {
+      void Promise.resolve(ipcRenderer.invoke('converter:subscribeProgress')).catch(() => {});
+    }
+    return () => {
+      if (!subscribed) return;
+      subscribed = false;
+      ipcRenderer.removeListener('converter:progress', wrapper);
+      converterProgressListenerCount -= 1;
+      if (converterProgressListenerCount === 0) {
+        void Promise.resolve(ipcRenderer.invoke('converter:unsubscribeProgress')).catch(() => {});
+      }
+    };
+  },
+
   // Clip sharing
   getShareConfig: () => ipcRenderer.invoke('share:getConfig'),
   reserveShareCode: (expirationHours) => ipcRenderer.invoke('share:reserve', expirationHours),
@@ -44,6 +80,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   skipUpdate: () => ipcRenderer.invoke('update:skip'),
   exitApp: () => ipcRenderer.invoke('update:exit'),
   getChangelog: () => ipcRenderer.invoke('update:getChangelog'),
+  // Update channel: 'stable' follows published releases, 'prerelease' also
+  // picks up RCs/betas. Setting it re-points electron-updater's feed and the
+  // branch the changelog and version checks read from.
+  getUpdateChannel: () => ipcRenderer.invoke('update:getChannel'),
+  setUpdateChannel: (channel) => ipcRenderer.invoke('update:setChannel', channel),
   
   // Developer settings operations
   devOpenDevTools: () => ipcRenderer.invoke('dev:openDevTools'),
@@ -63,6 +104,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getSetting: (key) => ipcRenderer.invoke('settings:get', key),
   setSetting: (key, value) => ipcRenderer.invoke('settings:set', key, value),
 
+  // Relaunch the app (used by settings that only take effect at startup)
+  relaunchApp: () => ipcRenderer.invoke('app:relaunch'),
   
   // Build environment
   isMas: process.mas === true,

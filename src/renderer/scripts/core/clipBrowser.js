@@ -137,7 +137,9 @@ export function createClipItem(coll, title, typeClass) {
     
     // Get folder path from first group's first file
     let folderPath = null;
-    if (firstGroup && firstGroup.filesByCamera.size > 0) {
+    if (coll.deletion) {
+        folderPath = coll.deletion.allowed ? coll.deletion.path : null;
+    } else if (firstGroup && firstGroup.filesByCamera.size > 0) {
         const firstEntry = firstGroup.filesByCamera.values().next().value;
         if (firstEntry?.file?.path) {
             // Extract the parent folder path (e.g., /path/to/SentryClips/2024-01-15_10-30-00)
@@ -163,7 +165,7 @@ export function createClipItem(coll, title, typeClass) {
     const subline = `${groups.length} ${segmentText} · ${Math.max(1, cameras.length)} cam`;
     const badgeClass = typeClass;
     const badgeLabel = typeClass === 'custom'
-        ? 'Custom'
+        ? (coll.tag || 'Custom')
         : t(`ui.clipBrowser.${typeClass}`);
     
     // Build reason badge for SavedClips only (as text, not icon)
@@ -491,6 +493,10 @@ function showFinalDeleteConfirmModal(folderPath, collectionId) {
 
 // Cache of folder paths we've already checked for thumb.png
 const thumbExistsCache = new Map();
+
+export function clearThumbnailCache() {
+    thumbExistsCache.clear();
+}
 
 /**
  * Attach a thumbnail hover preview to a clip item.

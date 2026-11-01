@@ -1,12 +1,13 @@
 {
   "name": "sentry-six-revamped",
-  "version": "2026.25.35",
+  "version": "2026.27.36",
   "description": "Sentry Studio - Tesla Dashcam Viewer",
   "main": "src/main.js",
   "scripts": {
     "start": "electron .",
     "dev": "electron .",
     "test": "jest",
+    "test:dashcam": "node --test \"tests/renderer/*.test.mjs\"",
     "build": "electron-builder --publish never",
     "build:win": "electron-builder --win --publish never",
     "build:mac": "electron-builder --mac --publish never",
@@ -20,11 +21,11 @@
     "sentry",
     "electron"
   ],
-  "author": "Scott Vandereems",
+  "author": "Sentry-Six",
   "license": "MIT",
   "type": "commonjs",
   "devDependencies": {
-    "electron": "^39.2.7",
+    "electron": "42.11.16",
     "electron-builder": "^26.6.0",
     "jest": "^30.4.2"
   },
@@ -37,7 +38,7 @@
   },
   "build": {
     "appId": "com.sentry-six.revamped",
-    "productName": "Sentry-Studio",
+    "productName": "Sentry Studio",
     "win": {
       "icon": "assets/Sentry_Six.ico",
       "target": [
@@ -169,6 +170,7 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "artifactName": "SentryStudioSetup${version}.${ext}",
+      "uninstallDisplayName": "${productName}",
       "include": "build/installer.nsh"
     },
     "publish": {

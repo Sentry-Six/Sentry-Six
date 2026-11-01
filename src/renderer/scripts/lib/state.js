@@ -34,6 +34,16 @@ function createInitialState() {
 
     // Library/index derived from the TeslaCam folder
     library: {
+      profileId: 'tesla',
+      sourceKind: 'tesla',
+      capabilities: {
+        telemetry: true,
+        gps: true,
+        dashboard: true,
+        map: true,
+        export: true,
+        driveMatching: true
+      },
       clipGroups: [],
       clipGroupById: new Map(),
       folderLabel: null,

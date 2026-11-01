@@ -8,6 +8,10 @@
 import { advancedEditorState } from './state.js';
 import { filePathToUrl } from '../../lib/utils.js';
 import { extractSeiFromEntry } from '../../core/seiExtractor.js';
+import {
+    createObjectUrlRegistry,
+    isAbortError
+} from '../../../../shared/asyncLifecycle.mjs';
 
 const DRIFT_THRESHOLD_SEC = 0.15;
 let depsRef = null;
@@ -22,6 +26,11 @@ let masterCamera = null;
 // falls back to any camera that has a file in the current segment, so the
 // tick loop never reads currentTime from a <video> with no source.
 let activeMasterCamera = null;
+const objectUrls = createObjectUrlRegistry(URL);
+let videoLoadGeneration = 0;
+let telemetryController = null;
+let externalSignal = null;
+let externalAbortHandler = null;
 
 export function initVideoSync(deps, options = {}) {
     depsRef = deps;
@@ -30,8 +39,17 @@ export function initVideoSync(deps, options = {}) {
 
 // Build segment list from the loaded clip + camera selection. Mounts <video>
 // elements inside each camera tile and seeks to startSec.
-export async function loadVideosForCanvas({ cameras, startSec, endSec }) {
+export async function loadVideosForCanvas({ cameras, startSec, endSec, signal }) {
     disposeVideos();
+    const generation = videoLoadGeneration;
+    const controller = new AbortController();
+    telemetryController = controller;
+    externalSignal = signal || null;
+    externalAbortHandler = () => controller.abort();
+    if (signal?.aborted) controller.abort();
+    else signal?.addEventListener('abort', externalAbortHandler, { once: true });
+    const activeSignal = controller.signal;
+    const isCurrent = () => generation === videoLoadGeneration && !activeSignal.aborted;
 
     const state = depsRef?.getState?.();
     const nativeVideo = depsRef?.getNativeVideo?.();
@@ -57,6 +75,7 @@ export async function loadVideosForCanvas({ cameras, startSec, endSec }) {
         }
         segments.push({ index: i, files });
     }
+    if (!isCurrent()) return;
 
     // Mirror nativeVideo's cumulativeStarts so seek math is identical.
     cumStarts = (nativeVideo.cumulativeStarts || []).slice();
@@ -115,23 +134,35 @@ export async function loadVideosForCanvas({ cameras, startSec, endSec }) {
     // Load segment containing startSec.
     currentSegIdx = findSegmentIdx(advancedEditorState.playback.startSec);
     if (currentSegIdx < 0) currentSegIdx = 0;
-    await loadSegment(currentSegIdx);
+    if (!await loadSegment(currentSegIdx, generation, activeSignal)) return;
 
     // Seek to local offset within the loaded segment.
     const offset = advancedEditorState.playback.startSec - (cumStarts[currentSegIdx] || 0);
-    seekAllLocal(offset);
+    if (!isCurrent()) return;
+    seekAllLocal(offset, generation);
 
     // Kick off per-segment SEI extraction (fire-and-forget). Each segment's
     // result lands in advancedEditorState.aeSeiBySegment as it completes;
     // overlay updates read from that map and silently skip until the data
     // is present. The first/active segment is extracted first so the dashboard
     // populates correctly within a frame or two of the user opening AE.
-    extractSeiForSegmentsInRange(groups, currentSegIdx).catch(err =>
-        console.warn('[AE] Per-segment SEI extraction failed:', err)
-    );
+    extractSeiForSegmentsInRange(groups, currentSegIdx, generation, activeSignal)
+        .catch(err => {
+            if (!isAbortError(err)) {
+                console.warn('[AE] Per-segment SEI extraction failed:', err);
+            }
+        });
 }
 
 export function disposeVideos() {
+    videoLoadGeneration++;
+    telemetryController?.abort();
+    telemetryController = null;
+    if (externalSignal && externalAbortHandler) {
+        externalSignal.removeEventListener('abort', externalAbortHandler);
+    }
+    externalSignal = null;
+    externalAbortHandler = null;
     pause();
     if (advancedEditorState.playback.rafId) {
         cancelAnimationFrame(advancedEditorState.playback.rafId);
@@ -147,6 +178,7 @@ export function disposeVideos() {
     }
     advancedEditorState.videoElements.clear();
     advancedEditorState.aeSeiBySegment.clear();
+    objectUrls.revokeAll();
     segments = [];
     cumStarts = [];
     totalSec = 0;
@@ -155,7 +187,8 @@ export function disposeVideos() {
     activeMasterCamera = null;
 }
 
-async function extractSeiForSegmentsInRange(groups, priorityIdx) {
+async function extractSeiForSegmentsInRange(groups, priorityIdx, generation, signal) {
+    if (generation !== videoLoadGeneration || signal?.aborted) return;
     advancedEditorState.aeSeiBySegment.clear();
 
     // Determine which segments fall inside the AE export range; we don't waste
@@ -177,13 +210,15 @@ async function extractSeiForSegmentsInRange(groups, priorityIdx) {
     ].filter(i => groups[i]);
 
     for (const i of order) {
+        if (generation !== videoLoadGeneration || signal?.aborted) return;
         const group = groups[i];
         const masterCam = masterCamera || 'front';
         const entry = group.filesByCamera?.get(masterCam)
             || group.filesByCamera?.values().next().value;
         if (!entry) continue;
         try {
-            const { seiData } = await extractSeiFromEntry(entry, null);
+            const { seiData } = await extractSeiFromEntry(entry, null, { signal });
+            if (generation !== videoLoadGeneration || signal?.aborted) return;
             if (Array.isArray(seiData) && seiData.length > 0) {
                 advancedEditorState.aeSeiBySegment.set(i, seiData);
                 // If this segment is the one the playhead is on, fire an
@@ -195,6 +230,7 @@ async function extractSeiForSegmentsInRange(groups, priorityIdx) {
                 if (i === curSeg && onTickCb) onTickCb(cur);
             }
         } catch (err) {
+            if (isAbortError(err) || signal?.aborted) return;
             console.warn('[AE] SEI extract failed for segment', i, err);
         }
     }
@@ -238,7 +274,8 @@ export async function seekCumulative(sec) {
         const wasPlaying = advancedEditorState.playback.isPlaying;
         if (wasPlaying) pause();
         currentSegIdx = segIdx;
-        await loadSegment(segIdx);
+        const generation = videoLoadGeneration;
+        if (!await loadSegment(segIdx, generation, telemetryController?.signal)) return;
         if (wasPlaying) play();
     }
 
@@ -269,7 +306,7 @@ function getEntryUrl(entry) {
         return filePathToUrl(entry.file.path);
     }
     if (entry.file instanceof File) {
-        return URL.createObjectURL(entry.file);
+        return objectUrls.add(URL.createObjectURL(entry.file));
     }
     if (entry.file.path) {
         return filePathToUrl(entry.file.path);
@@ -299,9 +336,10 @@ function pickActiveMaster(segIdx) {
     return null;
 }
 
-async function loadSegment(segIdx) {
+async function loadSegment(segIdx, generation = videoLoadGeneration, signal = telemetryController?.signal) {
+    if (generation !== videoLoadGeneration || signal?.aborted) return false;
     const seg = segments[segIdx];
-    if (!seg) return;
+    if (!seg) return false;
     activeMasterCamera = pickActiveMaster(segIdx);
     const promises = [];
     for (const [camera, vid] of advancedEditorState.videoElements.entries()) {
@@ -318,30 +356,36 @@ async function loadSegment(segIdx) {
                 const cleanup = () => {
                     vid.removeEventListener('loadedmetadata', cleanup);
                     vid.removeEventListener('error', cleanup);
+                    signal?.removeEventListener('abort', cleanup);
                     resolve();
                 };
                 vid.addEventListener('loadedmetadata', cleanup, { once: true });
                 vid.addEventListener('error', cleanup, { once: true });
+                signal?.addEventListener('abort', cleanup, { once: true });
             }));
         }
     }
     await Promise.all(promises);
+    return generation === videoLoadGeneration && !signal?.aborted;
 }
 
-function seekAllLocal(localSec) {
+function seekAllLocal(localSec, generation = videoLoadGeneration) {
     for (const vid of advancedEditorState.videoElements.values()) {
         try {
             if (vid.readyState >= 1) vid.currentTime = localSec;
             else vid.addEventListener('loadedmetadata',
-                () => { vid.currentTime = localSec; }, { once: true });
+                () => {
+                    if (generation === videoLoadGeneration) vid.currentTime = localSec;
+                }, { once: true });
         } catch {}
     }
 }
 
 function startRaf() {
     if (advancedEditorState.playback.rafId) cancelAnimationFrame(advancedEditorState.playback.rafId);
+    const generation = videoLoadGeneration;
     const tick = async () => {
-        if (!advancedEditorState.playback.isPlaying) {
+        if (generation !== videoLoadGeneration || !advancedEditorState.playback.isPlaying) {
             advancedEditorState.playback.rafId = null;
             return;
         }
@@ -355,7 +399,7 @@ function startRaf() {
             if (currentSegIdx + 1 < segments.length) {
                 pause();
                 currentSegIdx += 1;
-                await loadSegment(currentSegIdx);
+                if (!await loadSegment(currentSegIdx, generation, telemetryController?.signal)) return;
                 seekAllLocal(0);
                 play();
             } else {
@@ -381,7 +425,7 @@ function startRaf() {
             const wasPlaying = advancedEditorState.playback.isPlaying;
             pause();
             currentSegIdx += 1;
-            await loadSegment(currentSegIdx);
+            if (!await loadSegment(currentSegIdx, generation, telemetryController?.signal)) return;
             seekAllLocal(0);
             if (wasPlaying) play();
             return;

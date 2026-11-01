@@ -8,7 +8,12 @@ const app = {
   getVersion: jest.fn(() => '2026.12.13'),
   getAppPath: jest.fn(() => '/tmp/sentry-test-app'),
   isPackaged: false,
-  quit: jest.fn()
+  quit: jest.fn(),
+  relaunch: jest.fn(),
+  exit: jest.fn(),
+  commandLine: {
+    appendSwitch: jest.fn()
+  }
 };
 
 const ipcMain = {

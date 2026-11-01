@@ -222,6 +222,9 @@ export function attachTileLayer(map, opts = {}) {
     registeredMaps.set(map, entry);
     return loadSelectedProvider().then(() => {
         if (!registeredMaps.has(map)) return; // detached before setting loaded
+        // A provider swap or fallback may have added a layer while the
+        // setting was loading; drop it so it is not orphaned.
+        removeLayerFromMap(map, entry);
         addLayerToMap(map, entry, getEffectiveProviderId());
     });
 }

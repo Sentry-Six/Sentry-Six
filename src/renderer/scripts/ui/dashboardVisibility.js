@@ -28,7 +28,8 @@ export function updateDashboardVisibility() {
     // Get current dashboard layout setting
     const compactDash = document.getElementById('dashboardVisCompact');
     const dashboardLayout = window.dashboardLayout || 'default';
-    const enabled = !!state?.ui?.dashboardEnabled;
+    const enabled = !!state?.ui?.dashboardEnabled &&
+        state?.library?.capabilities?.dashboard !== false;
 
     // Hide all first
     dashboardVis.classList.add('user-hidden');
@@ -43,4 +44,29 @@ export function updateDashboardVisibility() {
     } else {
         dashboardVis.classList.toggle('user-hidden', !enabled);
     }
+}
+
+// Dashboard layout containers that support the parked state. Toggling the class
+// on all of them is safe (only the active layout is visible).
+const PARKED_CONTAINER_IDS = ['dashboardVis', 'dashboardVisCompact'];
+let lastParkedState = null;
+
+/**
+ * Toggle the "parked" telemetry-gap state on the live dashboard. When parked,
+ * CSS hides the gauges and shows a centered PARKED label while the clock stays.
+ * Independent of the user's on/off toggle. Idempotent (safe to call per frame).
+ * @param {boolean} parked
+ */
+export function setDashboardParked(parked) {
+    const next = !!parked;
+    if (next === lastParkedState) return;
+    lastParkedState = next;
+    for (const id of PARKED_CONTAINER_IDS) {
+        const el = document.getElementById(id);
+        if (el) el.classList.toggle('telemetry-parked', next);
+    }
+}
+
+export function resetDashboardParkedState() {
+    lastParkedState = null;
 }

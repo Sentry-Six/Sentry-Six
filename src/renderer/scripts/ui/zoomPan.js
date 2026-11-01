@@ -4,6 +4,7 @@
  */
 
 import { getEffectiveSlots } from '../features/cameraRearrange.js';
+import { getDashcamProfile } from '../../../shared/dashcamProfiles.mjs';
 
 // Zoom/Pan state
 export const zoomPanState = {
@@ -30,7 +31,8 @@ let getState = null;
 function shouldMirrorCamera(camera) {
     // Check if mirror cameras setting is enabled (default true)
     if (window._mirrorCameras === false) return false;
-    return camera === 'back' || camera === 'left_repeater' || camera === 'right_repeater';
+    const profileId = getState?.()?.library?.profileId || 'tesla';
+    return getDashcamProfile(profileId).mirroredCameras.includes(camera);
 }
 
 /**
@@ -63,8 +65,8 @@ export function applyMirrorTransforms() {
         const camera = slotToCamera[slot];
         const media = tile.querySelector('video, canvas');
         
-        if (media && camera) {
-            const needsMirror = shouldMirrorCamera(camera);
+        if (media) {
+            const needsMirror = !!camera && shouldMirrorCamera(camera);
             if (needsMirror && !media.classList.contains('mirrored')) {
                 media.classList.add('mirrored');
                 // Apply base mirror transform if not zoomed

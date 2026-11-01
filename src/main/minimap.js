@@ -91,21 +91,39 @@ function tileToLatLon(x, y, zoom) {
 function calculateOptimalZoom(bounds, targetSize) {
   const { minLat, maxLat, minLon, maxLon } = bounds;
   
-  // Try zoom levels from high to low, find one where bounds fit in ~2-4 tiles
+  // Preferred: highest zoom where the route fits in ~2-4 tiles (good detail)
   for (let zoom = 18; zoom >= 10; zoom--) {
     const topLeft = latLonToTile(maxLat, minLon, zoom);
     const bottomRight = latLonToTile(minLat, maxLon, zoom);
-    
+
     const tilesX = bottomRight.x - topLeft.x + 1;
     const tilesY = bottomRight.y - topLeft.y + 1;
-    
+
     // We want 2-4 tiles in each dimension for good detail
     if (tilesX <= 4 && tilesY <= 4 && tilesX >= 1 && tilesY >= 1) {
       return zoom;
     }
   }
-  
-  return 14; // Default fallback
+
+  // Long multi-city drive: nothing from zoom 10-18 fits in 4 tiles. Keep zooming
+  // out and take the highest zoom whose grid stays within MAX_TILES_PER_AXIS, so
+  // the stitch can never balloon into thousands of tiles. The old code returned a
+  // fixed zoom 14 here, which on a 6-7h drive produced a 182x72 = 13,104-tile grid
+  // and a ~1MB FFmpeg command line that died with spawn ENAMETOOLONG.
+  const MAX_TILES_PER_AXIS = 8;
+  for (let zoom = 9; zoom >= 1; zoom--) {
+    const topLeft = latLonToTile(maxLat, minLon, zoom);
+    const bottomRight = latLonToTile(minLat, maxLon, zoom);
+
+    const tilesX = bottomRight.x - topLeft.x + 1;
+    const tilesY = bottomRight.y - topLeft.y + 1;
+
+    if (tilesX <= MAX_TILES_PER_AXIS && tilesY <= MAX_TILES_PER_AXIS) {
+      return zoom;
+    }
+  }
+
+  return 1; // Whole-world view (at most 2x2 tiles) — never explodes
 }
 
 /**
@@ -168,9 +186,10 @@ async function downloadMapTile(x, y, zoom, outputPath, providerId = 'osm', reque
  * @param {string} ffmpegPath - Path to FFmpeg executable
  * @param {boolean} darkMode - Whether to apply dark theme filter to map tiles
  * @param {string} providerId - Tile provider id (see src/shared/mapProviders.js)
+ * @param {function} [onProgress] - Receives {phase, completed, total} during tile download and stitch
  * @returns {Promise<{imagePath: string, bounds: Object, zoom: number}>}
  */
-async function downloadStaticMapBackground(exportId, mapPath, targetSize, ffmpegPath, darkMode = true, providerId = MapProviders.DEFAULT_PROVIDER_ID) {
+async function downloadStaticMapBackground(exportId, mapPath, targetSize, ffmpegPath, darkMode = true, providerId = MapProviders.DEFAULT_PROVIDER_ID, onProgress = null) {
   if (!mapPath || mapPath.length === 0) {
     throw new Error('No GPS data for map background');
   }
@@ -210,12 +229,34 @@ async function downloadStaticMapBackground(exportId, mapPath, targetSize, ffmpeg
   const tilesX = bottomRightTile.x - topLeftTile.x + 1;
   const tilesY = bottomRightTile.y - topLeftTile.y + 1;
   
-  console.log(`[MAP] Downloading ${tilesX}x${tilesY} tiles (${tilesX * tilesY} total)`);
-  
+  const totalTiles = tilesX * tilesY;
+  console.log(`[MAP] Downloading ${tilesX}x${tilesY} tiles (${totalTiles} total)`);
+
+  // Safety net: zoom selection above bounds the grid, but never attempt a stitch
+  // whose `-i` argument list would exceed the OS command-line limit (~32KB on
+  // Windows) — that throws spawn ENAMETOOLONG and silently kills the map. Bail to
+  // the caller's dark-panel fallback instead of failing the whole minimap.
+  const MAX_SAFE_TILES = 256;
+  if (totalTiles > MAX_SAFE_TILES) {
+    throw new Error(`Map tile grid too large to stitch (${tilesX}x${tilesY}=${totalTiles} tiles)`);
+  }
+
+  // Report download progress without flooding IPC: emit ~150 updates across
+  // the whole batch (plus the final tile) so the renderer counter ticks
+  // smoothly even for very large grids.
+  const reportStep = Math.max(1, Math.floor(totalTiles / 150));
+  let tilesCompleted = 0;
+  const reportTileProgress = () => {
+    if (typeof onProgress !== 'function') return;
+    if (tilesCompleted % reportStep === 0 || tilesCompleted === totalTiles) {
+      onProgress({ phase: 'download', completed: tilesCompleted, total: totalTiles });
+    }
+  };
+
   // Create temp directory for tiles
   const tempDir = path.join(os.tmpdir(), `map_tiles_${exportId}_${Date.now()}`);
   fs.mkdirSync(tempDir, { recursive: true });
-  
+
   const tilePaths = [];
   // Vector providers resolve to their raster stand-in.
   const activeProvider = MapProviders.getRasterProvider(providerId);
@@ -235,12 +276,20 @@ async function downloadStaticMapBackground(exportId, mapPath, targetSize, ffmpeg
           gridY: ty - topLeftTile.y
         });
 
+        tilesCompleted++;
+        reportTileProgress();
+
         // Small delay to be nice to the tile servers
         await new Promise(r => setTimeout(r, 100));
       }
     }
-    
+
     console.log(`[MAP] Downloaded ${tilePaths.length} tiles from ${activeProvider.id}`);
+    // Hand off to the stitch phase so the renderer stops showing the tile
+    // counter and reflects that work is still happening.
+    if (typeof onProgress === 'function') {
+      onProgress({ phase: 'stitch', completed: totalTiles, total: totalTiles });
+    }
     
     // Use FFmpeg to stitch tiles together and apply dark theme
     const stitchedWidth = tilesX * tileSize;
@@ -347,13 +396,75 @@ ipcMain.on('minimap:ready', (event) => {
   }
 });
 
+function destroyWindow(window) {
+  if (!window) return;
+  try {
+    if (!window.isDestroyed?.()) window.destroy();
+  } catch {}
+}
+
 // Create a hidden BrowserWindow for minimap rendering
-async function createMinimapRenderer(minimapWidth, minimapHeight) {
+async function createMinimapRenderer(minimapWidth, minimapHeight, overrides = {}) {
   return new Promise((resolve, reject) => {
+    const createWindow = overrides.createWindow || (options => new BrowserWindow(options));
+    const rendererPath = overrides.rendererPath ||
+      path.join(__dirname, '..', 'renderer', 'minimap-renderer.html');
+    const rendererExists = overrides.rendererExists || fs.existsSync;
+    let minimapWindow;
+    let timeout = null;
+    let readyDelay = null;
+    let settled = false;
+
+    const cleanup = () => {
+      if (timeout) clearTimeout(timeout);
+      if (readyDelay) clearTimeout(readyDelay);
+      timeout = null;
+      readyDelay = null;
+      const webContents = minimapWindow?.webContents;
+      if (webContents) {
+        webContents.removeListener?.('did-fail-load', onFailLoad);
+        webContents.removeListener?.('did-finish-load', onFinishLoad);
+        minimapReadyCallbacks.delete(webContents.id);
+      }
+    };
+
+    const fail = error => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      destroyWindow(minimapWindow);
+      reject(error);
+    };
+
+    const succeed = () => {
+      if (settled) return;
+      if (minimapWindow?.isDestroyed?.()) {
+        fail(new Error('Minimap renderer closed before it became ready'));
+        return;
+      }
+      settled = true;
+      cleanup();
+      resolve(minimapWindow);
+    };
+
+    const onFailLoad = (_event, _errorCode, errorDescription) => {
+      console.error(`[MINIMAP] Renderer failed to load: ${errorDescription}`);
+      fail(new Error(`Minimap renderer failed to load: ${errorDescription}`));
+    };
+
+    const onFinishLoad = () => {
+      if (settled) return;
+      if (timeout) clearTimeout(timeout);
+      timeout = null;
+      console.log('[MINIMAP] Renderer loaded successfully');
+      readyDelay = setTimeout(succeed, 500);
+    };
+
+    try {
     // Security note: nodeIntegration + contextIsolation:false is acceptable here because
     // this is a hidden offscreen window that only loads local minimap-renderer.html.
     // No remote content is ever loaded into this window.
-    const minimapWindow = new BrowserWindow({
+    minimapWindow = createWindow({
       width: minimapWidth,
       height: minimapHeight,
       show: false,
@@ -374,34 +485,27 @@ async function createMinimapRenderer(minimapWidth, minimapHeight) {
     // Inject headers for OSM tile requests (same as main window)
     installTileRequestHeaders(minimapWindow.webContents.session);
 
-    const timeout = setTimeout(() => {
+    timeout = setTimeout(() => {
       console.error('[MINIMAP] Renderer load timeout');
-      reject(new Error('Minimap renderer load timeout'));
+      fail(new Error('Minimap renderer load timeout'));
     }, 15000);
     
-    minimapWindow.webContents.once('did-fail-load', (event, errorCode, errorDescription) => {
-      clearTimeout(timeout);
-      console.error(`[MINIMAP] Renderer failed to load: ${errorDescription}`);
-      reject(new Error(`Minimap renderer failed to load: ${errorDescription}`));
-    });
+    minimapWindow.webContents.once('did-fail-load', onFailLoad);
     
-    minimapWindow.webContents.once('did-finish-load', () => {
-      clearTimeout(timeout);
-      console.log('[MINIMAP] Renderer loaded successfully');
-      setTimeout(() => resolve(minimapWindow), 500);
-    });
+    minimapWindow.webContents.once('did-finish-load', onFinishLoad);
     
     // Load minimap renderer HTML
-    const rendererPath = path.join(__dirname, '..', 'renderer', 'minimap-renderer.html');
     console.log(`[MINIMAP] Loading renderer from: ${rendererPath}`);
     
-    if (!fs.existsSync(rendererPath)) {
-      clearTimeout(timeout);
-      reject(new Error(`Minimap renderer not found at: ${rendererPath}`));
+    if (!rendererExists(rendererPath)) {
+      fail(new Error(`Minimap renderer not found at: ${rendererPath}`));
       return;
     }
     
-    minimapWindow.loadFile(rendererPath);
+    Promise.resolve(minimapWindow.loadFile(rendererPath)).catch(fail);
+    } catch (error) {
+      fail(error);
+    }
   });
 }
 
@@ -472,7 +576,9 @@ async function preRenderMinimap(exportId, seiData, mapPath, startTimeMs, endTime
   console.log(`[MINIMAP] Creating renderer window ${minimapWidth}x${minimapHeight}`);
   console.log(`[MINIMAP] Smooth mode: ${totalFrames} frames at ${FPS}fps with interpolation`);
   const minimapWindow = await createMinimapRenderer(minimapWidth, minimapHeight);
+  let ffmpegProcess = null;
 
+  try {
   // Set the tile provider before the view locks so the right tiles load
   minimapWindow.webContents.send('minimap:setProvider', providerId);
   console.log(`[MINIMAP] Tile provider: ${providerId}`);
@@ -517,7 +623,7 @@ async function preRenderMinimap(exportId, seiData, mapPath, startTimeMs, endTime
   
   console.log(`[MINIMAP] Starting FFmpeg: ${ffmpegPath} ${ffmpegArgs.join(' ')}`);
   
-  const ffmpegProcess = spawn(ffmpegPath, ffmpegArgs, {
+  ffmpegProcess = spawn(ffmpegPath, ffmpegArgs, {
     stdio: ['pipe', 'pipe', 'pipe']
   });
   
@@ -529,11 +635,9 @@ async function preRenderMinimap(exportId, seiData, mapPath, startTimeMs, endTime
     }
   });
   
-  try {
     for (let frame = 0; frame < totalFrames; frame++) {
       if (cancelledExports.has(exportId)) {
         ffmpegProcess.stdin.end();
-        minimapWindow.destroy();
         try { fs.unlinkSync(tempPath); } catch {}
         throw new Error('Export cancelled');
       }
@@ -563,17 +667,22 @@ async function preRenderMinimap(exportId, seiData, mapPath, startTimeMs, endTime
       ffmpegProcess.on('error', reject);
     });
     
-    minimapWindow.destroy();
     return tempPath;
   } catch (err) {
-    minimapWindow.destroy();
+    try { ffmpegProcess?.stdin?.end(); } catch {}
+    try { if (ffmpegProcess && !ffmpegProcess.killed) ffmpegProcess.kill(); } catch {}
     try { fs.unlinkSync(tempPath); } catch {}
     throw err;
+  } finally {
+    minimapReadyCallbacks.delete(minimapWindow.webContents?.id);
+    destroyWindow(minimapWindow);
   }
 }
 
 module.exports = {
   calculateMinimapSize,
+  createMinimapRenderer,
+  destroyWindow,
   downloadStaticMapBackground,
   installTileRequestHeaders,
   preRenderMinimap

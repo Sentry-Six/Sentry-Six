@@ -16,6 +16,13 @@
   Var /GLOBAL oldUninstaller
   Var /GLOBAL oldInstallDir
   
+  ; Builds before the rename shipped as "Sentry-Studio". Their shortcuts are NOT
+  ; removed by the cleanup here: it deletes the uninstall registry key before the old
+  ; uninstaller ever runs, so nothing is left to take them away. Left behind, they show
+  ; up in Start as a second, dead entry alongside the new one.
+  Delete "$SMPROGRAMS\Sentry-Studio.lnk"
+  Delete "$DESKTOP\Sentry-Studio.lnk"
+
   ; Read old install location from registry
   ReadRegStr $oldInstallDir HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APP_GUID}" "InstallLocation"
   ReadRegStr $oldUninstaller HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APP_GUID}" "UninstallString"
@@ -72,6 +79,13 @@
   RMDir /r "$PROGRAMFILES\Sentry-Studio"
   RMDir /r "$PROGRAMFILES\Sentry Studio"
   
+  ; Builds before the rename shipped as "Sentry-Studio". Their shortcuts are NOT
+  ; removed by the cleanup here: it deletes the uninstall registry key before the old
+  ; uninstaller ever runs, so nothing is left to take them away. Left behind, they show
+  ; up in Start as a second, dead entry alongside the new one.
+  Delete "$SMPROGRAMS\Sentry-Studio.lnk"
+  Delete "$DESKTOP\Sentry-Studio.lnk"
+
   ; Clean up registry entries for old installation
   DeleteRegKey HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APP_GUID}"
   DeleteRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APP_GUID}"

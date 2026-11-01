@@ -5,7 +5,12 @@
 
 import { yieldToUI } from '../ui/loadingOverlay.js';
 import { t } from '../lib/i18n.js';
-import { parseTimestampKeyToEpochMs } from './clipBrowser.js';
+import {
+    getCameraLabel,
+    getDashcamProfile,
+    parseDashcamFilename
+} from '../../../shared/dashcamProfiles.mjs';
+import { buildDashcamCollections } from '../../../shared/dashcamCollections.mjs';
 
 export function getRootFolderNameFromWebkitRelativePath(relPath) {
     if (!relPath || typeof relPath !== 'string') return null;
@@ -60,17 +65,7 @@ export function parseTeslaCamPath(relPath) {
 }
 
 export function parseClipFilename(name) {
-    // Tesla naming: YYYY-MM-DD_HH-MM-SS-front.mp4
-    // Also seen in Sentry: same naming inside event folder; also "event.mp4" which we ignore.
-    const lower = name.toLowerCase();
-    if (!lower.endsWith('.mp4')) return null;
-    if (lower === 'event.mp4') return null;
-
-    const m = name.match(/^(\d{4}-\d{2}-\d{2})_(\d{2}-\d{2}-\d{2})-(.+)\.mp4$/i);
-    if (!m) return null;
-    const timestampKey = `${m[1]}_${m[2]}`;
-    const cameraRaw = m[3];
-    return { timestampKey, camera: normalizeCamera(cameraRaw) };
+    return parseDashcamFilename(name);
 }
 
 export function normalizeCamera(cameraRaw) {
@@ -84,7 +79,10 @@ export function normalizeCamera(cameraRaw) {
     return c || 'unknown';
 }
 
-export function cameraLabel(camera) {
+export function cameraLabel(camera, profileId = 'tesla') {
+    if (!getDashcamProfile(profileId).localizedCameraLabels) {
+        return getCameraLabel(profileId, camera);
+    }
     if (camera === 'front') return t('ui.cameras.front');
     if (camera === 'back') return t('ui.cameras.back');
     if (camera === 'left_repeater') return t('ui.cameras.leftRepeater');
@@ -98,6 +96,8 @@ export async function buildTeslaCamIndex(files, directoryName = null, onProgress
     const groups = new Map(); // id -> group
     let inferredRoot = directoryName || null;
     const eventAssetsByKey = new Map(); // `${tag}/${eventId}` -> { jsonFile, pngFile, mp4File }
+    const detectedProfiles = new Set();
+    let ignoredFileCount = 0;
 
     const totalFiles = files.length;
     const BATCH_SIZE = 500; // Process files in batches to prevent UI blocking
@@ -106,7 +106,9 @@ export async function buildTeslaCamIndex(files, directoryName = null, onProgress
     for (let i = 0; i < totalFiles; i++) {
         const file = files[i];
         const relPath = getBestEffortRelPath(file, directoryName);
-        const { tag, rest } = parseTeslaCamPath(relPath);
+        const parsedPath = parseTeslaCamPath(relPath);
+        let tag = parsedPath.tag;
+        const rest = parsedPath.rest;
         const filename = rest[rest.length - 1] || file.name;
         const lowerName = String(filename || '').toLowerCase();
 
@@ -127,16 +129,21 @@ export async function buildTeslaCamIndex(files, directoryName = null, onProgress
         // Regular per-camera MP4
         const parsed = parseClipFilename(filename);
         if (!parsed) {
+            if (lowerName.endsWith('.mp4')) ignoredFileCount++;
             processed++;
             continue;
         }
+        detectedProfiles.add(parsed.profileId);
 
         // SentryClips/<eventId>/YYYY-...-front.mp4
         // SavedClips/<eventId>/YYYY-...-front.mp4
         // RecentClips/YYYY-...-front.mp4
         let eventId = null;
         const tagLower = tag.toLowerCase();
-        if ((tagLower === 'sentryclips' || tagLower === 'savedclips') && rest.length >= 2) {
+        const parsedProfile = getDashcamProfile(parsed.profileId);
+        if (parsedProfile.normalizeCollectionTag) {
+            tag = parsedProfile.customCollectionLabel;
+        } else if ((tagLower === 'sentryclips' || tagLower === 'savedclips') && rest.length >= 2) {
             eventId = rest[0];
         }
 
@@ -144,6 +151,7 @@ export async function buildTeslaCamIndex(files, directoryName = null, onProgress
         if (!groups.has(groupId)) {
             groups.set(groupId, {
                 id: groupId,
+                profileId: parsed.profileId,
                 tag,
                 eventId,
                 timestampKey: parsed.timestampKey,
@@ -156,7 +164,15 @@ export async function buildTeslaCamIndex(files, directoryName = null, onProgress
             });
         }
         const g = groups.get(groupId);
-        g.filesByCamera.set(parsed.camera, { file, relPath, tag, eventId, timestampKey: parsed.timestampKey, camera: parsed.camera });
+        g.filesByCamera.set(parsed.camera, {
+            file,
+            relPath,
+            profileId: parsed.profileId,
+            tag,
+            eventId,
+            timestampKey: parsed.timestampKey,
+            camera: parsed.camera
+        });
 
         // try to infer folder label from relPath root if possible
         if (!inferredRoot && relPath) inferredRoot = relPath.split('/')[0] || null;
@@ -186,119 +202,22 @@ export async function buildTeslaCamIndex(files, directoryName = null, onProgress
 
     const arr = Array.from(groups.values());
     arr.sort((a, b) => (b.timestampKey || '').localeCompare(a.timestampKey || ''));
-    return { groups: arr, inferredRoot, eventAssetsByKey };
+    return {
+        groups: arr,
+        inferredRoot,
+        eventAssetsByKey,
+        ignoredFileCount,
+        profileId: detectedProfiles.size === 1
+            ? Array.from(detectedProfiles)[0]
+            : (detectedProfiles.size === 0 ? 'tesla' : null),
+        mixedProfiles: detectedProfiles.size > 1
+    };
 }
 
 /**
  * Build day collections from clip groups.
  * Returns { collections, allDates, dayData } — caller assigns to library.
  */
-export function buildDayCollections(groups) {
-    const byDay = new Map();
-    const allDates = new Set();
-
-    for (const g of groups) {
-        const key = String(g.timestampKey || '');
-        const day = key.split('_')[0] || 'Unknown';
-        const type = (g.tag || '').toLowerCase();
-        
-        allDates.add(day);
-        
-        if (!byDay.has(day)) {
-            byDay.set(day, {
-                recent: [],
-                sentry: new Map(),
-                saved: new Map(),
-                custom: []
-            });
-        }
-        const dayData = byDay.get(day);
-        
-        if (type === 'recentclips') {
-            dayData.recent.push(g);
-        } else if (type === 'sentryclips' && g.eventId) {
-            if (!dayData.sentry.has(g.eventId)) dayData.sentry.set(g.eventId, []);
-            dayData.sentry.get(g.eventId).push(g);
-        } else if (type === 'savedclips' && g.eventId) {
-            if (!dayData.saved.has(g.eventId)) dayData.saved.set(g.eventId, []);
-            dayData.saved.get(g.eventId).push(g);
-        } else {
-            // Custom folder structure (not RecentClips/SentryClips/SavedClips)
-            dayData.custom.push(g);
-        }
-    }
-
-    // Build collections for each selectable item
-    const collections = new Map();
-
-    for (const [day, dayData] of byDay.entries()) {
-        // Recent clips collection (all clips for this day combined)
-        if (dayData.recent.length > 0) {
-            const recentGroups = dayData.recent.sort((a, b) => (a.timestampKey || '').localeCompare(b.timestampKey || ''));
-            const id = `recent:${day}`;
-            collections.set(id, buildCollectionFromGroups(id, day, 'RecentClips', recentGroups));
-        }
-
-        // Individual Sentry events
-        for (const [eventId, eventGroups] of dayData.sentry.entries()) {
-            const sortedGroups = eventGroups.sort((a, b) => (a.timestampKey || '').localeCompare(b.timestampKey || ''));
-            const id = `sentry:${day}:${eventId}`;
-            const coll = buildCollectionFromGroups(id, day, 'SentryClips', sortedGroups);
-            coll.eventId = eventId;
-            coll.eventTime = eventId.split('_')[1]?.replace(/-/g, ':') || '';
-            collections.set(id, coll);
-        }
-
-        // Individual Saved events
-        for (const [eventId, eventGroups] of dayData.saved.entries()) {
-            const sortedGroups = eventGroups.sort((a, b) => (a.timestampKey || '').localeCompare(b.timestampKey || ''));
-            const id = `saved:${day}:${eventId}`;
-            const coll = buildCollectionFromGroups(id, day, 'SavedClips', sortedGroups);
-            coll.eventId = eventId;
-            coll.eventTime = eventId.split('_')[1]?.replace(/-/g, ':') || '';
-            collections.set(id, coll);
-        }
-
-        // Custom folder clips (non-standard folder names)
-        if (dayData.custom && dayData.custom.length > 0) {
-            const customGroups = dayData.custom.sort((a, b) => (a.timestampKey || '').localeCompare(b.timestampKey || ''));
-            const id = `custom:${day}`;
-            const coll = buildCollectionFromGroups(id, day, 'Custom', customGroups);
-            coll.isCustomStructure = true;
-            collections.set(id, coll);
-        }
-    }
-
-    return {
-        collections,
-        allDates: Array.from(allDates).sort().reverse(),
-        dayData: byDay
-    };
-}
-
-function buildCollectionFromGroups(id, day, clipType, groups) {
-    const startEpochMs = parseTimestampKeyToEpochMs(groups[0]?.timestampKey) ?? 0;
-    const lastStart = parseTimestampKeyToEpochMs(groups[groups.length - 1]?.timestampKey) ?? startEpochMs;
-    const endEpochMs = lastStart + 60_000;
-    const durationMs = Math.max(1, endEpochMs - startEpochMs);
-
-    const segmentStartsMs = groups.map(g => {
-        const t = parseTimestampKeyToEpochMs(g.timestampKey) ?? startEpochMs;
-        return Math.max(0, t - startEpochMs);
-    });
-
-    return {
-        id,
-        key: id,
-        day,
-        clipType,
-        tag: clipType,
-        groups,
-        meta: null,
-        durationMs,
-        segmentStartsMs,
-        anchorMs: 0,
-        anchorGroupId: groups[0]?.id || null,
-        sortEpoch: endEpochMs
-    };
+export function buildDayCollections(groups, options = {}) {
+    return buildDashcamCollections(groups, options);
 }

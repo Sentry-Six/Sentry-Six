@@ -3,6 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const { spawn, spawnSync } = require('child_process');
+const { prepareConcatFiles, concatFileList } = require('./main/exportConcat');
 const { writeCompactDashboardAss, writeDefaultDashboardAss, writeDetailedDashboardAss, writeTeslaMobileDashboardAss, writeTeslaMobileDateAss, writeTeslaMobileDataAss, writeTeslaScreenDashAss, writeMinimapAss } = require('./assGenerator');
 // Pure-JS PNG compositor used for blur masks. Replaces `sharp` so Linux (and other)
 // users don't need the native libvips binaries bundled.
@@ -48,12 +49,15 @@ function compositeBlurMasks(width, height, zones) {
   return PNG.sync.write(canvas);
 }
 const { checkUpdateWithTelemetry, processApiResponse } = require('./updateTelemetry');
-const { settingsPath, loadSettings, saveSettings, registerSettingsIpc } = require('./main/settings');
+const { settingsPath, loadSettings, saveSettings, registerSettingsIpc, applyPlaybackHardwareAcceleration } = require('./main/settings');
 const { SUPPORT_SERVER_URL, registerSupportChatIpc } = require('./main/supportChat');
 const { registerDiagnosticsStorageIpc } = require('./main/diagnostics');
-const { UPDATE_CONFIG, autoUpdater, getLatestVersionFromGitHub, registerAutoUpdateIpc, setupAutoUpdaterEvents } = require('./main/autoUpdate');
-const { findFFmpegPath, preCacheFFmpegPath, formatExportDuration, detectGpuHardware, detectGpuEncoder, detectHEVCEncoder, findVaapiDevice, getGpuEncoder, setGpuEncoder, getGpuEncoderHEVC, setGpuEncoderHEVC } = require('./main/ffmpeg');
+const { UPDATE_CONFIG, autoUpdater, getLatestVersionFromGitHub, registerAutoUpdateIpc, resolveUpdateChannel, setupAutoUpdaterEvents } = require('./main/autoUpdate');
+const { findFFmpegPath, findFFprobePath, preCacheFFmpegPath, formatExportDuration, detectGpuHardware, detectGpuEncoder, detectHEVCEncoder, findVaapiDevice, getGpuEncoder, setGpuEncoder, getGpuEncoderHEVC, setGpuEncoderHEVC } = require('./main/ffmpeg');
+const { registerConverterIpc } = require('./main/converter/ipc');
+const { createConverterLifecycle, createConverterRuntime, startConverterWithRecoveryPrompt } = require('./main/converter/runtime');
 const { calculateMinimapSize, downloadStaticMapBackground, preRenderMinimap, installTileRequestHeaders } = require('./main/minimap');
+const { createSentryUsbCache } = require('./main/sentryUsbCache');
 const MapProviders = require('./shared/mapProviders');
 const crypto = require('crypto');
 
@@ -109,10 +113,20 @@ console.warn = (...args) => { captureMainLog('warn', args); originalMainConsole.
 console.error = (...args) => { captureMainLog('error', args); originalMainConsole.error(...args); };
 console.info = (...args) => { captureMainLog('info', args); originalMainConsole.info(...args); };
 
-// Get the configured update branch from settings (defaults to main)
+// Apply the playback hardware-acceleration preference. This MUST run before the
+// app 'ready' event because Chromium command-line switches are read at startup.
+// Placed after the console overrides above so the decision is captured in the
+// diagnostics log.
+if (!applyPlaybackHardwareAcceleration()) {
+  console.log('[STARTUP] Hardware video acceleration disabled by user setting — using software video decode');
+}
+
+// GitHub branch the raw-file update paths read from (version.json, the
+// changelog, and the dev-install zip). Derived from the configured update
+// channel so the branch and the electron-updater release feed can never
+// disagree — see resolveUpdateChannel in src/main/autoUpdate.js.
 function getUpdateBranch() {
-  const settings = loadSettings();
-  return settings.updateBranch || UPDATE_CONFIG.defaultBranch;
+  return resolveUpdateChannel(loadSettings()).branch;
 }
 
 // Active exports tracking
@@ -120,6 +134,42 @@ const activeExports = {};
 const activeExportPaths = {}; // Track output paths for cleanup on cancel
 const cancelledExports = new Set(); // Track cancelled exports by ID
 let mainWindow = null;
+
+// The converter is composed once in the Electron main process. Its runtime
+// owns the singleton job store, recovery, child processes, and safe shutdown;
+// this file only resolves app paths/tools and connects the IPC boundary.
+const converterLifecycle = createConverterLifecycle({
+  app,
+  initialize: async ({ retainRuntime, runtime: existingRuntime, isQuitting }) => {
+    const ffmpegPath = findFFmpegPath();
+    const ffprobePath = findFFprobePath(ffmpegPath);
+    if (!ffmpegPath || !ffprobePath) {
+      throw Object.assign(new Error('Bundled converter tools are unavailable'), { code: 'CONVERTER_TOOLS_UNAVAILABLE' });
+    }
+    const runtime = existingRuntime || await createConverterRuntime({
+      userDataPath: app.getPath('userData'),
+      tempPath: app.getPath('temp'),
+      ffmpegPath,
+      ffprobePath,
+      spawn,
+      fs,
+      pathApi: path,
+      platform: process.platform,
+      onError: error => console.error('[CONVERTER] Recovery execution failed:', error?.code || 'RECOVERY_FAILED')
+    });
+    retainRuntime(runtime);
+    await runtime.start();
+    if (isQuitting()) throw Object.assign(new Error('Converter shutdown requested'), { code: 'SERVICE_SHUTDOWN' });
+    registerConverterIpc({
+      ipcMain,
+      dialog,
+      service: runtime.service,
+      capabilities: runtime.capabilities
+    });
+    return runtime;
+  },
+  onError: (error) => console.error('[CONVERTER] Shutdown failed:', error?.code || 'SHUTDOWN_FAILED')
+});
 
 // Map provider for exports. Removed providers saved by older releases (the
 // Google entries) normalize to their replacement; the export code picks a
@@ -302,6 +352,25 @@ async function performVideoExport(event, exportId, exportData, ffmpegPath) {
 
   const cleanup = () => tempFiles.forEach(f => { try { fs.unlinkSync(f); } catch { } });
 
+  const runPreparationTool = (tool, args) => new Promise((resolve, reject) => {
+    if (cancelledExports.has(exportId)) return reject(new Error('Export cancelled'));
+    const child = spawn(tool, args, { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+    activeExports[exportId] = child;
+    let stdout = '', stderr = '';
+    let timedOut = false;
+    const timeout = setTimeout(() => { timedOut = true; child.kill(); }, 120000);
+    child.stdout.on('data', data => { stdout = (stdout + data).slice(-65536); });
+    child.stderr.on('data', data => { stderr = (stderr + data).slice(-65536); });
+    child.on('error', reject);
+    child.on('close', code => {
+      clearTimeout(timeout);
+      if (activeExports[exportId] === child) delete activeExports[exportId];
+      if (cancelledExports.has(exportId)) return reject(new Error('Export cancelled'));
+      if (timedOut || code !== 0) return reject(new Error(`Export input preparation failed: ${timedOut ? 'timed out' : stderr.slice(-1000)}`));
+      resolve(stdout);
+    });
+  });
+
   // Minimap temp file path (set during pre-render)
   let minimapTempPath = null;
   // Square minimap dimension in pixels — set during pre-render, used later for
@@ -373,8 +442,13 @@ async function performVideoExport(event, exportId, exportData, ffmpegPath) {
           isConcat: false
         });
       } else {
+        const preparedFiles = await prepareConcatFiles(files, {
+          ffmpegPath, ffprobePath: findFFprobePath(ffmpegPath),
+          run: runPreparationTool, tempFiles,
+          isCancelled: () => cancelledExports.has(exportId)
+        });
         const concatPath = path.join(os.tmpdir(), `export_${camera}_${Date.now()}.txt`);
-        fs.writeFileSync(concatPath, files.map(f => `file '${f.replace(/\\/g, '/')}'`).join('\n'));
+        fs.writeFileSync(concatPath, concatFileList(preparedFiles));
         tempFiles.push(concatPath);
 
         const firstSeg = relevantSegments.find(s => s.files?.[camera] === files[0]);
@@ -886,7 +960,20 @@ async function performVideoExport(event, exportId, exportData, ffmpegPath) {
               minimapTargetSize,
               ffmpegPath,
               minimapDarkMode,
-              getEffectiveMapProvider()
+              getEffectiveMapProvider(),
+              (p) => {
+                // Tile download/stitch occupy the first ~half of the minimap
+                // bar (0-47%); the composite-video encode fills 50-100%.
+                if (p.phase === 'stitch') {
+                  sendMinimapProgress(47, 'Stitching map background...');
+                } else {
+                  const pct = p.total > 0 ? Math.round((p.completed / p.total) * 45) : 0;
+                  sendMinimapProgress(
+                    pct,
+                    `Downloading map tiles... ${p.completed.toLocaleString()}/${p.total.toLocaleString()}`
+                  );
+                }
+              }
             );
             mapBgPath = mapResult.imagePath;
             mapBounds = mapResult.bounds;
@@ -899,7 +986,7 @@ async function performVideoExport(event, exportId, exportData, ffmpegPath) {
             // Continue without map background - will use dark bg from ASS
           }
 
-          sendMinimapProgress(30, 'Generating route overlay...');
+          sendMinimapProgress(49, 'Generating route overlay...');
 
           // Step 2: Generate ASS with route path and markers
           // If we have a map background, use standalone mode with map bounds
@@ -963,6 +1050,16 @@ async function performVideoExport(event, exportId, exportData, ffmpegPath) {
             ? `,format=rgba,geq=r='r(X\\,Y)':g='g(X\\,Y)':b='b(X\\,Y)':a='alpha(X\\,Y)*min(1\\,X/W*5)*min(1\\,(H-Y)/H*5)'`
             : '';
 
+          // The minimap overlay is composited and THEN frame-selected by the
+          // timelapse filter, so at high speed-ups nearly all of its frames are
+          // discarded. Match its frame rate to the timelapse (floored at 6fps so
+          // the marker stays fluid) so this lossless .mov stays small — a 6-7h
+          // drive at 64x drops from ~21GB to ~3.5GB (6x), avoiding the
+          // "No space left on device" crash. Non-timelapse exports keep 36fps.
+          const minimapFps = (enableTimelapse && timelapseSpeed > 1)
+            ? Math.max(6, Math.ceil(FPS / timelapseSpeed))
+            : FPS;
+
           let minimapFfmpegArgs;
           if (mapBgPath) {
             // Use map image as background, loop it for video duration
@@ -975,7 +1072,7 @@ async function performVideoExport(event, exportId, exportData, ffmpegPath) {
               '-vf', `scale=${minimapTargetSize}:${minimapTargetSize},format=rgba,ass='${escapedAssPath}'${featherFilter}`,
               '-c:v', 'qtrle',
               '-pix_fmt', 'argb',
-              '-r', '36',
+              '-r', minimapFps.toString(),
               minimapVideoPath
             ];
           } else {
@@ -983,11 +1080,11 @@ async function performVideoExport(event, exportId, exportData, ffmpegPath) {
             minimapFfmpegArgs = [
               '-y',
               '-f', 'lavfi',
-              '-i', `color=c=black@0:s=${minimapTargetSize}x${minimapTargetSize}:d=${durationSec}:r=36,format=rgba`,
+              '-i', `color=c=black@0:s=${minimapTargetSize}x${minimapTargetSize}:d=${durationSec}:r=${minimapFps},format=rgba`,
               '-vf', `ass='${escapedAssPath}'${featherFilter}`,
               '-c:v', 'qtrle',
               '-pix_fmt', 'argb',
-              '-r', '36',
+              '-r', minimapFps.toString(),
               minimapVideoPath
             ];
           }
@@ -1001,7 +1098,18 @@ async function performVideoExport(event, exportId, exportData, ffmpegPath) {
             // previously ran to completion (or outlived the app) untracked.
             activeExports[exportId] = proc;
             let stderr = '';
-            proc.stderr.on('data', d => stderr += d.toString());
+            proc.stderr.on('data', d => {
+              const chunk = d.toString();
+              stderr += chunk;
+              // Advance the minimap bar 50->100% as the composite encodes.
+              const times = [...chunk.matchAll(/time=(\d+):(\d+):(\d+(?:\.\d+)?)/g)];
+              if (times.length && durationSec > 0) {
+                const m = times[times.length - 1];
+                const t = (+m[1]) * 3600 + (+m[2]) * 60 + parseFloat(m[3]);
+                const frac = Math.max(0, Math.min(1, t / durationSec));
+                sendMinimapProgress(50 + Math.round(frac * 50), `Creating minimap video... ${Math.round(frac * 100)}%`);
+              }
+            });
             proc.on('close', code => {
               if (activeExports[exportId] === proc) delete activeExports[exportId];
               if (cancelledExports.has(exportId)) reject(new Error('Export cancelled'));
@@ -1815,8 +1923,10 @@ async function performVideoExport(event, exportId, exportData, ffmpegPath) {
             sendComplete(false, { key: 'ui.export.exportFailedGpuEncoderInit' });
           } else if (errLower.includes('invalid argument') && (errLower.includes('error opening output file') || errLower.includes('no such file') || errLower.includes('filename'))) {
             sendComplete(false, { key: 'ui.export.exportFailedInvalidPath' });
-          } else if (errLower.includes('openencodesessionex failed') || errLower.includes('out of memory') || errLower.includes('cannot allocate memory')) {
+          } else if (errLower.includes('openencodesessionex failed')) {
             sendComplete(false, { key: 'ui.export.exportFailedGpuMemory' });
+          } else if (errLower.includes('out of memory') || errLower.includes('cannot allocate memory')) {
+            sendComplete(false, 'Export failed: the video pipeline ran out of memory. Try a shorter export or fewer cameras.');
           } else if (errLower.includes('no nvenc capable devices found') || errLower.includes('cannot load nvenc')) {
             sendComplete(false, { key: 'ui.export.exportFailedGpuUnavailable' });
           } else if (errLower.includes('broken pipe') || errLower.includes('connection reset')) {
@@ -1893,7 +2003,17 @@ app.whenReady().then(async () => {
     }
   }
 
-  createWindow();
+  const converterRuntime = await startConverterWithRecoveryPrompt({
+    lifecycle: converterLifecycle,
+    createWindow,
+    dialog,
+    app,
+    onError: (error) => console.error(
+      '[CONVERTER] Runtime initialization failed:',
+      error?.code || 'INITIALIZATION_FAILED'
+    )
+  });
+  if (!converterRuntime) return;
 
   // Pre-cache FFmpeg path in background after window is ready. preCacheFFmpegPath
   // is now async (uses spawn, not spawnSync) so the main-process event loop
@@ -1918,7 +2038,8 @@ app.on('window-all-closed', () => {
 
 // Clean up all active FFmpeg processes before quitting
 // This prevents orphaned processes that can block the Windows installer
-app.on('before-quit', () => {
+app.on('before-quit', (event) => {
+  void converterLifecycle.beforeQuit(event);
   console.log('[APP] before-quit: cleaning up active exports...');
   const exportIds = Object.keys(activeExports);
   if (exportIds.length > 0) {
@@ -1959,6 +2080,13 @@ ipcMain.handle('dialog:openFile', async (_event, filters) => {
 
 // Settings module (extracted to src/main/settings.js)
 registerSettingsIpc();
+
+// Relaunch the app. Used after toggling settings that only take effect at
+// startup (e.g. hardware video acceleration, which is a Chromium switch).
+ipcMain.handle('app:relaunch', () => {
+  app.relaunch();
+  app.exit(0);
+});
 
 /**
  * Check if npm packages need to be installed after an update (dev mode only)
@@ -2721,7 +2849,8 @@ ipcMain.handle('fs:readFile', async (_event, filePath) => {
 // for minutes (frozen UI). Points arrive from the worker as transferable
 // Float64Array buffers (zero-copy), stay cached here, and are inflated
 // per-drive via sentryUsb:getDriveDetail when a drive is opened.
-let sentryUsbCache = { filePath: null, mtimeMs: 0, drives: null, routeCount: 0, routesLen: 0 };
+const sentryUsbCache = createSentryUsbCache();
+const activeSentryUsbWorkers = new Set();
 
 function makeLightSentryUsbDrives(drives) {
   return drives.map(d => {
@@ -2738,17 +2867,19 @@ ipcMain.handle('sentryUsb:loadAndGroup', async (_event, filePath) => {
     // Serve from cache when the same unmodified file is requested again
     // (e.g. a renderer reload) — re-parsing a 400MB+ file takes minutes.
     const stat = fs.statSync(filePath);
-    if (sentryUsbCache.drives && sentryUsbCache.filePath === filePath && sentryUsbCache.mtimeMs === stat.mtimeMs) {
+    const cached = sentryUsbCache.get();
+    if (cached.drives && cached.filePath === filePath && cached.mtimeMs === stat.mtimeMs) {
       console.log('[SentryUSB] Serving drives from cache (file unchanged)');
       return {
         success: true,
-        drives: makeLightSentryUsbDrives(sentryUsbCache.drives),
-        driveCount: sentryUsbCache.drives.length,
-        routeCount: sentryUsbCache.routeCount,
-        routesLen: sentryUsbCache.routesLen,
+        drives: makeLightSentryUsbDrives(cached.drives),
+        driveCount: cached.drives.length,
+        routeCount: cached.routeCount,
+        routesLen: cached.routesLen,
         topKeys: ['routes', 'driveTags'],
       };
     }
+    const cacheGeneration = sentryUsbCache.generation;
 
     const { Worker } = require('worker_threads');
     const fileSize = stat.size;
@@ -2762,7 +2893,10 @@ ipcMain.handle('sentryUsb:loadAndGroup', async (_event, filePath) => {
         const worker = new Worker(path.join(__dirname, 'main', 'driveTagsWorker.js'), {
           workerData: { filePath },
         });
+        activeSentryUsbWorkers.add(worker);
+        const releaseWorker = () => activeSentryUsbWorkers.delete(worker);
         worker.once('message', (msg) => {
+          releaseWorker();
           if (msg?.ok) {
             console.log(`[SentryUSB] Tags worker: ${Object.keys(msg.driveTags).length} drive tags in ${Date.now() - t0}ms`);
             resolve(msg.driveTags);
@@ -2772,12 +2906,16 @@ ipcMain.handle('sentryUsb:loadAndGroup', async (_event, filePath) => {
           }
         });
         worker.once('error', (err) => {
+          releaseWorker();
           console.warn('[SentryUSB] Tags worker error:', err?.message || err);
           resolve({});
         });
         // A worker killed without emitting 'message'/'error' (e.g. OOM) must
         // still resolve, or the load worker waits on the tags forever.
-        worker.once('exit', () => resolve({}));
+        worker.once('exit', () => {
+          releaseWorker();
+          resolve({});
+        });
       } catch (err) {
         console.warn('[SentryUSB] Could not start tags worker:', err?.message || err);
         resolve({});
@@ -2796,6 +2934,7 @@ ipcMain.handle('sentryUsb:loadAndGroup', async (_event, filePath) => {
         if (!settled) {
           settled = true;
           fn(v);
+          activeSentryUsbWorkers.delete(worker);
           try { worker.terminate(); } catch {}
         }
       };
@@ -2803,6 +2942,7 @@ ipcMain.handle('sentryUsb:loadAndGroup', async (_event, filePath) => {
         worker = new Worker(path.join(__dirname, 'main', 'driveLoadWorker.js'), {
           workerData: { filePath },
         });
+        activeSentryUsbWorkers.add(worker);
       } catch (err) { reject(err); return; }
 
       worker.on('message', (msg) => {
@@ -2831,13 +2971,16 @@ ipcMain.handle('sentryUsb:loadAndGroup', async (_event, filePath) => {
 
     console.log(`[SentryUSB] Grouped into ${result.driveCount} drives in ${result.groupMs}ms (total ${Date.now() - t0}ms)`);
 
-    sentryUsbCache = {
+    const cacheStored = sentryUsbCache.replace({
       filePath,
       mtimeMs: stat.mtimeMs,
       drives: result.drives,
       routeCount: result.routeCount,
       routesLen: result.routesLen,
-    };
+    }, cacheGeneration);
+    if (!cacheStored) {
+      return { success: false, cancelled: true, error: 'Drive data load was cleared' };
+    }
 
     return {
       success: true,
@@ -2851,6 +2994,14 @@ ipcMain.handle('sentryUsb:loadAndGroup', async (_event, filePath) => {
     console.error('[SentryUSB] Load failed:', err);
     return { success: false, error: err?.message || String(err) };
   }
+});
+
+ipcMain.handle('sentryUsb:clear', async () => {
+  for (const worker of activeSentryUsbWorkers) {
+    try { worker.terminate(); } catch {}
+  }
+  activeSentryUsbWorkers.clear();
+  return sentryUsbCache.clear();
 });
 
 // Reverse-geocode a coordinate into a short place label for the drive list's
@@ -2879,7 +3030,7 @@ ipcMain.handle('geo:reverseGeocode', async (_event, { lat, lng } = {}) => {
 // shipping all drives' points up front which froze the app. Points are
 // cached as a flat Float64Array (5 values per point) and inflated here.
 ipcMain.handle('sentryUsb:getDriveDetail', async (_event, driveId) => {
-  const drives = sentryUsbCache.drives;
+  const drives = sentryUsbCache.get().drives;
   if (!drives) return { success: false, error: 'No drive data loaded' };
   const drive = drives.find(d => d.id === driveId);
   if (!drive) return { success: false, error: 'Drive not found: ' + driveId };
@@ -2901,6 +3052,7 @@ registerAutoUpdateIpc({
   getMainWindow: () => mainWindow,
   getUpdateBranch,
   loadSettings,
+  saveSettings,
   checkUpdateWithTelemetry,
   processApiResponse
 });
@@ -3055,4 +3207,3 @@ registerDiagnosticsStorageIpc(SUPPORT_SERVER_URL);
 
 // Support chat module (extracted to src/main/supportChat.js)
 registerSupportChatIpc();
-
