@@ -58,7 +58,7 @@ printed by `ffmpeg.exe -version`.
 
 ## License and source offer
 
-Both installers include the GPL version 3 text as
+All installers include the GPL version 3 text as
 `ffmpeg_bin/COPYING.GPLv3.txt` beside the executables. Sentry Studio runs FFmpeg
 as a separate program; Studio's own code stays under its MIT license.
 
@@ -67,8 +67,35 @@ binaries, we will provide the complete corresponding source code for the FFmpeg
 build in that release, including its dependencies and build scripts, to anyone
 who asks at info@sentry-six.com, at no more than the cost of providing it.
 
-## Linux
+## Linux release builds
 
-Install a system FFmpeg build with `drawtext` and `ass` filters, for example
-through the distribution package manager. Verify its features with
-`ffmpeg -hide_banner -filters`.
+The `.deb` bundles FFmpeg and FFprobe 9.0.2 from
+https://github.com/BtbN/FFmpeg-Builds (the `linux64-gpl` and `linuxarm64-gpl`
+static builds of release `autobuild-2026-09-30-13-08`). They include
+`drawtext`, `ass`, and the VAAPI, Quick Sync, NVENC and AMF hardware encoders.
+
+`linux-manifest.json` pins the download URLs, archive SHA-256 hashes, and
+extracted executable hashes. `scripts/prepare-linux-ffmpeg.js` runs from the
+same `beforePack` hook as the macOS script, verifies the hashes, and caches the
+executables in the ignored `ffmpeg_bin/linux/{x64,arm64}/` directories. The
+package installs them to `/opt/Sentry Studio/resources/ffmpeg_bin/`.
+
+For development on Linux, prepare the binaries before starting Studio:
+
+```sh
+node scripts/prepare-linux-ffmpeg.js
+npm start
+```
+
+Without them Studio falls back to a system FFmpeg in `/usr/bin` or
+`/usr/local/bin`; it needs the `drawtext` and `ass` filters.
+
+### Upstream sources and license
+
+These builds are configured with `--enable-gpl --enable-version3` and no
+non-free components, so FFmpeg is distributed under GPL-3.0-or-later. The
+FFmpeg source is the `n9.0.2-17-g2a571b6068` revision of
+https://github.com/FFmpeg/FFmpeg (release branch 9.0). The build scripts and
+dependency versions are at https://github.com/BtbN/FFmpeg-Builds, and the full
+configuration is printed by `ffmpeg -version`. The license and source offer
+above apply to these binaries too.

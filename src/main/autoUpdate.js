@@ -3,7 +3,9 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const https = require('https');
-const { execSync } = require('child_process');
+const crypto = require('crypto');
+const http = require('http');
+const { execSync, spawn } = require('child_process');
 
 // Auto-Update Configuration
 const UPDATE_CONFIG = {
@@ -33,6 +35,94 @@ const UPDATE_CHANNELS = Object.freeze({
 });
 const DEFAULT_CHANNEL_ID = 'stable';
 
+// Packaged Linux install that isn't an AppImage (i.e. a .deb). electron-updater
+// can't install these, so we download and install the .deb ourselves via pkexec.
+function isDebInstall() {
+  return process.platform === 'linux' && app.isPackaged && !process.env.APPIMAGE;
+}
+
+// Dev override: fetch version.json, latest-linux.yml and the .deb from
+// SENTRY_DEV_UPDATE_URL instead of GitHub. Only unpackaged Linux builds honour it,
+// and only for a loopback host, so an installed app always updates from GitHub.
+function updateBase() {
+  const raw = (process.env.SENTRY_DEV_UPDATE_URL || '').replace(/\/+$/, '');
+  if (!raw || process.platform !== 'linux' || app.isPackaged) return '';
+  try {
+    const host = new URL(raw).hostname;
+    if (host === 'localhost' || host === '127.0.0.1' || host === '::1') return raw;
+  } catch { /* malformed URL -> ignore override */ }
+  return '';
+}
+
+// Reject anything but a plain dotted version so it can't traverse the download path.
+function isValidVersion(v) {
+  return typeof v === 'string' && /^[0-9]+(\.[0-9]+){1,3}$/.test(v);
+}
+
+// Debian arch matching the electron-builder artifactName (${arch}).
+function debArch() {
+  return process.arch === 'arm64' ? 'arm64' : 'amd64';
+}
+
+// electron-builder writes latest-linux.yml for x64 and latest-linux-arm64.yml for arm64.
+function updateManifestName() {
+  return debArch() === 'arm64' ? 'latest-linux-arm64.yml' : 'latest-linux.yml';
+}
+
+function debFileName(version) {
+  return `SentryStudio-${version}-linux-${debArch()}.deb`;
+}
+
+// A file in the release for a version (dev override, else the GitHub release).
+function releaseAssetUrl(version, file) {
+  const base = updateBase();
+  return base
+    ? `${base}/${file}`
+    : `https://github.com/${UPDATE_CONFIG.owner}/${UPDATE_CONFIG.repo}/releases/download/v${version}/${file}`;
+}
+
+// The sha512 (base64) and size electron-builder recorded for a file in
+// latest-linux.yml. Only the `files:` list format it writes is accepted.
+function parseUpdateManifest(text, fileName) {
+  let current = null;
+  for (const line of text.split(/\r?\n/)) {
+    const url = line.match(/^\s*-\s+url:\s*(\S+)\s*$/);
+    if (url) {
+      current = url[1].replace(/^['"]|['"]$/g, '') === fileName ? {} : null;
+      continue;
+    }
+    if (!current) continue;
+    const sha = line.match(/^\s+sha512:\s*(\S+)\s*$/);
+    const size = line.match(/^\s+size:\s*(\d+)\s*$/);
+    if (sha) current.sha512 = sha[1].replace(/^['"]|['"]$/g, '');
+    if (size) current.size = Number(size[1]);
+    if (current.sha512 && current.size) return current;
+  }
+  return null;
+}
+
+function sha512Base64(file) {
+  const hash = crypto.createHash('sha512');
+  const fd = fs.openSync(file, 'r');
+  const buffer = Buffer.alloc(1 << 20);
+  try {
+    let read;
+    while ((read = fs.readSync(fd, buffer, 0, buffer.length, null)) > 0) hash.update(buffer.subarray(0, read));
+  } finally {
+    fs.closeSync(fd);
+  }
+  return hash.digest('base64');
+}
+
+function matchesManifest(file, expected) {
+  return fs.statSync(file).size === expected.size && sha512Base64(file) === expected.sha512;
+}
+
+// The verified .deb downloaded by update:install (and its manifest entry),
+// awaiting update:installAndRestart.
+let pendingDebPath = null;
+let pendingDebExpected = null;
+
 // electron-updater is optional - only needed for NSIS packaged installs
 // Manual npm installs use the GitHub download method instead
 let autoUpdater = null;
@@ -44,14 +134,29 @@ try {
   console.log('[UPDATE] electron-updater not available - using manual update method');
 }
 
-function httpsGet(url) {
+const REDIRECT_CODES = new Set([301, 302, 303, 307, 308]);
+const MAX_REDIRECTS = 5;
+
+// HTTPS only. Plain http is allowed just for the unpackaged dev override's
+// loopback server, and a redirect must stay on HTTPS too.
+function clientFor(url) {
+  const base = updateBase();
+  if (url.startsWith('https://')) return https;
+  if (base && url.startsWith(`${base}/`)) return http;
+  throw new Error(`Refusing non-HTTPS update URL: ${url}`);
+}
+
+function httpsGet(url, redirects = 0) {
   return new Promise((resolve, reject) => {
     const options = {
       headers: { 'User-Agent': 'Sentry-Studio-Updater' }
     };
-    https.get(url, options, (res) => {
-      if (res.statusCode === 301 || res.statusCode === 302) {
-        return httpsGet(res.headers.location).then(resolve).catch(reject);
+    clientFor(url).get(url, options, (res) => {
+      if (REDIRECT_CODES.has(res.statusCode)) {
+        res.resume();
+        if (redirects >= MAX_REDIRECTS) return reject(new Error('Too many redirects'));
+        const next = new URL(res.headers.location, url).toString();
+        return httpsGet(next, redirects + 1).then(resolve).catch(reject);
       }
       let data = '';
       res.on('data', chunk => data += chunk);
@@ -66,39 +171,75 @@ function downloadFile(url, destPath, onProgress) {
     const options = {
       headers: { 'User-Agent': 'Sentry-Studio-Updater' }
     };
-    
+
+    const fail = (err) => {
+      try { if (fs.existsSync(destPath)) fs.unlinkSync(destPath); } catch { /* best effort */ }
+      reject(err);
+    };
+
+    let redirects = 0;
     const handleResponse = (res) => {
-      if (res.statusCode === 301 || res.statusCode === 302) {
-        const redirectReq = https.get(res.headers.location, options, handleResponse);
+      if (REDIRECT_CODES.has(res.statusCode)) {
+        res.resume();
+        if (++redirects > MAX_REDIRECTS) return reject(new Error('Too many redirects'));
+        const next = new URL(res.headers.location, url).toString();
+        let redirectReq;
+        try {
+          redirectReq = clientFor(next).get(next, options, handleResponse);
+        } catch (err) {
+          return reject(err);
+        }
         redirectReq.on('error', reject);
         redirectReq.setTimeout(30000, () => { redirectReq.destroy(); reject(new Error('Redirect timeout')); });
         return;
       }
-      
+      // Only a 200 body is a real download; a 404/500 page must not be saved and
+      // later handed to `dpkg -i` as if it were a package.
+      if (res.statusCode !== 200) {
+        res.resume();
+        return reject(new Error(`Download failed: HTTP ${res.statusCode}`));
+      }
+
       const totalSize = parseInt(res.headers['content-length'], 10);
       let downloadedSize = 0;
       const file = fs.createWriteStream(destPath);
-      
+
       res.on('data', chunk => {
         downloadedSize += chunk.length;
         if (onProgress && totalSize) {
           onProgress(Math.round((downloadedSize / totalSize) * 100));
         }
       });
-      
+      res.on('error', (err) => { file.destroy(); fail(err); });
+
       res.pipe(file);
       file.on('finish', () => {
-        file.close();
-        resolve(destPath);
+        file.close(() => {
+          if (totalSize && downloadedSize !== totalSize) {
+            return fail(new Error(`Truncated download: ${downloadedSize}/${totalSize} bytes`));
+          }
+          resolve(destPath);
+        });
       });
-      file.on('error', (err) => {
-        fs.unlinkSync(destPath);
-        reject(err);
-      });
+      file.on('error', (err) => fail(err));
     };
-    
-    https.get(url, options, handleResponse).on('error', reject);
+
+    try {
+      clientFor(url).get(url, options, handleResponse).on('error', reject);
+    } catch (err) {
+      reject(err);
+    }
   });
+}
+
+// Fetch the latest version.json, honouring the dev override base URL when set.
+async function fetchLatestVersionInfo(getUpdateBranch) {
+  const base = updateBase();
+  if (base) {
+    const response = await httpsGet(`${base}/version.json?cb=${Date.now()}`);
+    return response.statusCode === 200 ? JSON.parse(response.data) : null;
+  }
+  return getLatestVersionFromGitHub(getUpdateBranch);
 }
 
 /**
@@ -420,9 +561,166 @@ function registerAutoUpdateIpc(deps) {
     }
   }
 
+  const sendUpdateError = (message) => {
+    const mainWindow = getMainWindow();
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('update:error', { message });
+    }
+  };
+
+  // Remove the temp dir holding a downloaded .deb, if any.
+  function clearPendingDeb() {
+    if (!pendingDebPath) return;
+    try { fs.rmSync(path.dirname(pendingDebPath), { recursive: true, force: true }); } catch { /* best effort */ }
+    pendingDebPath = null;
+    pendingDebExpected = null;
+  }
+
+  /** Download the new .deb; installDebAndRestart installs it on restart. */
+  async function performDebUpdate() {
+    const sendProgress = (percentage, message) => {
+      const mainWindow = getMainWindow();
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('update:progress', { percentage, message });
+      }
+    };
+
+    let destPath = null;
+    try {
+      sendProgress(5, 'Fetching latest version info...');
+      const latest = await fetchLatestVersionInfo(getUpdateBranch);
+      if (!latest || !latest.version) {
+        return { success: false, error: 'Could not fetch version info' };
+      }
+      const version = latest.version;
+      if (!isValidVersion(version)) {
+        return { success: false, error: 'Invalid update version' };
+      }
+
+      // A private 0700 dir (random name) is the download target: another local
+      // user can't pre-create or symlink the path we later install as root.
+      // The package is installed as root, so it must match the sha512 and size
+      // electron-builder recorded for it in the release's update manifest.
+      const fileName = debFileName(version);
+      const manifestResponse = await httpsGet(releaseAssetUrl(version, updateManifestName()));
+      const expected = manifestResponse.statusCode === 200 ? parseUpdateManifest(manifestResponse.data, fileName) : null;
+      if (!expected) {
+        return { success: false, error: 'Could not verify the update package' };
+      }
+
+      clearPendingDeb();
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sentry-upd-'));
+      destPath = path.join(dir, fileName);
+
+      sendProgress(10, 'Downloading update...');
+      await downloadFile(releaseAssetUrl(version, fileName), destPath, (pct) => {
+        sendProgress(10 + Math.round(pct * 0.85), `Downloading... ${pct}%`);
+      });
+
+      if (!matchesManifest(destPath, expected)) {
+        try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* best effort */ }
+        return { success: false, error: 'Update package failed verification' };
+      }
+
+      // Confirm it's really a Debian archive before offering to install it.
+      const fd = fs.openSync(destPath, 'r');
+      const magic = Buffer.alloc(8);
+      fs.readSync(fd, magic, 0, 8, 0);
+      fs.closeSync(fd);
+      if (magic.toString('binary') !== '!<arch>\n') {
+        try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* best effort */ }
+        return { success: false, error: 'Downloaded file is not a valid package' };
+      }
+
+      pendingDebPath = destPath;
+      pendingDebExpected = expected;
+      sendProgress(100, 'Update downloaded');
+
+      const mainWindow = getMainWindow();
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('update:downloaded', { version, isDeb: true });
+      }
+      return { success: true, needsRestart: true, isDeb: true };
+    } catch (err) {
+      console.error('[UPDATE] .deb download failed:', err.message);
+      if (destPath) { try { fs.rmSync(path.dirname(destPath), { recursive: true, force: true }); } catch { /* best effort */ } }
+      return { success: false, error: err.message };
+    }
+  }
+
+  // Guards against a second click spawning a competing dpkg while one is running.
+  let debInstalling = false;
+
+  /** Install the downloaded .deb via pkexec, then relaunch. dpkg -i over the
+   *  running app is safe; relaunch only on a clean exit. */
+  function installDebAndRestart() {
+    if (debInstalling) return;
+    if (!pendingDebPath || !fs.existsSync(pendingDebPath)) {
+      clearPendingDeb();
+      sendUpdateError('Update file is no longer available. Please check for updates again.');
+      return;
+    }
+    // Checked again right before the privileged install.
+    if (!pendingDebExpected || !matchesManifest(pendingDebPath, pendingDebExpected)) {
+      clearPendingDeb();
+      sendUpdateError('Update package failed verification. Please check for updates again.');
+      return;
+    }
+    debInstalling = true;
+    // Absolute paths so an attacker-controlled PATH can't substitute either binary
+    // in the privileged install. stderr is captured for diagnostics.
+    const child = spawn('/usr/bin/pkexec', ['/usr/bin/dpkg', '-i', pendingDebPath], {
+      stdio: ['ignore', 'ignore', 'pipe']
+    });
+    let stderr = '';
+    if (child.stderr) child.stderr.on('data', (d) => { stderr += d.toString(); });
+    let handled = false;
+    child.on('error', (err) => {
+      handled = true;
+      debInstalling = false;
+      console.error('[UPDATE] pkexec failed to launch:', err.message);
+      sendUpdateError('Could not start the installer.');
+    });
+    child.on('exit', (code) => {
+      if (handled) return;
+      if (code === 0) {
+        const deb = pendingDebPath;
+        pendingDebPath = null;
+        pendingDebExpected = null;
+        try { fs.rmSync(path.dirname(deb), { recursive: true, force: true }); } catch { /* best effort */ }
+        app.relaunch();
+        app.exit(0);
+      } else {
+        // Non-zero includes the user cancelling the password prompt (126/127).
+        debInstalling = false;
+        console.error(`[UPDATE] dpkg -i exited with code ${code}${stderr ? ': ' + stderr.trim() : ''}`);
+        sendUpdateError('Install was cancelled or failed.');
+      }
+    });
+  }
+
   // Update IPC handlers
   ipcMain.handle('update:check', async () => {
     try {
+      // Dev override: compare against the local version.json (no telemetry API / release).
+      if (updateBase()) {
+        const latest = await fetchLatestVersionInfo(getUpdateBranch);
+        const currentVer = app.getVersion();
+        const updateAvailable = !!(latest && latest.version && compareVersions(currentVer, latest.version) < 0);
+        if (updateAvailable) {
+          const mainWindow = getMainWindow();
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('update:available', {
+              currentVersion: currentVer,
+              latestVersion: latest.version,
+              releaseName: latest.releaseName || 'New Update',
+              releaseDate: latest.releaseDate
+            });
+          }
+        }
+        return { checked: true, updateAvailable, currentVersion: currentVer, latestVersion: (latest && latest.version) || currentVer };
+      }
+
       // Step 1: Check with telemetry API (for killswitch and update status)
       console.log('[UPDATE] Checking with telemetry API...');
       const apiResponse = await checkUpdateWithTelemetry();
@@ -498,9 +796,10 @@ function registerAutoUpdateIpc(deps) {
         console.log('[UPDATE] API reports up to date — confirming against the channel feed');
       }
 
-      // Fallback to direct GitHub/electron-updater check
+      // Fallback to direct GitHub/electron-updater check. A .deb install skips
+      // electron-updater (on Linux it only supports AppImage) and reads version.json.
       console.log('[UPDATE] Falling back to direct check...');
-      if (app.isPackaged && autoUpdater) {
+      if (app.isPackaged && autoUpdater && !isDebInstall()) {
         const result = await autoUpdater.checkForUpdates();
         // Take electron-updater's own verdict. Deriving one from updateInfo was
         // wrong twice over: updateInfo is populated on the NOT-available branch
@@ -533,6 +832,10 @@ function registerAutoUpdateIpc(deps) {
 
   ipcMain.handle('update:install', async (event) => {
     try {
+      if (isDebInstall()) {
+        // Linux .deb: download the package, install it on restart via pkexec.
+        return await performDebUpdate();
+      }
       if (app.isPackaged) {
         if (autoUpdater) {
           // Both Windows (NSIS) and macOS (Squirrel.Mac) flow through electron-updater.
@@ -571,7 +874,9 @@ function registerAutoUpdateIpc(deps) {
     // too — without the isPackaged gate that update:exit already has, this hit
     // quitAndInstall, threw, and fell through to a plain app.quit(): the app
     // vanished and nothing was installed. Dev installs update by branch zip.
-    if (app.isPackaged && autoUpdater) {
+    if (pendingDebPath) {
+      installDebAndRestart();
+    } else if (app.isPackaged && autoUpdater) {
       quitAndInstallOrExit();
     } else {
       app.quit();
@@ -579,7 +884,9 @@ function registerAutoUpdateIpc(deps) {
   });
 
   ipcMain.handle('update:exit', async () => {
-    if (app.isPackaged && autoUpdater) {
+    // "Exit" means quit, not install. A pending .deb stays for the next launch's
+    // check; only update:installAndRestart runs the privileged install.
+    if (!pendingDebPath && app.isPackaged && autoUpdater) {
       // Both platforms apply the downloaded update via Squirrel on quit.
       quitAndInstallOrExit();
     } else {
@@ -818,5 +1125,6 @@ module.exports = {
   getLatestVersionFromGitHub,
   registerAutoUpdateIpc,
   resolveUpdateChannel,
-  setupAutoUpdaterEvents
+  setupAutoUpdaterEvents,
+  linuxDebInternals: { clientFor, parseUpdateManifest, updateBase }
 };

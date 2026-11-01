@@ -13,6 +13,7 @@
     "build:mac": "electron-builder --mac --publish never",
     "build:mac-intel": "electron-builder --mac --x64 --publish never",
     "build:mac-apple-silicon": "electron-builder --mac --arm64 --publish never",
+    "build:linux": "electron-builder --linux --publish never",
     "build:all": "electron-builder --win --mac --publish never"
   },
   "keywords": [
@@ -141,7 +142,31 @@
       }
     },
     "linux": {
-      "icon": "assets/Sentry_Six.png"
+      "icon": "build/icons",
+      "category": "AudioVideo",
+      "maintainer": "Sentry-Six <noreply@sentry-six.com>",
+      "target": [
+        "deb"
+      ],
+      "artifactName": "SentryStudio-${version}-linux-${arch}.${ext}",
+      "extraResources": [
+        {
+          "from": "ffmpeg_bin/linux/${arch}/ffmpeg",
+          "to": "ffmpeg_bin/ffmpeg"
+        },
+        {
+          "from": "ffmpeg_bin/linux/${arch}/ffprobe",
+          "to": "ffmpeg_bin/ffprobe"
+        },
+        {
+          "from": "ffmpeg_bin/README.md",
+          "to": "ffmpeg_bin/README.md"
+        },
+        {
+          "from": "ffmpeg_bin/COPYING.GPLv3.txt",
+          "to": "ffmpeg_bin/COPYING.GPLv3.txt"
+        }
+      ]
     },
     "files": [
       "src/**/*",
@@ -179,6 +204,6 @@
       "repo": "Sentry-Six",
       "releaseType": "release"
     },
-    "beforePack": "scripts/prepare-macos-ffmpeg.js"
+    "beforePack": "scripts/prepare-ffmpeg.js"
   }
 }
