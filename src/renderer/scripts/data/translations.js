@@ -28,7 +28,7 @@ export const translations = {
                 layout: "Layout", classicSidebar: "Classic Sidebar", classicSidebarDesc: "Docked sidebar that doesn't overlap video",
                 overlays: "Overlays", dashboard: "Dashboard Overlay", dashboardDesc: "Show speed, gear, and telemetry data",
                 gpsMap: "GPS Map", gpsMapDesc: "Show route map with vehicle position", mapStyle: "Map Style", mapStyleLight: "Light", mapStyleDark: "Dark",
-                mapProvider: "Map Provider", mapProviderGoogle: "Google Maps", mapProviderGoogleSat: "Google Satellite", mapProviderOsm: "OpenStreetMap", placeNames: "Place Names", placeNamesDesc: "Look up drive start and end points with OpenStreetMap",
+                mapProvider: "Map Provider", mapProviderGoogle: "Google Maps", mapProviderGoogleSat: "Google Satellite", mapProviderOsm: "OpenStreetMap", placeNames: "Place Names", placeNamesDesc: "Look up drive start and end points with OpenStreetMap", openSource: "Open Source", ffmpegLicense: "FFmpeg (GPLv3)",
                 mapProviderFallbackNotice: "Google Maps unavailable — using OpenStreetMap",
                 dashboardStyle: "Dashboard Style", dashboardLayout: "Dashboard Layout", dashboardLayoutDesc: "Default or compact style", default: "Default",
                 acceleratorDisplay: "Accelerator Display", acceleratorDisplayDesc: "Pedal visualization style",

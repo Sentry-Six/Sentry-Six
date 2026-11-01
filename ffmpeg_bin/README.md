@@ -49,7 +49,23 @@ Build configuration and dependency versions are recorded by the provider:
 
 ## Windows
 
-`ffmpeg.exe` and `ffprobe.exe` are bundled by the Windows installer.
+`ffmpeg.exe` and `ffprobe.exe` are bundled by the Windows installer. They are
+the FFmpeg 7.1.1 "essentials" build from https://www.gyan.dev/ffmpeg/builds/,
+configured with `--enable-gpl --enable-version3`, so they are also distributed
+under GPL-3.0-or-later. FFmpeg source for this release:
+https://ffmpeg.org/releases/ffmpeg-7.1.1.tar.xz. The full build configuration is
+printed by `ffmpeg.exe -version`.
+
+## License and source offer
+
+Both installers include the GPL version 3 text as
+`ffmpeg_bin/COPYING.GPLv3.txt` beside the executables. Sentry Studio runs FFmpeg
+as a separate program; Studio's own code stays under its MIT license.
+
+For at least three years after we last distribute a release containing these
+binaries, we will provide the complete corresponding source code for the FFmpeg
+build in that release, including its dependencies and build scripts, to anyone
+who asks at info@sentry-six.com, at no more than the cost of providing it.
 
 ## Linux
 

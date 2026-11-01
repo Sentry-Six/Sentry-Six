@@ -64,6 +64,10 @@
         {
           "from": "ffmpeg_bin/README.md",
           "to": "ffmpeg_bin/README.md"
+        },
+        {
+          "from": "ffmpeg_bin/COPYING.GPLv3.txt",
+          "to": "ffmpeg_bin/COPYING.GPLv3.txt"
         }
       ]
     },
@@ -109,6 +113,10 @@
         {
           "from": "ffmpeg_bin/README.md",
           "to": "ffmpeg_bin/README.md"
+        },
+        {
+          "from": "ffmpeg_bin/COPYING.GPLv3.txt",
+          "to": "ffmpeg_bin/COPYING.GPLv3.txt"
         }
       ]
     },

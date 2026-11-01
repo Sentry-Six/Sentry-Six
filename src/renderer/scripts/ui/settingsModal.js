@@ -667,6 +667,15 @@ export function initSettingsModal() {
         };
     }
 
+    // FFmpeg is GPLv3: link its license, source and written offer.
+    const openFfmpegLicense = $('openFfmpegLicense');
+    if (openFfmpegLicense) {
+        openFfmpegLicense.onclick = (e) => {
+            e.preventDefault();
+            window.electronAPI?.openExternal?.('https://github.com/Sentry-Six/Sentry-Six/blob/main/ffmpeg_bin/README.md');
+        };
+    }
+
     // Privacy Policy & Terms of Service links
     const openPrivacyPolicy = $('openPrivacyPolicy');
     if (openPrivacyPolicy) {
