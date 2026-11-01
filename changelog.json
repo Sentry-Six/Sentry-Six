@@ -1,167 +1,53 @@
 {
   "versions": [
     {
-      "version": "2026.27.36",
+      "version": "2026.44.36",
       "date": "2026-11-01",
-      "title": "Sentry Tiles Maps, AI Support & Beta Features",
+      "title": "New Maps, AI Support & More",
       "changes": [
         {
           "type": "feature",
-          "description": "Maps: Every map in Studio (the live map, the Advanced Editor minimap preview, and exported minimaps) now draws OpenStreetMap data from tiles.sentryusb.com, the Sentry USB tile server, with a matching Sentry dark style for Dark mode. OpenStreetMap's own tiles remain available as a second provider in Settings → Playback & Overlays → Map, and are used automatically for the session if the vector map cannot load. The Google Maps, Google Satellite, Satellite style, and Map Labels options from the pre-release builds are replaced by these providers; a saved Google choice moves to tiles.sentryusb.com."
+          "description": "New maps: Studio's maps now come from our own map server, with clean light and dark styles. They replace Google Maps, so satellite view is gone."
         },
         {
           "type": "feature",
-          "description": "Support: AI Support replaces the support ticket chat. Studio adds its version and platform to each conversation, and diagnostics or files are sent only when you approve a request."
+          "description": "AI Support: get help right inside Studio. It replaces the old support chat."
         },
         {
           "type": "feature",
-          "description": "Drives: Place Names is a new opt-in setting in Settings → Playback & Overlays → Map. When it is on, drive start and end coordinates are sent to OpenStreetMap Nominatim to look up place names."
+          "description": "GM Surround Vision footage now plays in Studio."
         },
         {
           "type": "feature",
-          "description": "This release brings the pre-release work to stable: GM Surround Vision playback, H265 and AV1 footage conversion, the Hardware Video Acceleration setting, the Pre-release Updates toggle, the PARKED dashboard, export range anchoring, long-drive minimap fixes, memory and renderer cleanup, and the Electron security update for the eMudhra certificate authority."
-        },
-        {
-          "type": "fix",
-          "description": "Export: Each GPS minimap frame waits for its map tiles to finish loading before it is captured, so exported minimaps show a complete map from the first frame."
-        },
-        {
-          "type": "improvement",
-          "description": "Clips: Clip titles use the full card width, and the clip type badge is translated."
-        },
-        {
-          "type": "improvement",
-          "description": "Legal: Studio ships the FFmpeg GPLv3 license and source offer alongside the bundled FFmpeg, linked from Settings."
-        },
-        {
-          "type": "improvement",
-          "description": "Privacy: The privacy notice and its translations describe map tiles, place names, and clip sharing."
-        }
-      ]
-    },
-    {
-      "version": "2026.26.35",
-      "date": "2026-08-10",
-      "title": "GM Surround Vision, Pre-release Updates & Memory Cleanup",
-      "changes": [
-        {
-          "type": "feature",
-          "description": "Dashcams: Added a GM Surround Vision playback profile, so footage from GM vehicles loads alongside Tesla footage. Sentry Studio now identifies which dashcam wrote a folder from the clip filenames — Tesla's 2026-08-03_14-22-10-front.mp4 versus GM's FRONT_2026_08_03_T_14_22_10.mp4 — and switches camera names, grid layout, and segment length to match: five cameras (Left, Front, Right, Interior, Rear) in 5-minute segments instead of Tesla's six in 1-minute segments. GM clips are found automatically in a Continuous folder, or read straight off a phone's SurroundVisionRecorder path. GM footage embeds no telemetry, so the dashboard, GPS map, drive matching, and export are turned off for those clips — this is playback and camera layout only."
+          "description": "New converter for H.265 and AV1 footage."
         },
         {
           "type": "feature",
-          "description": "Updates: Added a Pre-release Updates toggle (Settings → System & Security) for trying beta builds before they are released. Turning it on asks for confirmation first, then points both the updater and the in-app changelog at the pre-release channel; turning it off returns you to stable, including stepping back down to the newest stable build if you are currently running a beta. The old Update Branch setting, whose dropdown disappeared in the 2026.6.11 UI overhaul, carries over automatically — anyone who had selected Dev-SEI back then stays on pre-releases instead of being quietly moved to stable."
+          "description": "Hardware Video Acceleration setting, for computers that stutter when playing all cameras at once."
         },
         {
           "type": "feature",
-          "description": "Maps: Settings now separates the map provider (Google Maps or OpenStreetMap) from the map style (Light, Dark, or Satellite), instead of listing Google Satellite as a third provider. Satellite is hidden while OpenStreetMap is selected — OSM has no imagery — and switching back to a drawn map restores the Light or Dark choice you had before, rather than forgetting it."
-        },
-        {
-          "type": "feature",
-          "description": "Maps: Street and place-name labels are back on by default, with a Map Labels toggle in Settings → Playback & Overlays → Map to turn them off. The previous build stripped labels from Google Maps tiles for a cleaner look; that is now your choice, and it applies to the in-app maps, the Advanced Editor minimap preview, and exported minimaps alike."
-        },
-        {
-          "type": "fix",
-          "description": "Export: The wall-clock marker fix now covers the Advanced Editor too. The previous build anchored start and end markers to wall-clock time for the standard Export window only — Advanced Editor exports still derived their range from the old timeline-percentage math, so a custom-layout export of a long drive could still begin or end minutes away from the markers you set. Both paths now read the same anchors."
-        },
-        {
-          "type": "fix",
-          "description": "Maps: Dark mode no longer muddies satellite imagery on exported minimaps. Dark mode for OpenStreetMap is faked by darkening and desaturating the tiles, and that same filter was being applied to Google Satellite's real photography, shifting the imagery's true colors. Photographic tiles are now shown as-is in dark mode; only OSM still gets the filter, since Google's drawn maps already have a night palette baked into the tiles."
-        },
-        {
-          "type": "fix",
-          "description": "Playback: When a clip fails to load, the notification now says why instead of showing \"[object Event]\". A video error event carries no message of its own — the reason lives on the video element — so the old handler was stringifying the raw event. Failures now report the actual cause (network error, a corrupt or unsupported codec, or a missing file), and the same readable text is used for errors captured in diagnostic reports."
-        },
-        {
-          "type": "fix",
-          "description": "Export: A failed GPS minimap no longer leaves a hidden window running for the rest of the session. If the offscreen minimap renderer timed out, failed to load, or the export was cancelled mid-render, the window was left behind — every retry leaking another one, along with its FFmpeg process. All failure paths now tear down the window and stop the encoder, so repeated export attempts do not pile up hidden renderers and memory."
-        },
-        {
-          "type": "fix",
-          "description": "SentryUSB: Clearing the loaded drive-data file in Settings now actually frees the memory. Clearing removed the drive list from the window but left the fully parsed drive-data.json — hundreds of megabytes on a large file — cached in the app's main process, and a load still in flight could repopulate it moments later. Clearing now also drops the main-process cache, stops any running parse workers, and discards results arriving from a load that started before the clear."
-        },
-        {
-          "type": "fix",
-          "description": "Advanced Editor: Closing the editor now fully stops its video decoding. Its extra video elements, per-segment telemetry extraction, and pending animation and timer callbacks kept running after the modal closed, so opening and closing the editor repeatedly stacked up decoders and leaked browser object URLs. Each open is now its own session that is torn down on close — videos detached, telemetry extraction cancelled, and object URLs released."
-        },
-        {
-          "type": "fix",
-          "description": "Clips: Switching to a different footage folder now releases what the previous one was holding. Event metadata, the thumbnail cache, the drive list's geocoding observer, and the video elements' open file handles all survived a folder change, so browsing several USB drives in one session kept growing the app's memory. These are cleared when a new folder loads, and reads still in flight from the old folder are discarded instead of being merged into the new library."
-        },
-        {
-          "type": "fix",
-          "description": "Playback: Picking a new clip while a long collection is still measuring its segments no longer leaves the old measurement running. Duration probing opened a hidden video element per segment with no limit and no way to stop, so hopping between multi-hour days stacked up probes that competed for video decoders and slowed down the clip you actually opened. Probes are now capped at four at a time, cancelled the moment you select something else, and remembered per file so re-opening a collection does not measure it all over again."
-        },
-        {
-          "type": "fix",
-          "description": "Playback: A segment's telemetry is now parsed once even when several parts of the app ask for it at the same moment. The live dashboard and the Advanced Editor could each start a full parse of the same video file in parallel; identical in-flight requests now share a single parse, and moving to another segment cancels the ones you have left behind."
-        },
-        {
-          "type": "fix",
-          "description": "Settings: The settings panel no longer narrows when a section grows long enough to scroll. Expanding \"Learn More\" under System & Security added a scrollbar, and because that scrollbar takes its width out of the content, every row in the panel shifted and reflowed. The scrollbar's space is now always reserved, so the panel stays put — the width counterpart to the fixed height that already keeps the window from resizing as you switch tabs."
+          "description": "Pre-release Updates setting, if you want to try new features early."
         },
         {
           "type": "improvement",
-          "description": "Playback: The dashboard now redraws only the values that actually changed. Speed, gear, blinkers, steering angle, Autopilot state, the pedals, and the map marker were all rewritten 60 times a second even when the reading was identical — almost entirely wasted work on parked Sentry footage, where nothing changes for minutes at a time. Each field is now written only when its value moves, lowering CPU use during playback."
+          "description": "Place names for drives are now optional and off by default."
         },
         {
           "type": "improvement",
-          "description": "Settings: Playback & Overlays is now split into Dashboard, Map, and UI subtabs, so the section's growing list of options is easier to scan than one long scroll."
-        },
-        {
-          "type": "improvement",
-          "description": "Settings: The Open Support Chat button now uses the app's green accent instead of the blue-to-green gradient left over from before the Liquid Glass redesign."
-        },
-        {
-          "type": "improvement",
-          "description": "App: The installed app is now named \"Sentry Studio\" everywhere the operating system shows it — the Windows Start menu, Search, Task Manager, and Add/Remove Programs, and the macOS menu bar — matching the name the app already uses on-screen, instead of the hyphenated \"Sentry-Studio\". Upgrading cleans up after the old name automatically: the outdated Start menu and desktop shortcuts are removed, and your settings and preferences carry over untouched. Two one-time notes. On Windows, a taskbar pin made from the old install now points at a program that no longer exists, so re-pin the app after updating — and because the app's folder moved, Windows may ask once more to allow it through the firewall. On macOS, installing from the DMG does not remove the old Sentry-Studio.app — drag that one to the Trash."
-        }
-      ]
-    },
-    {
-      "version": "2026.26.34",
-      "date": "2026-06-25",
-      "title": "Long Export Reliability",
-      "changes": [
-        {
-          "type": "fix",
-          "description": "Advanced Editor: The timestamp and dashboard overlays are now mutually exclusive, matching the standard Export window. The dashboard already shows the date and time, so enabling it now turns off and locks the separate timestamp overlay instead of burning both into the video — previously a custom export could show the timestamp overlapping the dashboard's own clock."
-        },
-        {
-          "type": "feature",
-          "description": "Playback: Added a Hardware Video Acceleration setting (Settings → Playback & Overlays → Cameras). On some computers with older or integrated graphics, playing all six cameras at once would freeze five of the streams while only one kept playing, because the GPU can only decode so many videos at the same time. Turning this setting off switches to software video decoding so every camera plays. It's on by default and a restart is required for a change to take effect."
+          "description": "The dashboard shows PARKED while the car is stopped."
         },
         {
           "type": "fix",
-          "description": "Dashboard: When the car is parked — Supercharging, a Sentry event, or any stop — the dashboard now shows 'PARKED' instead of freezing on the last driving values. Tesla only records telemetry (speed, gear, blinkers, Autopilot) while driving, so during a parked stretch the old dashboard kept displaying the last reading — for example holding 'R' or a speed for the entire stop — which looked like the video and dashboard had drifted out of sync. The date and clock keep ticking as before. This applies to the live in-app dashboard and all five export dashboard styles."
+          "description": "Exported map overlays show the full map from the first frame."
         },
         {
           "type": "fix",
-          "description": "Export: The GPS minimap now renders on long, multi-hour drives. A long route asked for thousands of map tiles in a single command, which overflowed the operating system's command-length limit and silently aborted the minimap (ENAMETOOLONG) — leaving the map blank or the export stuck on 'Downloading map tiles'. The tile grid is now bounded for the chosen zoom level, so even a 7-hour drive builds its map."
+          "description": "Long exports are more reliable and Studio uses less memory."
         },
         {
           "type": "fix",
-          "description": "Export: Fixed long timelapsed exports failing with 'No space left on device'. The temporary minimap video was always rendered at a high fixed frame rate regardless of timelapse speed, ballooning to around 21 GB on a 7-hour 64x export; it now matches the timelapse frame rate, shrinking the temporary file to roughly 4 GB."
-        },
-        {
-          "type": "fix",
-          "description": "Export: Start and end markers are now accurate on long drives. Marker positions were stored as a percentage of the timeline, but the timeline's measured length shifts slightly as clip durations are refined in the background — so on a multi-hour export the clip could begin or end a couple of minutes away from the marker you set. Markers are now anchored to wall-clock time, so the exported range matches the start and end times you picked."
-        },
-        {
-          "type": "improvement",
-          "description": "Export: The minimap step now shows real progress instead of appearing frozen. A live tile-download counter and a moving progress bar fill as tiles download, then hand off to 'Creating minimap video' during encoding — so it's clear the app is working, not hung, on long drives."
-        },
-        {
-          "type": "improvement",
-          "description": "Export: The minimap route line is now thinner on long, zoomed-out drives so the path stays legible instead of blobbing over the map. Line thickness scales with the minimap size and tapers as the map zooms out; short, close-up drives are unchanged."
-        },
-        {
-          "type": "improvement",
-          "description": "Maps: Google Maps tiles now render without street and place-name labels for a cleaner map, keeping road, park, and water shapes. Settings -> Map Provider still switches providers live."
-        },
-        {
-          "type": "improvement",
-          "description": "Settings: The Settings window now keeps a consistent size as you switch between tabs instead of resizing to fit each section."
+          "description": "Clip titles are no longer cut off in other languages."
         }
       ]
     },
