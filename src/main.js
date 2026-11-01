@@ -177,7 +177,7 @@ const converterLifecycle = createConverterLifecycle({
 // raster provider where it must stitch tiles itself.
 function getEffectiveMapProvider() {
   const settings = loadSettings();
-  return MapProviders.normalizeProviderId(settings.mapTileProvider);
+  return MapProviders.normalizeSelectedProviderId(settings.mapTileProvider);
 }
 
 function createWindow() {

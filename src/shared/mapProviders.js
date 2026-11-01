@@ -14,13 +14,14 @@
  *    SentryUSB VersaTiles server (TILE_ORIGIN), drawn by MapLibre GL inside
  *    Leaflet (maplibre-gl-leaflet). Vector tiles stop at z14 and are
  *    overzoomed, so a follow-the-car map needs few requests.
- *  - 'osm': the OpenStreetMap Foundation's standard raster tiles. Also the
- *    raster stand-in for 'versatiles' wherever a bitmap is stitched in the
- *    main process (export static map: a handful of tiles per user-started
- *    export, sent with an identifying User-Agent per the OSMF tile policy).
+ *  - 'osm': the OpenStreetMap Foundation's standard raster tiles. Not a user
+ *    choice: only the raster stand-in for 'versatiles' where a bitmap is
+ *    stitched in the main process (export static map: a handful of tiles per
+ *    user-started export, sent with an identifying User-Agent per the OSMF
+ *    tile policy) and when a renderer cannot draw vector maps.
  *
- * Saved ids from older releases ('google', 'google-satellite') migrate to
- * the default via normalizeProviderId().
+ * Saved choices from older releases ('google', 'google-satellite', 'osm')
+ * migrate to the default via normalizeSelectedProviderId().
  */
 (function (root, factory) {
   const api = factory();
@@ -79,6 +80,9 @@
     'google-satellite': 'versatiles'
   };
 
+  // Providers a user can pick. Internal raster fallbacks are not listed.
+  const SELECTABLE_PROVIDER_IDS = ['versatiles'];
+
   // Identifies Sentry Studio to tile servers (Node and Electron renderers
   // otherwise send a generic or browser User-Agent).
   const USER_AGENT = 'Sentry-Studio/1.0 (Tesla Dashcam Viewer; https://sentry-six.com/sentry-studio)';
@@ -93,6 +97,12 @@
     if (Object.prototype.hasOwnProperty.call(PROVIDERS, id)) return id;
     if (Object.prototype.hasOwnProperty.call(LEGACY_PROVIDER_IDS, id)) return LEGACY_PROVIDER_IDS[id];
     return DEFAULT_PROVIDER_ID;
+  }
+
+  // A saved Settings choice: anything not selectable becomes the default.
+  function normalizeSelectedProviderId(id) {
+    const normalized = normalizeProviderId(id);
+    return SELECTABLE_PROVIDER_IDS.includes(normalized) ? normalized : DEFAULT_PROVIDER_ID;
   }
 
   function getProvider(id) {
@@ -154,11 +164,13 @@
     DEFAULT_PROVIDER_ID,
     FALLBACK_PROVIDER_ID,
     LEGACY_PROVIDER_IDS,
+    SELECTABLE_PROVIDER_IDS,
     USER_AGENT,
     REFERER,
     TILE_REQUEST_URL_PATTERNS,
     TILE_ORIGIN,
     normalizeProviderId,
+    normalizeSelectedProviderId,
     getProvider,
     getRasterProvider,
     isVectorProvider,

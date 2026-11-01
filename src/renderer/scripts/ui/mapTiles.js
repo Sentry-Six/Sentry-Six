@@ -38,9 +38,9 @@ function loadSelectedProvider() {
         settingLoadPromise = (async () => {
             try {
                 const saved = await window.electronAPI?.getSetting?.(SETTING_KEY);
-                selectedProviderId = registry().normalizeProviderId(saved);
-                // Migrate ids from removed providers (e.g. the old Google
-                // entries) so Settings and exports agree on the new value.
+                selectedProviderId = registry().normalizeSelectedProviderId(saved);
+                // Migrate ids from removed choices (the old Google entries and
+                // OpenStreetMap) so Settings and exports agree on the new value.
                 if (saved != null && saved !== selectedProviderId) {
                     window.electronAPI?.setSetting?.(SETTING_KEY, selectedProviderId);
                 }
@@ -264,7 +264,7 @@ export function setMapDarkMode(enabled) {
  * fresh chance immediately.
  */
 export async function setMapTileProvider(id) {
-    selectedProviderId = registry().normalizeProviderId(id);
+    selectedProviderId = registry().normalizeSelectedProviderId(id);
     sessionFallbackActive = false;
     settingLoadPromise = Promise.resolve(selectedProviderId);
     try {

@@ -33,6 +33,17 @@ describe('map provider registry', () => {
     expect(MapProviders.getProvider('google').id).toBe('versatiles');
   });
 
+  test('a saved OpenStreetMap choice becomes the default; the raster fallback stays internal', () => {
+    expect(MapProviders.SELECTABLE_PROVIDER_IDS).toEqual(['versatiles']);
+    expect(MapProviders.normalizeSelectedProviderId('osm')).toBe('versatiles');
+    expect(MapProviders.normalizeSelectedProviderId('google-satellite')).toBe('versatiles');
+    expect(MapProviders.normalizeSelectedProviderId(undefined)).toBe('versatiles');
+    expect(MapProviders.normalizeSelectedProviderId('versatiles')).toBe('versatiles');
+    // Export stitching and the no-WebGL fallback still resolve to raster tiles.
+    expect(MapProviders.getProvider(MapProviders.FALLBACK_PROVIDER_ID).type).toBe('raster');
+    expect(MapProviders.getRasterProvider('versatiles').id).toBe('osm');
+  });
+
   test('raster downloads use OSM for the vector default, on the single policy hostname', () => {
     expect(MapProviders.getRasterProvider('versatiles').id).toBe('osm');
     expect(MapProviders.buildTileUrl('versatiles', 1, 2, 3, 7)).toBe('https://tile.openstreetmap.org/3/1/2.png');
@@ -55,11 +66,10 @@ describe('map provider registry', () => {
     expect(MapProviders.USER_AGENT).toMatch(/^Sentry-Studio\/\S+ \(.*https:\/\/sentry-six\.com/);
   });
 
-  test('settings select lists exactly the registry providers', () => {
+  test('settings offers no provider picker while only one provider is selectable', () => {
     const html = fs.readFileSync(path.join(__dirname, '../../src/renderer/index.html'), 'utf8');
-    const select = html.match(/<select id="settingsMapProvider"[\s\S]*?<\/select>/)[0];
-    const values = [...select.matchAll(/value="([^"]+)"/g)].map(m => m[1]).sort();
-    expect(values).toEqual(Object.keys(MapProviders.PROVIDERS).sort());
+    expect(MapProviders.SELECTABLE_PROVIDER_IDS).toHaveLength(1);
+    expect(html).not.toMatch(/id="settingsMapProvider"/);
   });
 });
 
