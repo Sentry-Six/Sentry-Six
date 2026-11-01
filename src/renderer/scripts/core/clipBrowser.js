@@ -162,7 +162,9 @@ export function createClipItem(coll, title, typeClass) {
     const segmentText = groups.length === 1 ? t('ui.clipBrowser.segment') : t('ui.clipBrowser.segments');
     const subline = `${groups.length} ${segmentText} · ${Math.max(1, cameras.length)} cam`;
     const badgeClass = typeClass;
-    const badgeLabel = typeClass.charAt(0).toUpperCase() + typeClass.slice(1);
+    const badgeLabel = typeClass === 'custom'
+        ? 'Custom'
+        : t(`ui.clipBrowser.${typeClass}`);
     
     // Build reason badge for SavedClips only (as text, not icon)
     let reasonBadge = '';

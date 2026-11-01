@@ -1223,6 +1223,8 @@ canvas,
 }
 
 .clip-meta-full {
+    /* List cards have no thumbnail, so span both .clip-item grid columns. */
+    grid-column: 1 / -1;
     width: 100%;
     padding: 4px 0;
 }
