@@ -1,6 +1,41 @@
 {
   "versions": [
     {
+      "version": "2026.45.38",
+      "date": "2026-11-02",
+      "title": "Export Minimaps & Fixes",
+      "changes": [
+        {
+          "type": "improvement",
+          "description": "Exported videos: the minimap comes from our own map server too, centred on your route, and dark mode uses the real dark map style."
+        },
+        {
+          "type": "improvement",
+          "description": "Computers whose graphics can't draw maps now draw them in software. If a map still can't load, Studio shows your route on a plain background."
+        },
+        {
+          "type": "fix",
+          "description": "Footage Converter: jobs that failed to start on macOS and some Windows PCs now run, and AV1 conversions land inside the size target more reliably."
+        },
+        {
+          "type": "fix",
+          "description": "When FFmpeg is missing, the export window shows the right fix for your install."
+        },
+        {
+          "type": "fix",
+          "description": "Studio quits right away when the system asks it to, for example at shutdown."
+        },
+        {
+          "type": "fix",
+          "description": "If an exported minimap's map can't be drawn, its plain panel and route still show."
+        },
+        {
+          "type": "improvement",
+          "description": "Updated to Electron 45. Studio needs macOS 13 or newer."
+        }
+      ]
+    },
+    {
       "version": "2026.44.37",
       "date": "2026-11-01",
       "title": "Linux Packages & Time Zone Update",
