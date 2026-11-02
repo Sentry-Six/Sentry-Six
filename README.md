@@ -126,18 +126,22 @@ Have questions, feedback, or want to connect with other users?
 Join our [Discord Server](https://discord.com/invite/9QZEzVwdnt)!
 
 ## Requirements
-- Windows 10+ / macOS 12+ / Linux (run from source; see Manual Installation)
+- Windows 10+ / macOS 12+ / Debian, Ubuntu and other Linux distributions that install `.deb` packages (x64 or arm64)
 
-## Automatic Installation for Windows & macOS (Recommended, easiest)
+## Automatic Installation (Recommended, easiest)
 1. Go to the Sentry Studio [Releases](https://github.com/Sentry-Six/Sentry-Six/releases/) page
 2. Download `SentryStudioSetup<version>.exe` (`SentryStudio-<version>-macOS.dmg` for macOS, a universal build for Apple Silicon and Intel)
 3. Run the installer
 4. Run Sentry Studio
 
+On Linux, download `SentryStudio-<version>-linux-amd64.deb` (most PCs) or `SentryStudio-<version>-linux-arm64.deb` (ARM computers) and install it with `sudo apt install ./SentryStudio-<version>-linux-amd64.deb`. FFmpeg is included. Sentry Studio then updates itself, asking for your password to install each update.
+
  <img width="245.5" height="96.5" alt="Screenshot_2026-01-02_at_1 17 05_PM" src="https://github.com/user-attachments/assets/81c21fef-6eb6-49c9-a0d3-75765eb32685" />
 
 
 ## Manual Installation
+
+To run from source instead:
 
 1. Install [node.js](https://nodejs.org/en/download)
 2. Extract Sentry Studio to your desired location.
