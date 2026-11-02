@@ -21,7 +21,9 @@ for (const filter of ['drawtext', 'ass', 'xstack', 'overlay', 'gblur', 'alphamer
   if (!new RegExp(`\\s${filter}\\s`).test(filters)) throw new Error(`Missing required FFmpeg filter: ${filter}`);
 }
 const encoders = run(ffmpeg, ['-hide_banner', '-encoders']);
-for (const encoder of ['libx264', 'libx265', 'hevc_vaapi', 'hevc_qsv', 'hevc_nvenc']) {
+// Intel Quick Sync (libvpl) exists only in the x64 build; Studio falls back to the other encoders on ARM.
+const requiredEncoders = ['libx264', 'libx265', 'hevc_vaapi', 'hevc_nvenc', ...(process.arch === 'x64' ? ['hevc_qsv'] : [])];
+for (const encoder of requiredEncoders) {
   if (!new RegExp(`\\s${encoder}\\s`).test(encoders)) throw new Error(`Missing FFmpeg encoder: ${encoder}`);
 }
 const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'studio-timestamp-smoke-'));

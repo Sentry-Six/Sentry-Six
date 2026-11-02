@@ -130,6 +130,8 @@ jobs:
 
   build-linux:
     strategy:
+      # One architecture's failure must not cancel the other's packages.
+      fail-fast: false
       matrix:
         include:
           - arch: x64
