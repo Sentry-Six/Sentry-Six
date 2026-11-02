@@ -259,8 +259,8 @@ function makeMinimapPreview(contentEl) {
                 doubleClickZoom: false,
                 touchZoom: false,
             });
-            // Tile layer from the shared provider registry (VersaTiles with
-            // OSM fallback); 18 preserves this preview's original zoom ceiling.
+            // Tile layer from the shared provider registry
+            // (tiles.sentryusb.com); 18 keeps this preview's zoom ceiling.
             attachTileLayer(map, { maxZoomCap: 18 });
 
             const nativeVideo = depsRef?.getNativeVideo?.();

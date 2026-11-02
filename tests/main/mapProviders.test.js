@@ -1,6 +1,6 @@
-// Map tile providers: only terms-compliant sources (VersaTiles, the
-// OpenStreetMap Foundation's tile server) and migration of settings saved
-// by releases that offered Google tiles.
+// Map tile providers: every map draws from the Sentry Six tile server
+// (VersaTiles), and settings saved by releases that offered Google or
+// OpenStreetMap tiles migrate to it.
 
 const fs = require('fs');
 const path = require('path');
@@ -8,10 +8,12 @@ const MapProviders = require('../../src/shared/mapProviders');
 const { generateMinimapAss } = require('../../src/assGenerator');
 
 describe('map provider registry', () => {
-  test('offers no Google endpoints', () => {
+  test('offers only the Sentry Six tile server', () => {
     const json = JSON.stringify(MapProviders.PROVIDERS);
     expect(json).not.toMatch(/google/i);
-    expect(Object.keys(MapProviders.PROVIDERS).sort()).toEqual(['osm', 'versatiles']);
+    expect(json).not.toMatch(/tile\.openstreetmap\.org/);
+    expect(Object.keys(MapProviders.PROVIDERS)).toEqual(['versatiles']);
+    expect(MapProviders.TILE_REQUEST_URL_PATTERNS).toEqual(['https://tiles.sentryusb.com/*']);
   });
 
   test('defaults to the VersaTiles vector style with light and dark variants', () => {
@@ -24,50 +26,59 @@ describe('map provider registry', () => {
     expect(p.attribution).toMatch(/VersaTiles.*OpenStreetMap/);
     // The styles also draw land cover, ocean depth and terrain shading.
     expect(p.attribution).toMatch(/ESA WorldCover<\/a>.*CC BY 4\.0.*GEBCO.*Mapzen/);
-    // Exported minimaps render where only OpenStreetMap data is drawn.
+    // The animated export minimap renders where only OpenStreetMap data is drawn.
     expect(p.exportCredit).toBe('\u00a9 OpenStreetMap');
-    expect(MapProviders.getProvider('osm').attribution).not.toMatch(/WorldCover|GEBCO|Mapzen/);
+    // Background colours shown when the style cannot draw.
+    expect(p.backgroundColor).toBe('rgb(248, 244, 240)');
+    expect(p.darkBackgroundColor).toBe('rgb(20, 28, 33)');
   });
 
   test('migrates removed provider ids', () => {
     expect(MapProviders.normalizeProviderId('google')).toBe('versatiles');
     expect(MapProviders.normalizeProviderId('google-satellite')).toBe('versatiles');
-    expect(MapProviders.normalizeProviderId('osm')).toBe('osm');
+    expect(MapProviders.normalizeProviderId('osm')).toBe('versatiles');
     expect(MapProviders.normalizeProviderId('nonsense')).toBe('versatiles');
     expect(MapProviders.getProvider('google').id).toBe('versatiles');
+    expect(MapProviders.getProvider('osm').id).toBe('versatiles');
   });
 
-  test('a saved OpenStreetMap choice becomes the default; the raster fallback stays internal', () => {
+  test('a saved OpenStreetMap choice becomes the default', () => {
     expect(MapProviders.SELECTABLE_PROVIDER_IDS).toEqual(['versatiles']);
     expect(MapProviders.normalizeSelectedProviderId('osm')).toBe('versatiles');
     expect(MapProviders.normalizeSelectedProviderId('google-satellite')).toBe('versatiles');
     expect(MapProviders.normalizeSelectedProviderId(undefined)).toBe('versatiles');
     expect(MapProviders.normalizeSelectedProviderId('versatiles')).toBe('versatiles');
-    // Export stitching and the no-WebGL fallback still resolve to raster tiles.
-    expect(MapProviders.getProvider(MapProviders.FALLBACK_PROVIDER_ID).type).toBe('raster');
-    expect(MapProviders.getRasterProvider('versatiles').id).toBe('osm');
   });
 
-  test('raster downloads use OSM for the vector default, on the single policy hostname', () => {
-    expect(MapProviders.getRasterProvider('versatiles').id).toBe('osm');
-    expect(MapProviders.buildTileUrl('versatiles', 1, 2, 3, 7)).toBe('https://tile.openstreetmap.org/3/1/2.png');
-    expect(MapProviders.buildTileUrl('google', 1, 2, 3)).toBe('https://tile.openstreetmap.org/3/1/2.png');
-  });
-
-  test('Leaflet raster options respect zoom caps', () => {
-    const osm = MapProviders.leafletRasterOptions('osm', 18);
-    expect(osm.maxZoom).toBe(18);
-    expect(osm.tileSize).toBeUndefined();
-    expect(osm.subdomains).toBeUndefined();
-  });
-
-  test('every provider carries attribution and an export credit', () => {
-    for (const p of Object.values(MapProviders.PROVIDERS)) {
-      expect(p.attribution).toBeTruthy();
-      expect(p.exportCredit).toBeTruthy();
-    }
-    expect(MapProviders.PROVIDERS.osm.attribution).toMatch(/OpenStreetMap/);
+  test('static minimap credits follow the relief layers drawn at that zoom', () => {
+    // MapLibre zooms: terrain shading below 15, ocean depth below 13,
+    // land cover at 10 and below.
+    expect(MapProviders.exportCredit('versatiles', 16)).toBe('\u00a9 OpenStreetMap');
+    expect(MapProviders.exportCredit('versatiles', 15)).toBe('\u00a9 OpenStreetMap');
+    expect(MapProviders.exportCredit('versatiles', 14)).toBe('\u00a9 OpenStreetMap · Mapzen');
+    expect(MapProviders.exportCredit('versatiles', 12)).toBe('\u00a9 OpenStreetMap · GEBCO · Mapzen');
+    expect(MapProviders.exportCredit('versatiles', 10)).toBe('\u00a9 OpenStreetMap · ESA WorldCover · GEBCO · Mapzen');
+    expect(MapProviders.exportCredit('versatiles')).toBe('\u00a9 OpenStreetMap');
     expect(MapProviders.USER_AGENT).toMatch(/^Sentry-Studio\/\S+ \(.*https:\/\/sentry-six\.com/);
+  });
+
+  test('no app code loads OpenStreetMap\'s raster tile server', () => {
+    const files = [];
+    const walk = (dir) => {
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          if (entry.name !== 'vendor') walk(full);
+        } else if (/\.(js|mjs|cjs|html)$/.test(entry.name)) {
+          files.push(full);
+        }
+      }
+    };
+    walk(path.join(__dirname, '../../src'));
+    expect(files.length).toBeGreaterThan(20);
+    for (const file of files) {
+      expect([file, fs.readFileSync(file, 'utf8').includes('tile.openstreetmap.org')]).toEqual([file, false]);
+    }
   });
 
   test('settings offers no provider picker while only one provider is selectable', () => {

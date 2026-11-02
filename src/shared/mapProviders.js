@@ -1,24 +1,20 @@
 /**
  * Map tile provider registry — the single source of truth for every map in
- * the app: the main viewer map, the Advanced Editor minimap preview, the
- * hidden minimap renderer window, and the export static-map tile downloader.
+ * the app: the main viewer map, the Advanced Editor minimap preview, and the
+ * hidden minimap renderer window that draws exported minimaps.
  *
  * Loaded two ways:
  *  - As a classic <script> in index.html / minimap-renderer.html, where it
  *    exposes `window.MapProviders` (classic scripts run before ES modules,
  *    so module code can rely on the global).
- *  - Via require() in the main process for export tile downloads.
+ *  - Via require() in the main process (export credits, request headers).
  *
- * Providers:
- *  - 'versatiles' (default): OpenStreetMap vector tiles from the
- *    SentryUSB VersaTiles server (TILE_ORIGIN), drawn by MapLibre GL inside
- *    Leaflet (maplibre-gl-leaflet). Vector tiles stop at z14 and are
- *    overzoomed, so a follow-the-car map needs few requests.
- *  - 'osm': the OpenStreetMap Foundation's standard raster tiles. Not a user
- *    choice: only the raster stand-in for 'versatiles' where a bitmap is
- *    stitched in the main process (export static map: a handful of tiles per
- *    user-started export, sent with an identifying User-Agent per the OSMF
- *    tile policy) and when a renderer cannot draw vector maps.
+ * Provider:
+ *  - 'versatiles': OpenStreetMap vector tiles from the SentryUSB VersaTiles
+ *    server (TILE_ORIGIN), drawn by MapLibre GL inside Leaflet
+ *    (maplibre-gl-leaflet). Vector tiles stop at z14 and are overzoomed, so
+ *    a follow-the-car map needs few requests. Every map, including exported
+ *    static minimaps, draws from this server.
  *
  * Saved choices from older releases ('google', 'google-satellite', 'osm')
  * migrate to the default via normalizeSelectedProviderId().
@@ -41,8 +37,9 @@
   const OSM_ATTRIBUTION = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
   const VERSATILES_LINK = '<a href="https://versatiles.org/">VersaTiles</a>';
   // The VersaTiles styles also draw ESA WorldCover land cover (CC BY 4.0) at
-  // z0-10, GEBCO ocean depth up to z13 and Mapzen terrain shading up to z15.
-  // Exported minimaps render at z16, where only OpenStreetMap data remains.
+  // z0-10, GEBCO ocean depth up to z13 and Mapzen terrain shading up to z15
+  // (MapLibre zooms). The animated export minimap renders at z16, where only
+  // OpenStreetMap data remains; see exportCredit() for static minimaps.
   const RELIEF_ATTRIBUTION = '&copy; <a href="https://esa-worldcover.org/en/data-access">ESA WorldCover</a>'
     + ' (<a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>)'
     + ' · <a href="https://www.gebco.net/">GEBCO</a>'
@@ -57,46 +54,31 @@
       darkStyleUrl: TILE_ORIGIN + '/assets/styles/sentry-dark/style.json',
       maxZoom: 20,
       attribution: VERSATILES_LINK + ' | ' + OSM_ATTRIBUTION + ' · ' + RELIEF_ATTRIBUTION,
-      // Raster provider used where a bitmap must be stitched (export).
-      rasterFallbackId: 'osm',
-      // Credit drawn on exported minimaps
+      // The styles' background colours: what a map shows when the style
+      // cannot draw (tile server outage, no WebGL), with routes on top.
+      backgroundColor: 'rgb(248, 244, 240)',
+      darkBackgroundColor: 'rgb(20, 28, 33)',
+      // Credit drawn on exported minimaps at z15 and above
       exportCredit: '\u00a9 OpenStreetMap'
-    },
-    'osm': {
-      id: 'osm',
-      label: 'OpenStreetMap',
-      type: 'raster',
-      // The OSMF tile policy asks for this single hostname (no a/b/c).
-      urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-      subdomains: [],
-      tileSize: 256,
-      maxNativeZoom: 19,
-      maxZoom: 19,
-      fileExt: 'png',
-      attribution: OSM_ATTRIBUTION,
-      exportCredit: '© OpenStreetMap'
     }
   };
 
   const DEFAULT_PROVIDER_ID = 'versatiles';
-  // Used when a vector style cannot load (renderer without WebGL, etc.).
-  const FALLBACK_PROVIDER_ID = 'osm';
 
   const LEGACY_PROVIDER_IDS = {
     'google': 'versatiles',
-    'google-satellite': 'versatiles'
+    'google-satellite': 'versatiles',
+    'osm': 'versatiles'
   };
 
-  // Providers a user can pick. Internal raster fallbacks are not listed.
+  // Providers a user can pick.
   const SELECTABLE_PROVIDER_IDS = ['versatiles'];
 
-  // Identifies Sentry Studio to tile servers (Node and Electron renderers
-  // otherwise send a generic or browser User-Agent).
+  // Identifies Sentry Studio to the tile server (Electron renderers
+  // otherwise send a generic browser User-Agent).
   const USER_AGENT = 'Sentry-Studio/1.0 (Tesla Dashcam Viewer; https://sentry-six.com/sentry-studio)';
-  const REFERER = 'https://sentry-six.com/';
   // URL filters for webRequest header injection.
   const TILE_REQUEST_URL_PATTERNS = [
-    'https://tile.openstreetmap.org/*',
     TILE_ORIGIN + '/*'
   ];
 
@@ -121,49 +103,17 @@
   }
 
   /**
-   * Provider to use where only raster tiles work (stitched export images).
+   * Credit for an exported static minimap drawn at the given MapLibre zoom.
+   * The relief layers fade out as the map zooms in (see RELIEF_ATTRIBUTION),
+   * so a close-up map credits only OpenStreetMap.
    */
-  function getRasterProvider(id) {
-    const p = getProvider(id);
-    return p.type === 'raster' ? p : PROVIDERS[p.rasterFallbackId || FALLBACK_PROVIDER_ID];
-  }
-
-  /**
-   * Build a concrete tile URL for direct (non-Leaflet) downloads.
-   * Vector providers resolve to their raster fallback.
-   * @param {string} id - Provider id
-   * @param {number} x - Tile X
-   * @param {number} y - Tile Y
-   * @param {number} zoom - Zoom level
-   * @param {number} requestIndex - Running request counter, used to
-   *   round-robin across the provider's subdomains (if any)
-   * @returns {string} Tile URL
-   */
-  function buildTileUrl(id, x, y, zoom, requestIndex) {
-    const p = getRasterProvider(id);
-    const s = p.subdomains && p.subdomains.length
-      ? p.subdomains[(requestIndex || 0) % p.subdomains.length]
-      : '';
-    return p.urlTemplate
-      .replace('{s}', s)
-      .replace('{x}', x)
-      .replace('{y}', y)
-      .replace('{z}', zoom);
-  }
-
-  /**
-   * Leaflet TileLayer options for a raster provider.
-   */
-  function leafletRasterOptions(id, maxZoomCap) {
-    const p = getRasterProvider(id);
-    const cap = typeof maxZoomCap === 'number' ? maxZoomCap : p.maxZoom;
-    const opts = {
-      maxZoom: Math.min(p.maxZoom, cap),
-      maxNativeZoom: p.maxNativeZoom,
-      attribution: p.attribution
-    };
-    if (p.subdomains && p.subdomains.length) opts.subdomains = p.subdomains;
-    return opts;
+  function exportCredit(id, mapLibreZoom) {
+    const parts = [getProvider(id).exportCredit];
+    const z = typeof mapLibreZoom === 'number' ? mapLibreZoom : Infinity;
+    if (z < 11) parts.push('ESA WorldCover');
+    if (z < 13) parts.push('GEBCO');
+    if (z < 15) parts.push('Mapzen');
+    return parts.join(' · ');
   }
 
   /**
@@ -201,20 +151,16 @@
   return {
     PROVIDERS,
     DEFAULT_PROVIDER_ID,
-    FALLBACK_PROVIDER_ID,
     LEGACY_PROVIDER_IDS,
     SELECTABLE_PROVIDER_IDS,
     USER_AGENT,
-    REFERER,
     TILE_REQUEST_URL_PATTERNS,
     TILE_ORIGIN,
     normalizeProviderId,
     normalizeSelectedProviderId,
     getProvider,
-    getRasterProvider,
     isVectorProvider,
-    buildTileUrl,
-    leafletRasterOptions,
+    exportCredit,
     createStyleCache
   };
 });

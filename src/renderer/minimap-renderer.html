@@ -47,17 +47,9 @@
             transform-origin: center center;
             will-change: transform;
         }
-        .leaflet-container {
-            background: #e0e0e0 !important;
-        }
-        /* Dark raster tiles: invert then rotate hue back to natural colors.
-           Vector maps use the dark style instead. */
-        .dark-mode.raster-filter .leaflet-tile-pane {
-            filter: invert(100%) hue-rotate(180deg) brightness(0.85) contrast(1.2);
-        }
-        .dark-mode .leaflet-container {
-            background: #1a1a1a !important;
-        }
+        /* The map's background colour is the style's own (set from
+           src/shared/mapProviders.js), so a map whose style cannot draw
+           still shows routes on the usual background. */
         .leaflet-marker-icon {
             filter: none !important;
         }
@@ -70,6 +62,19 @@
             color: rgba(255, 255, 255, 0.85);
             text-shadow: 0 0 2px rgba(0, 0, 0, 0.9);
             pointer-events: none;
+        }
+        /* Static export background: a plain square image, no frame. */
+        .static-mode #minimapContainer {
+            border-radius: 0;
+            border: none;
+            box-shadow: none;
+        }
+        .static-mode #minimap {
+            border-radius: 0;
+            transform: none !important;
+        }
+        .static-mode #mapCredit {
+            display: none;
         }
         .arrow-marker-icon {
             background: transparent !important;
@@ -93,9 +98,10 @@
         let mapMarker = null;
         let mapPolyline = null;
         let tileLayer = null;
-        let tileProviderId = (window.MapProviders && window.MapProviders.DEFAULT_PROVIDER_ID) || 'osm';
+        let tileProviderId = (window.MapProviders && window.MapProviders.DEFAULT_PROVIDER_ID) || 'versatiles';
         let darkMode = false;
-        let vectorFallback = false;
+        // Called when the current map layer cannot draw (see buildTileLayer).
+        let onMapFailure = null;
         
         // Arrow size as percentage of minimap size
         const ARROW_SIZE_PERCENT = 0.30;  // 18% of minimap width
@@ -221,80 +227,85 @@
             return current + delta * factor;
         }
         
-        // Tile layer from the shared provider registry (VersaTiles vector by
-        // default, OSM raster as fallback) — see src/shared/mapProviders.js.
-        function effectiveProvider() {
-            const registry = window.MapProviders;
-            const provider = registry.getProvider(tileProviderId);
-            const vectorOk = typeof L.maplibreGL === 'function' && window.maplibregl;
-            if (provider.type === 'vector' && (vectorFallback || !vectorOk)) {
-                return registry.getRasterProvider(provider.id);
-            }
-            return provider;
+        // Vector map from the shared provider registry (tiles.sentryusb.com)
+        // — see src/shared/mapProviders.js. If the style cannot draw (no
+        // WebGL, tile server outage) the map shows the style's background
+        // colour with the route on top.
+        function currentProvider() {
+            return window.MapProviders ? window.MapProviders.getProvider(tileProviderId) : null;
         }
 
-        function fallBackToRaster(reason) {
-            if (vectorFallback) return;
-            vectorFallback = true;
-            console.warn('[MINIMAP] Vector map unavailable (' + reason + ') — using OpenStreetMap tiles');
-            setTileProvider(tileProviderId);
+        function applyMapBackground() {
+            const provider = currentProvider();
+            if (!provider) return;
+            document.getElementById('minimap').style.background =
+                darkMode ? provider.darkBackgroundColor : provider.backgroundColor;
+        }
+
+        // MapLibre GL needs WebGL2.
+        let webgl2Support;
+        function webgl2Available() {
+            if (webgl2Support === undefined) {
+                try { webgl2Support = !!document.createElement('canvas').getContext('webgl2'); } catch (err) { webgl2Support = false; }
+            }
+            return webgl2Support;
+        }
+
+        function mapUnavailable(reason) {
+            console.warn('[MINIMAP] Map unavailable (' + reason + ') — drawing the route on the map background');
+            if (tileLayer && map) {
+                try { map.removeLayer(tileLayer); } catch (err) { /* already gone */ }
+            }
+            tileLayer = null;
+            document.getElementById('mapCredit').textContent = '';
+            if (onMapFailure) onMapFailure(new Error(reason));
         }
 
         function buildTileLayer() {
-            const layerOptions = {
-                updateWhenIdle: false,
-                updateWhenZooming: false,
-                keepBuffer: 8
-            };
-            if (!window.MapProviders) {
-                // Registry script failed to load — plain OSM raster tiles.
-                return L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                    maxZoom: 19, ...layerOptions
-                });
+            const provider = currentProvider();
+            if (!provider) throw new Error('map provider registry did not load');
+            if (typeof L.maplibreGL !== 'function' || !window.maplibregl) {
+                throw new Error('MapLibre did not load');
             }
-            const provider = effectiveProvider();
-            const container = document.getElementById('minimapContainer');
-            container.classList.toggle('raster-filter', provider.type !== 'vector');
+            if (!webgl2Available()) throw new Error('WebGL2 is not available');
             document.getElementById('mapCredit').textContent = provider.exportCredit || '';
-            if (provider.type === 'vector') {
-                const layer = L.maplibreGL({
-                    style: darkMode ? provider.darkStyleUrl : provider.styleUrl,
-                    interactive: false,
-                    // Keep the last frame readable by capturePage.
-                    canvasContextAttributes: { preserveDrawingBuffer: true },
-                    fadeDuration: 0
-                });
-                layer.on('add', () => {
-                    const glMap = layer.getMaplibreMap();
-                    if (!glMap) return fallBackToRaster('no GL map');
-                    // Leaflet is Web Mercator; the styles ask for a globe.
-                    glMap.on('style.load', () => glMap.setProjection({ type: 'mercator' }));
-                    let loaded = false;
-                    glMap.once('load', () => { loaded = true; });
-                    glMap.on('error', (e) => {
-                        if (!loaded) fallBackToRaster((e && e.error && e.error.message) || 'style error');
-                    });
-                });
-                return layer;
-            }
-            return L.tileLayer(provider.urlTemplate, {
-                ...window.MapProviders.leafletRasterOptions(provider.id, 19),
-                ...layerOptions
+            const layer = L.maplibreGL({
+                style: darkMode ? provider.darkStyleUrl : provider.styleUrl,
+                interactive: false,
+                // Keep the last frame readable by capturePage.
+                canvasContextAttributes: { preserveDrawingBuffer: true },
+                fadeDuration: 0
             });
+            layer.on('add', () => {
+                const glMap = layer.getMaplibreMap();
+                if (!glMap) return mapUnavailable('no GL map');
+                // Leaflet is Web Mercator; the styles ask for a globe.
+                glMap.on('style.load', () => glMap.setProjection({ type: 'mercator' }));
+                let loaded = false;
+                glMap.once('load', () => { loaded = true; });
+                glMap.on('error', (e) => {
+                    if (!loaded && tileLayer === layer) {
+                        mapUnavailable((e && e.error && e.error.message) || 'style error');
+                    }
+                });
+            });
+            return layer;
         }
 
         function setTileProvider(providerId) {
             tileProviderId = window.MapProviders
                 ? window.MapProviders.normalizeProviderId(providerId)
                 : providerId;
+            applyMapBackground();
             if (map) {
                 if (tileLayer) map.removeLayer(tileLayer);
+                tileLayer = null;
                 try {
-                    tileLayer = buildTileLayer().addTo(map);
+                    tileLayer = buildTileLayer();
+                    tileLayer.addTo(map);
                 } catch (err) {
                     // WebGL unavailable: MapLibre throws while constructing.
-                    tileLayer = null;
-                    fallBackToRaster(err.message);
+                    mapUnavailable(err.message);
                 }
             }
         }
@@ -302,13 +313,75 @@
         function setDarkMode(enabled) {
             darkMode = !!enabled;
             document.getElementById('minimapContainer').classList.toggle('dark-mode', darkMode);
-            if (tileLayer && typeof tileLayer.getMaplibreMap === 'function') {
-                const provider = effectiveProvider();
+            applyMapBackground();
+            const provider = currentProvider();
+            if (provider && tileLayer && typeof tileLayer.getMaplibreMap === 'function') {
                 const glMap = tileLayer.getMaplibreMap();
-                if (glMap && provider.type === 'vector') {
-                    glMap.setStyle(darkMode ? provider.darkStyleUrl : provider.styleUrl);
-                }
+                if (glMap) glMap.setStyle(darkMode ? provider.darkStyleUrl : provider.styleUrl);
             }
+        }
+
+        // Static export background: draw the route area once at the given
+        // Leaflet zoom (maplibre-gl-leaflet drives MapLibre at zoom - 1,
+        // because MapLibre counts zoom in 512-px tiles and Leaflet in 256-px
+        // tiles, so the ground scale matches the 256-px tile zoom). Resolves
+        // once MapLibre is idle with every tile drawn; rejects if the style
+        // cannot draw, so the export falls back to its plain dark panel.
+        const STATIC_RENDER_TIMEOUT_MS = 30000;
+        function renderStatic(opts) {
+            return new Promise((resolve, reject) => {
+                let done = false;
+                const finish = (err, value) => {
+                    if (done) return;
+                    done = true;
+                    clearTimeout(timer);
+                    onMapFailure = null;
+                    if (err) reject(err); else resolve(value);
+                };
+                const timer = setTimeout(() => finish(new Error('map did not finish drawing in time')), STATIC_RENDER_TIMEOUT_MS);
+                onMapFailure = (err) => finish(err);
+
+                if (!map) initMap();
+                document.body.classList.add('static-mode');
+                if (mapMarker) { map.removeLayer(mapMarker); mapMarker = null; }
+                if (mapPolyline) { map.removeLayer(mapPolyline); mapPolyline = null; }
+                darkMode = !!opts.dark;
+                document.getElementById('minimapContainer').classList.toggle('dark-mode', darkMode);
+                // Fractional zoom keeps the requested ground coverage when the
+                // window is sized to the export instead of whole tiles.
+                map.options.zoomSnap = 0;
+                map.invalidateSize(false);
+                map.setView(opts.center, opts.zoom, { animate: false });
+                setTileProvider(opts.providerId);
+                if (done) return;
+                const glMap = tileLayer && tileLayer.getMaplibreMap ? tileLayer.getMaplibreMap() : null;
+                if (!glMap) return finish(new Error('no GL map'));
+
+                const capture = () => {
+                    // Let the compositor present the final GL frame first.
+                    requestAnimationFrame(() => requestAnimationFrame(() => {
+                        const b = map.getBounds();
+                        finish(null, {
+                            ok: true,
+                            zoom: map.getZoom(),
+                            bounds: {
+                                minLat: b.getSouth(),
+                                maxLat: b.getNorth(),
+                                minLon: b.getWest(),
+                                maxLon: b.getEast()
+                            }
+                        });
+                    }));
+                };
+                // MapLibre's 'idle' fires only once the style, every visible
+                // tile and all placement are done. maplibre-gl-leaflet moves
+                // the GL camera on the next frame, so start listening then.
+                requestAnimationFrame(() => {
+                    if (done) return;
+                    if (glMap.loaded() && glMap.areTilesLoaded() && glMap.isStyleLoaded()) capture();
+                    else glMap.once('idle', capture);
+                });
+            });
         }
 
         function initMap() {
@@ -530,6 +603,14 @@
                 if (ipcRenderer?.send) ipcRenderer.send('minimap:ready');
             });
             
+            ipcRenderer.on('minimap:renderStatic', (event, opts) => {
+                console.log('[MINIMAP] Static background:', JSON.stringify(opts));
+                renderStatic(opts).then(
+                    (result) => ipcRenderer.send('minimap:staticRendered', result),
+                    (err) => ipcRenderer.send('minimap:staticRendered', { ok: false, error: (err && err.message) || String(err) })
+                );
+            });
+
             ipcRenderer.on('minimap:updateByTime', (event, timestampMs) => {
                 updateMarkerByTime(timestampMs);
                 whenMapSettled().then(() => {

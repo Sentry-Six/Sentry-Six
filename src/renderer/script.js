@@ -32,7 +32,7 @@ import { initAdvancedEditor, openAdvancedEditor } from './scripts/ui/advancedEdi
 import { initEventMarkers, updateEventTimelineMarker, updateEventCameraHighlight } from './scripts/ui/eventMarkers.js';
 import { initSkipSeconds, skipSeconds } from './scripts/features/skipSeconds.js';
 import { initMapVisualization, updateMapVisibility, updateMapMarker, clearMapMarker, getMapOrientation, setMapOrientation, getMapBearing, setUprightMarker } from './scripts/ui/mapVisualization.js';
-import { attachTileLayer, setMapDarkMode, wantsDarkFilter } from './scripts/ui/mapTiles.js';
+import { attachTileLayer, setMapDarkMode } from './scripts/ui/mapTiles.js';
 import { initDashboardVisibility, updateDashboardVisibility, setDashboardParked, resetDashboardParkedState } from './scripts/ui/dashboardVisibility.js';
 import { hasValidGps, extractSeiFromEntry, findSeiAtTime } from './scripts/core/seiExtractor.js';
 import { 
@@ -482,20 +482,10 @@ let useMetric = false; // Will be loaded from settings
         updateTileLabels();
     });
     
-    // Map dark mode - vector maps switch to the dark style; raster tiles get
-    // a CSS filter on the Leaflet tile pane.
+    // Map dark mode - maps switch to the dark style.
     window._mapDarkMode = false;
     function applyMapDarkMode(enabled) {
         setMapDarkMode(enabled);
-        const mapEl = document.getElementById('map');
-        if (mapEl) {
-            const tilePane = mapEl.querySelector('.leaflet-tile-pane');
-            if (tilePane) {
-                tilePane.style.filter = enabled && wantsDarkFilter()
-                    ? 'invert(100%) hue-rotate(180deg) brightness(0.85) contrast(1.2)'
-                    : '';
-            }
-        }
     }
     window.applyMapDarkMode = applyMapDarkMode;
 
@@ -512,9 +502,9 @@ let useMetric = false; // Will be loaded from settings
                 boxZoom: false,
                 keyboard: false
             }).setView([0, 0], 2);
-            // Tile source comes from the shared provider registry (VersaTiles
-            // by default, OpenStreetMap raster as the automatic fallback) —
-            // see scripts/ui/mapTiles.js and src/shared/mapProviders.js.
+            // Tile source comes from the shared provider registry
+            // (tiles.sentryusb.com) — see scripts/ui/mapTiles.js and
+            // src/shared/mapProviders.js.
             attachTileLayer(map, {
                 followDarkMode: true,
                 attributionContainer: document.getElementById('mapVis')

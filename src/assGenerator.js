@@ -982,7 +982,7 @@ function calculateGpsBounds(gpsPath, padding = 0.15) {
 
 /**
  * Convert latitude to Mercator Y coordinate
- * Required to match the Web Mercator projection used by OSM map tiles
+ * Required to match the Web Mercator projection used by map tiles
  * @param {number} lat - Latitude in degrees
  * @returns {number} Mercator Y value
  */
@@ -1008,7 +1008,7 @@ function gpsToPixel(lat, lon, bounds, mapSize, mapX, mapY, marginFraction = 0.1)
   // Normalize to 0-1 range
   // Longitude is linear in Mercator projection
   const normalX = (lon - minLon) / (maxLon - minLon || 1);
-  // Latitude must use Mercator projection to match OSM map tiles
+  // Latitude must use Mercator projection to match the map background
   const mercY = latToMercatorY(lat);
   const mercMinY = latToMercatorY(minLat);
   const mercMaxY = latToMercatorY(maxLat);

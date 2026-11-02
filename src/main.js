@@ -57,7 +57,7 @@ const { UPDATE_CONFIG, autoUpdater, getLatestVersionFromGitHub, registerAutoUpda
 const { findFFmpegPath, ffmpegMissingInfo, ffmpegMissingMessage, findFFprobePath, preCacheFFmpegPath, formatExportDuration, detectGpuHardware, detectGpuEncoder, detectHEVCEncoder, findVaapiDevice, getGpuEncoder, setGpuEncoder, getGpuEncoderHEVC, setGpuEncoderHEVC } = require('./main/ffmpeg');
 const { registerConverterIpc } = require('./main/converter/ipc');
 const { createConverterLifecycle, createConverterRuntime, startConverterWithRecoveryPrompt } = require('./main/converter/runtime');
-const { calculateMinimapSize, downloadStaticMapBackground, preRenderMinimap, installTileRequestHeaders } = require('./main/minimap');
+const { calculateMinimapSize, renderStaticMapBackground, preRenderMinimap, installTileRequestHeaders } = require('./main/minimap');
 const { createSentryUsbCache } = require('./main/sentryUsbCache');
 const MapProviders = require('./shared/mapProviders');
 const crypto = require('crypto');
@@ -122,6 +122,23 @@ if (!applyPlaybackHardwareAcceleration()) {
   console.log('[STARTUP] Hardware video acceleration disabled by user setting — using software video decode');
 }
 
+// Maps are drawn by MapLibre GL, which needs WebGL2. Chromium only draws
+// WebGL in software (SwiftShader) when this switch is set, so without it a
+// machine with no usable GPU (blocklisted driver, VM, remote desktop, GPU
+// process crash) gets no map at all. Chromium still uses the hardware GPU
+// whenever it can; SwiftShader takes over only where WebGL would otherwise
+// be off, so the switch changes nothing on a working GPU. It has to be set
+// before 'ready' (the GPU process starts then), which is before Electron can
+// report the GPU feature status, so it is set on every launch. (On macOS 27
+// with Electron 45, ANGLE's SwiftShader fails to start, so a Mac without
+// WebGL still gets the routes-on-background view from mapTiles.js.)
+// Security trade-off: Chromium calls the switch "unsafe" because SwiftShader
+// runs WebGL shaders in software outside the GPU sandbox, which is risky for
+// a browser showing arbitrary websites. Studio's windows load only the app's
+// own local pages and map tiles and styles from our own tile server
+// (tiles.sentryusb.com), so no third-party content reaches WebGL.
+app.commandLine.appendSwitch('enable-unsafe-swiftshader');
+
 // GitHub branch the raw-file update paths read from (version.json, the
 // changelog, and the dev-install zip). Derived from the configured update
 // channel so the branch and the electron-updater release feed can never
@@ -173,8 +190,7 @@ const converterLifecycle = createConverterLifecycle({
 });
 
 // Map provider for exports. Removed providers saved by older releases (the
-// Google entries) normalize to their replacement; the export code picks a
-// raster provider where it must stitch tiles itself.
+// Google and OpenStreetMap entries) normalize to their replacement.
 function getEffectiveMapProvider() {
   const settings = loadSettings();
   return MapProviders.normalizeSelectedProviderId(settings.mapTileProvider);
@@ -931,7 +947,7 @@ async function performVideoExport(event, exportId, exportData, ffmpegPath) {
       }
 
       if (minimapRenderMode === 'ass') {
-        // ASS Mode: Download map tiles + overlay ASS route/markers
+        // ASS Mode: draw a static map background + overlay ASS route/markers
         try {
           let minimapDims = calculateMinimapSize(totalW, totalH, minimapSize);
           if (isAdvancedLayout && overlayData?.minimap) {
@@ -946,44 +962,33 @@ async function performVideoExport(event, exportId, exportData, ffmpegPath) {
           const minimapTargetSize = minimapDims.width; // Square minimap
           minimapPixelSize = minimapTargetSize;
 
-          sendMinimapProgress(0, 'Downloading map tiles...');
+          sendMinimapProgress(0, 'Drawing map background...');
 
-          // Step 1: Download static map background image
+          // Step 1: Draw the static map background image
           let mapBgPath = null;
           let mapBounds = null;
           let mapZoom = null;
           let mapAttribution = '';
 
           try {
-            const mapResult = await downloadStaticMapBackground(
+            const mapResult = await renderStaticMapBackground(
               exportId,
               mapPath,
               minimapTargetSize,
-              ffmpegPath,
               minimapDarkMode,
               getEffectiveMapProvider(),
-              (p) => {
-                // Tile download/stitch occupy the first ~half of the minimap
-                // bar (0-47%); the composite-video encode fills 50-100%.
-                if (p.phase === 'stitch') {
-                  sendMinimapProgress(47, 'Stitching map background...');
-                } else {
-                  const pct = p.total > 0 ? Math.round((p.completed / p.total) * 45) : 0;
-                  sendMinimapProgress(
-                    pct,
-                    `Downloading map tiles... ${p.completed.toLocaleString()}/${p.total.toLocaleString()}`
-                  );
-                }
-              }
+              // Drawing the map occupies the first ~half of the minimap bar;
+              // the composite-video encode fills 50-100%.
+              () => sendMinimapProgress(10, 'Drawing map background...')
             );
             mapBgPath = mapResult.imagePath;
             mapBounds = mapResult.bounds;
             mapZoom = mapResult.zoom;
             mapAttribution = mapResult.attribution || '';
             tempFiles.push(mapBgPath);
-            console.log(`[MINIMAP] Downloaded map background: ${mapBgPath}`);
+            console.log(`[MINIMAP] Drew map background: ${mapBgPath}`);
           } catch (mapErr) {
-            console.warn(`[MINIMAP] Failed to download map tiles: ${mapErr.message}. Using dark background.`);
+            console.warn(`[MINIMAP] Failed to draw the map background: ${mapErr.message}. Using dark background.`);
             // Continue without map background - will use dark bg from ASS
           }
 
@@ -1077,12 +1082,14 @@ async function performVideoExport(event, exportId, exportData, ffmpegPath) {
               minimapVideoPath
             ];
           } else {
-            // Use black background with ASS (includes dark panel)
+            // Transparent canvas with the ASS dark panel. alpha=1 makes libass
+            // write the panel's alpha; without it the panel, route and car
+            // stay fully transparent and no minimap appears.
             minimapFfmpegArgs = [
               '-y',
               '-f', 'lavfi',
               '-i', `color=c=black@0:s=${minimapTargetSize}x${minimapTargetSize}:d=${durationSec}:r=${minimapFps},format=rgba`,
-              '-vf', `ass='${escapedAssPath}'${featherFilter}`,
+              '-vf', `ass='${escapedAssPath}':alpha=1${featherFilter}`,
               '-c:v', 'qtrle',
               '-pix_fmt', 'argb',
               '-r', minimapFps.toString(),

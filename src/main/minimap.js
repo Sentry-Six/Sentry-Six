@@ -2,20 +2,15 @@ const { BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
-const https = require('https');
 const { spawn } = require('child_process');
 const MapProviders = require('../shared/mapProviders');
 
-// Identify Sentry Studio to tile servers. The OSMF tile policy requires an
-// identifying User-Agent, and a Referer for web views, on tile.openstreetmap.org.
+// Identify Sentry Studio to the tile server.
 function installTileRequestHeaders(session) {
   session.webRequest.onBeforeSendHeaders(
     { urls: MapProviders.TILE_REQUEST_URL_PATTERNS },
     (details, callback) => {
       details.requestHeaders['User-Agent'] = MapProviders.USER_AGENT;
-      if (details.url.startsWith('https://tile.openstreetmap.org/')) {
-        details.requestHeaders['Referer'] = MapProviders.REFERER;
-      }
       callback({ requestHeaders: details.requestHeaders });
     }
   );
@@ -44,12 +39,10 @@ function calculateMinimapSize(outputWidth, outputHeight, sizeOption = 'medium') 
 }
 
 // ============================================
-// STATIC MAP TILE DOWNLOADING FOR ASS MINIMAP
-// Downloads raster map tiles (OpenStreetMap — the raster stand-in for the
-// VersaTiles vector default, see src/shared/mapProviders.js) and creates a
-// composite background image. A handful of tiles (at most 16) per
-// user-started export, sent with an identifying User-Agent, keeps this
-// within the OSMF tile usage policy.
+// STATIC MAP BACKGROUND FOR THE ASS MINIMAP
+// The hidden MapLibre minimap window draws the whole route area once and the
+// page is captured as the minimap background; writeMinimapAss then draws the
+// route and car over it using the returned geographic bounds.
 // ============================================
 
 /**
@@ -68,22 +61,8 @@ function latLonToTile(lat, lon, zoom) {
 }
 
 /**
- * Convert tile coordinates back to lat/lon (top-left corner of tile)
- * @param {number} x - Tile X
- * @param {number} y - Tile Y
- * @param {number} zoom - Zoom level
- * @returns {{lat: number, lon: number}}
- */
-function tileToLatLon(x, y, zoom) {
-  const n = Math.pow(2, zoom);
-  const lon = x / n * 360 - 180;
-  const latRad = Math.atan(Math.sinh(Math.PI * (1 - 2 * y / n)));
-  const lat = latRad * 180 / Math.PI;
-  return { lat, lon };
-}
-
-/**
- * Calculate optimal zoom level for GPS bounds to fit in target size
+ * Calculate optimal zoom level for GPS bounds to fit in target size.
+ * Zoom levels count 256-px tiles (Leaflet's convention).
  * @param {Object} bounds - GPS bounds {minLat, maxLat, minLon, maxLon}
  * @param {number} targetSize - Target image size in pixels
  * @returns {number} Optimal zoom level
@@ -107,9 +86,8 @@ function calculateOptimalZoom(bounds, targetSize) {
 
   // Long multi-city drive: nothing from zoom 10-18 fits in 4 tiles. Keep zooming
   // out and take the highest zoom whose grid stays within MAX_TILES_PER_AXIS, so
-  // the stitch can never balloon into thousands of tiles. The old code returned a
-  // fixed zoom 14 here, which on a 6-7h drive produced a 182x72 = 13,104-tile grid
-  // and a ~1MB FFmpeg command line that died with spawn ENAMETOOLONG.
+  // the drawn area stays within MAX_STATIC_RENDER_PX. (A fixed zoom 14 here once
+  // made a 6-7h drive need a 182x72 = 13,104-tile grid.)
   const MAX_TILES_PER_AXIS = 8;
   for (let zoom = 9; zoom >= 1; zoom--) {
     const topLeft = latLonToTile(maxLat, minLon, zoom);
@@ -126,260 +104,149 @@ function calculateOptimalZoom(bounds, targetSize) {
   return 1; // Whole-world view (at most 2x2 tiles) — never explodes
 }
 
-/**
- * Download a single map tile from the given provider
- * @param {number} x - Tile X coordinate
- * @param {number} y - Tile Y coordinate
- * @param {number} zoom - Zoom level
- * @param {string} outputPath - Path to save the tile
- * @param {string} providerId - Provider id from the shared registry
- * @param {number} requestIndex - Running counter for subdomain round-robin
- * @returns {Promise<string>} Path to downloaded tile
- */
-async function downloadMapTile(x, y, zoom, outputPath, providerId = 'osm', requestIndex = 0) {
-  return new Promise((resolve, reject) => {
-    const url = MapProviders.buildTileUrl(providerId, x, y, zoom, requestIndex);
-
-    // The UA identifies us to any tile server (Node sends none by default);
-    // the Referer is part of OSM's tile usage policy and only sent there.
-    const headers = { 'User-Agent': MapProviders.USER_AGENT };
-    if (MapProviders.getRasterProvider(providerId).id === 'osm') {
-      headers['Referer'] = MapProviders.REFERER;
-    }
-
-    const file = fs.createWriteStream(outputPath);
-
-    const request = https.get(url, { headers }, (response) => {
-      if (response.statusCode === 200) {
-        response.pipe(file);
-        file.on('finish', () => {
-          file.close();
-          resolve(outputPath);
-        });
-      } else {
-        file.close();
-        fs.unlinkSync(outputPath);
-        reject(new Error(`Failed to download tile: HTTP ${response.statusCode}`));
-      }
-    });
-    
-    request.on('error', (err) => {
-      file.close();
-      try { fs.unlinkSync(outputPath); } catch {}
-      reject(err);
-    });
-    
-    // Timeout after 10 seconds
-    request.setTimeout(10000, () => {
-      request.destroy();
-      reject(new Error('Tile download timeout'));
-    });
-  });
-}
+// Largest window the static background is drawn in. calculateOptimalZoom
+// keeps the route within 8 tiles per axis (2048 px at 256 px per tile).
+const MAX_STATIC_RENDER_PX = 2048;
+const STATIC_RENDER_TIMEOUT_MS = 45000;
 
 /**
- * Download and stitch map tiles into a single background image for minimap
- * Uses FFmpeg to combine tiles and apply dark theme filter
- * @param {string} exportId - Export ID for temp file naming
+ * Work out what the static minimap background shows: the route's bounds
+ * plus 15% padding, at the 256-px tile zoom calculateOptimalZoom picks, in a
+ * square window that holds the tile grid around the route.
  * @param {Array} mapPath - Array of [lat, lon] GPS coordinates
- * @param {number} targetSize - Target output size in pixels (square)
- * @param {string} ffmpegPath - Path to FFmpeg executable
- * @param {boolean} darkMode - Whether to apply dark theme filter to map tiles
- * @param {string} providerId - Tile provider id (see src/shared/mapProviders.js)
- * @param {function} [onProgress] - Receives {phase, completed, total} during tile download and stitch
- * @returns {Promise<{imagePath: string, bounds: Object, zoom: number}>}
+ * @param {number} targetSize - Minimap size in the export, in pixels
+ * @returns {{center: number[], zoom: number, renderZoom: number, renderSize: number}}
+ *   zoom is the tile zoom (also scales the route line); renderZoom and
+ *   renderSize are the Leaflet zoom and window size actually drawn. When the
+ *   grid is smaller than the export (or larger than MAX_STATIC_RENDER_PX) the
+ *   window is resized and the zoom shifted by log2 of the ratio, so the
+ *   ground covered stays the same and the image is never upscaled.
  */
-async function downloadStaticMapBackground(exportId, mapPath, targetSize, ffmpegPath, darkMode = true, providerId = MapProviders.DEFAULT_PROVIDER_ID, onProgress = null) {
-  if (!mapPath || mapPath.length === 0) {
-    throw new Error('No GPS data for map background');
-  }
-  
-  // Calculate bounds with padding
+function staticMapView(mapPath, targetSize) {
   let minLat = Infinity, maxLat = -Infinity;
   let minLon = Infinity, maxLon = -Infinity;
-  
+
   for (const [lat, lon] of mapPath) {
     if (lat < minLat) minLat = lat;
     if (lat > maxLat) maxLat = lat;
     if (lon < minLon) minLon = lon;
     if (lon > maxLon) maxLon = lon;
   }
-  
+
   // Add 15% padding
   const latRange = maxLat - minLat || 0.001;
   const lonRange = maxLon - minLon || 0.001;
   const latPad = latRange * 0.15;
   const lonPad = lonRange * 0.15;
-  
+
   const bounds = {
     minLat: minLat - latPad,
     maxLat: maxLat + latPad,
     minLon: minLon - lonPad,
     maxLon: maxLon + lonPad
   };
-  
-  // Calculate optimal zoom
+
   const zoom = calculateOptimalZoom(bounds, targetSize);
-  console.log(`[MAP] Calculated zoom level: ${zoom} for bounds`);
-  
-  // Get tile range
   const topLeftTile = latLonToTile(bounds.maxLat, bounds.minLon, zoom);
   const bottomRightTile = latLonToTile(bounds.minLat, bounds.maxLon, zoom);
-  
   const tilesX = bottomRightTile.x - topLeftTile.x + 1;
   const tilesY = bottomRightTile.y - topLeftTile.y + 1;
-  
-  const totalTiles = tilesX * tilesY;
-  console.log(`[MAP] Downloading ${tilesX}x${tilesY} tiles (${totalTiles} total)`);
+  // A square of whole tiles at this zoom always holds the padded route.
+  const gridSize = Math.max(tilesX, tilesY) * 256;
+  const renderSize = Math.min(MAX_STATIC_RENDER_PX, Math.max(gridSize, Math.round(targetSize) || 0));
+  const renderZoom = zoom + Math.log2(renderSize / gridSize);
 
-  // Safety net: zoom selection above bounds the grid, but never attempt a stitch
-  // whose `-i` argument list would exceed the OS command-line limit (~32KB on
-  // Windows) — that throws spawn ENAMETOOLONG and silently kills the map. Bail to
-  // the caller's dark-panel fallback instead of failing the whole minimap.
-  const MAX_SAFE_TILES = 256;
-  if (totalTiles > MAX_SAFE_TILES) {
-    throw new Error(`Map tile grid too large to stitch (${tilesX}x${tilesY}=${totalTiles} tiles)`);
+  // Centre on the middle of the padded route in Web Mercator, so the route
+  // sits in the middle of the image.
+  const mercY = lat => Math.log(Math.tan(Math.PI / 4 + lat * Math.PI / 360));
+  const centerY = (mercY(bounds.minLat) + mercY(bounds.maxLat)) / 2;
+  const centerLat = (2 * Math.atan(Math.exp(centerY)) - Math.PI / 2) * 180 / Math.PI;
+  const centerLon = (bounds.minLon + bounds.maxLon) / 2;
+
+  return { center: [centerLat, centerLon], zoom, renderZoom, renderSize };
+}
+
+// Static background results from minimap renderer windows, by webContents id.
+const staticRenderCallbacks = new Map();
+
+ipcMain.on('minimap:staticRendered', (event, result) => {
+  const callback = staticRenderCallbacks.get(event.sender.id);
+  if (callback) {
+    staticRenderCallbacks.delete(event.sender.id);
+    callback(result);
+  }
+});
+
+/**
+ * Ask a minimap renderer window to draw a static view and wait until
+ * MapLibre reports it idle (style and every visible tile drawn).
+ * @returns {Promise<{bounds: Object, zoom: number}>}
+ */
+function requestStaticRender(minimapWindow, view, timeoutMs = STATIC_RENDER_TIMEOUT_MS) {
+  const id = minimapWindow.webContents.id;
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      staticRenderCallbacks.delete(id);
+      reject(new Error('Static map render timeout'));
+    }, timeoutMs);
+    staticRenderCallbacks.set(id, (result) => {
+      clearTimeout(timeout);
+      if (result && result.ok && result.bounds) resolve(result);
+      else reject(new Error(`Static map render failed: ${(result && result.error) || 'unknown error'}`));
+    });
+    minimapWindow.webContents.send('minimap:renderStatic', view);
+  });
+}
+
+/**
+ * Draw the static minimap background with the hidden MapLibre minimap
+ * window (tiles from tiles.sentryusb.com; the dark style for dark mode) and
+ * capture it once as a PNG.
+ * @param {string} exportId - Export ID for temp file naming
+ * @param {Array} mapPath - Array of [lat, lon] GPS coordinates
+ * @param {number} targetSize - Minimap size in the export, in pixels (square)
+ * @param {boolean} darkMode - Draw the dark map style
+ * @param {string} providerId - Map provider id (see src/shared/mapProviders.js)
+ * @param {function} [onProgress] - Receives {phase} as the render starts
+ * @param {Object} [overrides] - Test hooks: createRenderer, writeFile, timeoutMs
+ * @returns {Promise<{imagePath: string, bounds: Object, zoom: number, attribution: string}>}
+ */
+async function renderStaticMapBackground(exportId, mapPath, targetSize, darkMode = true, providerId = MapProviders.DEFAULT_PROVIDER_ID, onProgress = null, overrides = {}) {
+  if (!mapPath || mapPath.length === 0) {
+    throw new Error('No GPS data for map background');
   }
 
-  // Report download progress without flooding IPC: emit ~150 updates across
-  // the whole batch (plus the final tile) so the renderer counter ticks
-  // smoothly even for very large grids.
-  const reportStep = Math.max(1, Math.floor(totalTiles / 150));
-  let tilesCompleted = 0;
-  const reportTileProgress = () => {
-    if (typeof onProgress !== 'function') return;
-    if (tilesCompleted % reportStep === 0 || tilesCompleted === totalTiles) {
-      onProgress({ phase: 'download', completed: tilesCompleted, total: totalTiles });
-    }
-  };
+  const view = staticMapView(mapPath, targetSize);
+  console.log(`[MAP] Static map: zoom ${view.zoom} (drawn at ${view.renderZoom.toFixed(2)}), ${view.renderSize}px`);
+  if (typeof onProgress === 'function') onProgress({ phase: 'render' });
 
-  // Create temp directory for tiles
-  const tempDir = path.join(os.tmpdir(), `map_tiles_${exportId}_${Date.now()}`);
-  fs.mkdirSync(tempDir, { recursive: true });
-
-  const tilePaths = [];
-  // Vector providers resolve to their raster stand-in.
-  const activeProvider = MapProviders.getRasterProvider(providerId);
-  const tileSize = activeProvider.tileSize || 256;
-
+  const createRenderer = overrides.createRenderer || createMinimapRenderer;
+  const writeFile = overrides.writeFile || fs.promises.writeFile;
+  const minimapWindow = await createRenderer(view.renderSize, view.renderSize);
   try {
-    let requestIndex = 0;
-    for (let ty = topLeftTile.y; ty <= bottomRightTile.y; ty++) {
-      for (let tx = topLeftTile.x; tx <= bottomRightTile.x; tx++) {
-        const tilePath = path.join(tempDir, `tile_${tx}_${ty}.${activeProvider.fileExt || 'png'}`);
-        await downloadMapTile(tx, ty, zoom, tilePath, activeProvider.id, requestIndex++);
-        tilePaths.push({
-          path: tilePath,
-          tileX: tx,
-          tileY: ty,
-          gridX: tx - topLeftTile.x,
-          gridY: ty - topLeftTile.y
-        });
+    const result = await requestStaticRender(minimapWindow, {
+      center: view.center,
+      zoom: view.renderZoom,
+      dark: !!darkMode,
+      providerId
+    }, overrides.timeoutMs);
 
-        tilesCompleted++;
-        reportTileProgress();
-
-        // Small delay to be nice to the tile servers
-        await new Promise(r => setTimeout(r, 100));
-      }
-    }
-
-    console.log(`[MAP] Downloaded ${tilePaths.length} tiles from ${activeProvider.id}`);
-    // Hand off to the stitch phase so the renderer stops showing the tile
-    // counter and reflects that work is still happening.
-    if (typeof onProgress === 'function') {
-      onProgress({ phase: 'stitch', completed: totalTiles, total: totalTiles });
-    }
-    
-    // Use FFmpeg to stitch tiles together and apply dark theme
-    const stitchedWidth = tilesX * tileSize;
-    const stitchedHeight = tilesY * tileSize;
+    const image = await minimapWindow.webContents.capturePage();
     const outputPath = path.join(os.tmpdir(), `map_bg_${exportId}_${Date.now()}.png`);
-    
-    // Build FFmpeg filter to tile the images together
-    let inputs = [];
-    let filterParts = [];
-    
-    // Add each tile as input
-    for (const tile of tilePaths) {
-      inputs.push('-i', tile.path);
-    }
-    
-    // Dark theme filter (only applied when dark mode is enabled)
-    const darkFilter = darkMode ? ',hue=s=0.7:b=-0.2,eq=brightness=-0.15:contrast=1.1' : '';
-
-    // Create filter to position each tile
-    if (tilePaths.length === 1) {
-      // Single tile - scale and optionally apply dark filter
-      filterParts.push(`[0:v]scale=${targetSize}:${targetSize}${darkFilter}[out]`);
-    } else {
-      // Multiple tiles - create canvas and overlay each
-      // First, create a black canvas
-      filterParts.push(`color=c=black:s=${stitchedWidth}x${stitchedHeight}:d=1[canvas]`);
-
-      let currentLayer = '[canvas]';
-      for (let i = 0; i < tilePaths.length; i++) {
-        const tile = tilePaths[i];
-        const x = tile.gridX * tileSize;
-        const y = tile.gridY * tileSize;
-        const nextLayer = i === tilePaths.length - 1 ? '[stitched]' : `[tmp${i}]`;
-        filterParts.push(`${currentLayer}[${i}:v]overlay=${x}:${y}${nextLayer}`);
-        currentLayer = nextLayer;
-      }
-
-      // Scale to target size and optionally apply dark theme filter
-      filterParts.push(`[stitched]scale=${targetSize}:${targetSize}${darkFilter}[out]`);
-    }
-    
-    const ffmpegArgs = [
-      '-y',
-      ...inputs,
-      '-filter_complex', filterParts.join(';'),
-      '-map', '[out]',
-      '-frames:v', '1',
-      outputPath
-    ];
-    
-    console.log(`[MAP] Stitching tiles with FFmpeg...`);
-    
-    await new Promise((resolve, reject) => {
-      const proc = spawn(ffmpegPath, ffmpegArgs, { stdio: ['pipe', 'pipe', 'pipe'] });
-      let stderr = '';
-      proc.stderr.on('data', d => stderr += d.toString());
-      proc.on('close', code => {
-        if (code === 0) resolve();
-        else reject(new Error(`FFmpeg stitch failed: ${stderr}`));
-      });
-      proc.on('error', reject);
-    });
-    
-    // Cleanup tile temp files
-    fs.rmSync(tempDir, { recursive: true, force: true });
-    
-    // Calculate the actual geo bounds of the stitched image (tile edges)
-    const actualTopLeft = tileToLatLon(topLeftTile.x, topLeftTile.y, zoom);
-    const actualBottomRight = tileToLatLon(bottomRightTile.x + 1, bottomRightTile.y + 1, zoom);
-    
-    const actualBounds = {
-      minLat: actualBottomRight.lat,
-      maxLat: actualTopLeft.lat,
-      minLon: actualTopLeft.lon,
-      maxLon: actualBottomRight.lon
-    };
-    
+    await writeFile(outputPath, image.toPNG());
     console.log(`[MAP] Created map background: ${outputPath}`);
-    
+
     return {
       imagePath: outputPath,
-      bounds: actualBounds,
-      zoom,
-      // Short on-video credit for the stitched tiles
-      attribution: activeProvider.exportCredit || ''
+      // The exact area drawn, so writeMinimapAss lines the route up with it
+      bounds: result.bounds,
+      zoom: view.zoom,
+      // Short on-video credit; MapLibre draws at the Leaflet zoom - 1
+      attribution: MapProviders.exportCredit(providerId, result.zoom - 1)
     };
-  } catch (err) {
-    // Cleanup on error
-    try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch {}
-    throw err;
+  } finally {
+    staticRenderCallbacks.delete(minimapWindow.webContents?.id);
+    destroyWindow(minimapWindow);
   }
 }
 
@@ -482,7 +349,7 @@ async function createMinimapRenderer(minimapWidth, minimapHeight, overrides = {}
       }
     });
     
-    // Inject headers for OSM tile requests (same as main window)
+    // Identify Sentry Studio on tile requests (same as main window)
     installTileRequestHeaders(minimapWindow.webContents.session);
 
     timeout = setTimeout(() => {
@@ -683,7 +550,8 @@ module.exports = {
   calculateMinimapSize,
   createMinimapRenderer,
   destroyWindow,
-  downloadStaticMapBackground,
   installTileRequestHeaders,
-  preRenderMinimap
+  preRenderMinimap,
+  renderStaticMapBackground,
+  staticMapView
 };
