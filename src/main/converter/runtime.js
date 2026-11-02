@@ -451,10 +451,14 @@ async function createConverterRuntime(options = {}) {
   }
   if (typeof options.spawn !== 'function') throw new TypeError('spawn is required');
 
-  const jobsRoot = pathApi.join(options.userDataPath, 'converter-jobs');
-  const tempRoot = pathApi.join(options.tempPath, 'sentry-six-converter');
-  await pfs.mkdir(jobsRoot, { recursive: true });
-  await pfs.mkdir(tempRoot, { recursive: true });
+  await pfs.mkdir(pathApi.join(options.userDataPath, 'converter-jobs'), { recursive: true });
+  await pfs.mkdir(pathApi.join(options.tempPath, 'sentry-six-converter'), { recursive: true });
+  // Staging rejects owned paths whose real location differs from their spelling.
+  // The OS temp directory is often an alias (macOS /var -> /private/var, Windows
+  // 8.3 TEMP names), so resolve the roots once with the same realpath staging uses.
+  const tempPath = pathApi.resolve(await pfs.realpath(options.tempPath));
+  const jobsRoot = pathApi.resolve(await pfs.realpath(pathApi.join(options.userDataPath, 'converter-jobs')));
+  const tempRoot = pathApi.join(tempPath, 'sentry-six-converter');
 
   const factories = { ...defaultFactories(), ...(options.factories || {}) };
   const processRunner = createBoundedProcessRunner({
@@ -465,7 +469,7 @@ async function createConverterRuntime(options = {}) {
   const snapshotRegistry = createVerificationSnapshotRegistry({
     createSnapshot: options.createVerificationSnapshot || createVerificationSnapshot,
     pathApi,
-    tempRoot: options.tempPath
+    tempRoot: tempPath
   });
   const store = factories.createJobStore({ rootDir: jobsRoot, fs: pfs });
   const filesystemTransactions = createFilesystemTransactionAdapters({ fs: fileSystem, platform });

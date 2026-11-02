@@ -616,3 +616,42 @@ describe('converter app lifecycle', () => {
     expect(app.quit).not.toHaveBeenCalled();
   });
 });
+
+describe('converter runtime roots', () => {
+  // The OS temp directory is commonly reached through an alias (macOS /var ->
+  // /private/var, Windows 8.3 TEMP names). Staging refuses owned paths whose real
+  // location differs from their spelling, so the runtime must hand it real roots.
+  const posixTest = process.platform === 'win32' ? test.skip : test;
+  posixTest('resolves aliased temp and user-data paths before handing them to staging and the job store', async () => {
+    const root = await temporaryRoot('alias');
+    const real = path.join(root, 'real');
+    await fs.promises.mkdir(path.join(real, 'temp'), { recursive: true });
+    await fs.promises.mkdir(path.join(real, 'user-data'), { recursive: true });
+    const alias = path.join(root, 'alias');
+    await fs.promises.symlink(real, alias);
+    const calls = {};
+    const factories = {
+      createJobStore: jest.fn((options) => { calls.store = options; return { list: jest.fn(async () => []) }; }),
+      createFileTransaction: jest.fn((options) => { calls.transaction = options; return {}; }),
+      createEncoderPlanner: jest.fn(() => ({})),
+      createConverterAdapters: jest.fn(() => ({ writers: {}, verifier: jest.fn() })),
+      createConverterJobService: jest.fn(() => ({ list: jest.fn(async () => []), recover: jest.fn(), shutdown: jest.fn(async () => {}) }))
+    };
+
+    await createConverterRuntime({
+      userDataPath: path.join(alias, 'user-data'),
+      tempPath: path.join(alias, 'temp'),
+      ffmpegPath: '/bundle/ffmpeg',
+      ffprobePath: '/bundle/ffprobe',
+      factories,
+      spawn: jest.fn(),
+      fs,
+      pathApi: path,
+      platform: process.platform
+    });
+
+    expect(calls.transaction.tempRoot).toBe(path.join(real, 'temp', 'sentry-six-converter'));
+    expect(calls.store.rootDir).toBe(path.join(real, 'user-data', 'converter-jobs'));
+    expect(await fs.promises.realpath(calls.transaction.tempRoot)).toBe(calls.transaction.tempRoot);
+  });
+});
