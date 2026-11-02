@@ -1,10 +1,8 @@
 name: CI
 
-# Fast validation for every push and PR: proves the repo installs cleanly and
-# electron-builder can produce a packaged app on all three supported platforms.
-# This replaces the pre-March-30 ci.yml that also ran Jest tests; the Jest
-# framework was reverted along with other problematic commits, so this is the
-# build-verification half only.
+# Fast validation for every push and PR: proves the repo installs cleanly, the
+# Jest and renderer tests pass on Linux and macOS, and electron-builder can
+# produce a packaged app on all three supported platforms.
 
 on:
   push:
@@ -33,6 +31,16 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      # Not on Windows yet: there the bundled ffmpeg.exe can run, so the real
+      # encoder integration suite and the Windows-only file tests would run in
+      # CI for the first time. Elsewhere the integration suite skips itself
+      # with a SKIP message because ffmpeg_bin/ffmpeg isn't executable.
+      - name: Run tests
+        if: runner.os != 'Windows'
+        run: |
+          npm test
+          npm run test:dashcam
 
       - name: Verify build setup
         # --dir produces an unpacked app without building the installer (much faster
