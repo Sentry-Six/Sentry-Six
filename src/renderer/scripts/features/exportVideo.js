@@ -9,6 +9,7 @@ import { initBlurZoneEditor, getNormalizedCoordinates, resetBlurZoneEditor, gene
 import { filePathToUrl } from '../lib/utils.js';
 import { parseTimestampKeyToEpochMs } from '../core/clipBrowser.js';
 import { t, getCurrentLanguage, onLanguageChange } from '../lib/i18n.js';
+import { ffmpegMissingHtml } from './ffmpegMissing.js';
 
 // Export state
 export const exportState = {
@@ -1843,12 +1844,13 @@ export async function checkFFmpegAvailability() {
                 }
 
             } else {
-                const isMac = navigator.platform.toLowerCase().includes('mac');
-                if (isMac) {
-                    statusEl.innerHTML = `<span class="status-icon" style="color: var(--error-color);">✗</span><span class="status-text">${t('ui.export.ffmpegRequiredMac')}</span>`;
-                } else {
-                    statusEl.innerHTML = `<span class="status-icon" style="color: var(--error-color);">✗</span><span class="status-text">${t('ui.export.ffmpegRequiredWin')}</span>`;
-                }
+                statusEl.innerHTML = `<span class="status-icon" style="color: var(--error-color);">✗</span><span class="status-text">${ffmpegMissingHtml(result.missing, t)}</span>`;
+                statusEl.querySelectorAll('a[data-external-url]').forEach((link) => {
+                    link.addEventListener('click', (event) => {
+                        event.preventDefault();
+                        window.electronAPI?.openExternal?.(link.dataset.externalUrl);
+                    });
+                });
                 if (startBtn) startBtn.disabled = true;
                 if (dashboardCheckbox) {
                     dashboardCheckbox.disabled = true;

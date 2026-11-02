@@ -79,19 +79,48 @@ function buildFFmpegCandidatePaths() {
   return paths;
 }
 
+const RELEASES_URL = 'https://github.com/Sentry-Six/Sentry-Six/releases/latest';
+
 /**
- * Explains a failed FFmpeg lookup. Source checkouts keep no macOS or Linux
- * FFmpeg in Git, so a development run there points at the script that
- * downloads the pinned build.
+ * Describes why a failed FFmpeg lookup happened and what fixes it. This is
+ * the one source for that guidance: ffmpegMissingMessage() renders it for
+ * logs and export errors, and the ffmpeg:check IPC hands it to the renderer,
+ * which shows the translated text for the same case.
+ *
+ * Every installer bundles FFmpeg, so a packaged app without it is a damaged
+ * install. Source checkouts keep no macOS or Linux FFmpeg in Git; a
+ * development run there points at the script that downloads the pinned
+ * build. Windows checkouts get ffmpeg.exe and ffprobe.exe from Git itself.
  */
+function ffmpegMissingInfo() {
+  if (app.isPackaged) {
+    return { reason: 'packaged', url: RELEASES_URL };
+  }
+  if (process.platform === 'darwin') {
+    return {
+      reason: 'source-macos',
+      command: 'node scripts/prepare-macos-ffmpeg.js',
+      folder: `ffmpeg_bin/macos/${process.arch}`
+    };
+  }
+  if (process.platform === 'linux') {
+    return { reason: 'source-linux', command: 'node scripts/prepare-linux-ffmpeg.js' };
+  }
+  return { reason: 'source-windows', command: 'git restore ffmpeg_bin/ffmpeg.exe ffmpeg_bin/ffprobe.exe' };
+}
+
 function ffmpegMissingMessage() {
-  if (!app.isPackaged && process.platform === 'darwin') {
-    return `FFmpeg not found. Run "node scripts/prepare-macos-ffmpeg.js" to download it to ffmpeg_bin/macos/${process.arch}, then restart Studio.`;
+  const info = ffmpegMissingInfo();
+  switch (info.reason) {
+    case 'packaged':
+      return `FFmpeg is missing from this Sentry Studio installation. Reinstall Sentry Studio from ${info.url}.`;
+    case 'source-macos':
+      return `FFmpeg not found. Run "${info.command}" to download it to ${info.folder}, then restart Studio.`;
+    case 'source-linux':
+      return `FFmpeg not found. Run "${info.command}" or install a system FFmpeg with the drawtext and ass filters, then restart Studio.`;
+    default:
+      return `FFmpeg not found. Restore ffmpeg.exe and ffprobe.exe in the ffmpeg_bin folder with "${info.command}", then restart Studio.`;
   }
-  if (!app.isPackaged && process.platform === 'linux') {
-    return 'FFmpeg not found. Run "node scripts/prepare-linux-ffmpeg.js" or install a system FFmpeg with the drawtext and ass filters, then restart Studio.';
-  }
-  return 'FFmpeg not found. Please install FFmpeg or place it in the ffmpeg_bin directory.';
 }
 
 function findFFmpegPath() {
@@ -556,6 +585,7 @@ function setGpuEncoderHEVC(val) { gpuEncoderHEVC = val; }
 
 module.exports = {
   findFFmpegPath,
+  ffmpegMissingInfo,
   ffmpegMissingMessage,
   findFFprobePath,
   preCacheFFmpegPath,

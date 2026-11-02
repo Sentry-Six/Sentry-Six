@@ -142,3 +142,45 @@ describe('findFFmpegPath without a usable FFmpeg', () => {
     expect(candidates.filter(candidate => /ffmpeg_bin[\\/]ffmpeg$/.test(candidate))).toEqual([]);
   });
 });
+
+describe('ffmpegMissingInfo', () => {
+  const originalPlatform = process.platform;
+
+  afterEach(() => {
+    Object.defineProperty(process, 'platform', { value: originalPlatform });
+  });
+
+  function infoFor(platform, isPackaged) {
+    Object.defineProperty(process, 'platform', { value: platform });
+    const { ffmpeg } = loadFfmpegModule({ status: 0 });
+    // loadFfmpegModule resets the registry, so this is the ffmpeg module's electron mock.
+    require('electron').app.isPackaged = isPackaged;
+    return { info: ffmpeg.ffmpegMissingInfo(), message: ffmpeg.ffmpegMissingMessage() };
+  }
+
+  test.each(['darwin', 'win32', 'linux'])('a packaged app on %s is a damaged install: reinstall from the releases page', (platform) => {
+    const { info, message } = infoFor(platform, true);
+    expect(info).toEqual({ reason: 'packaged', url: 'https://github.com/Sentry-Six/Sentry-Six/releases/latest' });
+    expect(message).toContain('Reinstall Sentry Studio from https://github.com/Sentry-Six/Sentry-Six/releases/latest');
+    expect(message).not.toMatch(/brew|prepare-|ffmpeg_bin/);
+  });
+
+  test('a macOS source checkout names the prepare script and the folder for its architecture', () => {
+    const { info, message } = infoFor('darwin', false);
+    expect(info).toEqual({ reason: 'source-macos', command: 'node scripts/prepare-macos-ffmpeg.js', folder: `ffmpeg_bin/macos/${process.arch}` });
+    expect(message).toContain('node scripts/prepare-macos-ffmpeg.js');
+    expect(message).not.toContain('brew');
+  });
+
+  test('a Linux source checkout names the Linux prepare script', () => {
+    const { info, message } = infoFor('linux', false);
+    expect(info).toEqual({ reason: 'source-linux', command: 'node scripts/prepare-linux-ffmpeg.js' });
+    expect(message).toContain('node scripts/prepare-linux-ffmpeg.js');
+  });
+
+  test('a Windows source checkout restores the executables tracked in Git', () => {
+    const { info, message } = infoFor('win32', false);
+    expect(info).toEqual({ reason: 'source-windows', command: 'git restore ffmpeg_bin/ffmpeg.exe ffmpeg_bin/ffprobe.exe' });
+    expect(message).toContain('git restore ffmpeg_bin/ffmpeg.exe ffmpeg_bin/ffprobe.exe');
+  });
+});

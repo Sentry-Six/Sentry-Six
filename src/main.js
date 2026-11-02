@@ -54,7 +54,7 @@ const { settingsPath, loadSettings, saveSettings, registerSettingsIpc, applyPlay
 const { SUPPORT_SERVER_URL, registerSupportChatIpc } = require('./main/supportChat');
 const { registerDiagnosticsStorageIpc } = require('./main/diagnostics');
 const { UPDATE_CONFIG, autoUpdater, getLatestVersionFromGitHub, registerAutoUpdateIpc, resolveUpdateChannel, setupAutoUpdaterEvents } = require('./main/autoUpdate');
-const { findFFmpegPath, ffmpegMissingMessage, findFFprobePath, preCacheFFmpegPath, formatExportDuration, detectGpuHardware, detectGpuEncoder, detectHEVCEncoder, findVaapiDevice, getGpuEncoder, setGpuEncoder, getGpuEncoderHEVC, setGpuEncoderHEVC } = require('./main/ffmpeg');
+const { findFFmpegPath, ffmpegMissingInfo, ffmpegMissingMessage, findFFprobePath, preCacheFFmpegPath, formatExportDuration, detectGpuHardware, detectGpuEncoder, detectHEVCEncoder, findVaapiDevice, getGpuEncoder, setGpuEncoder, getGpuEncoderHEVC, setGpuEncoderHEVC } = require('./main/ffmpeg');
 const { registerConverterIpc } = require('./main/converter/ipc');
 const { createConverterLifecycle, createConverterRuntime, startConverterWithRecoveryPrompt } = require('./main/converter/runtime');
 const { calculateMinimapSize, downloadStaticMapBackground, preRenderMinimap, installTileRequestHeaders } = require('./main/minimap');
@@ -2774,6 +2774,8 @@ ipcMain.handle('ffmpeg:check', async () => {
   return {
     available: !!ffmpegPath,
     path: ffmpegPath,
+    // Why FFmpeg is missing and how to fix it; the renderer translates it.
+    missing: ffmpegPath ? null : ffmpegMissingInfo(),
     gpu: gpuInfo,
     hevc: hevcInfo,
     fakeNoGpu: fakeNoGpu
