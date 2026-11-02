@@ -161,7 +161,8 @@ describe('bounded converter process runner', () => {
     const runner = createBoundedProcessRunner({ spawn: childProcess.spawn, timeoutMs: 5_000, maxOutputBytes: 32 });
     await expect(runner(process.execPath, ['-e', 'process.stdout.write("x".repeat(33))'], { shell: true }))
       .rejects.toMatchObject({ code: 'INVALID_PROCESS_REQUEST' });
-    await expect(runner(process.execPath, ['-e', 'process.stdout.write("x".repeat(33))'], { shell: false }))
+    // The child stays alive after writing, so the runner's kill (not a normal exit) ends it.
+    await expect(runner(process.execPath, ['-e', 'process.stdout.write("x".repeat(33)); setInterval(() => {}, 1000)'], { shell: false }))
       .resolves.toMatchObject({ status: null, timedOut: false, outputLimitExceeded: true, stdout: '' });
   });
 
