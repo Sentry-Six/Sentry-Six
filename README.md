@@ -126,7 +126,7 @@ Have questions, feedback, or want to connect with other users?
 Join our [Discord Server](https://discord.com/invite/9QZEzVwdnt)!
 
 ## Requirements
-- Windows 10+ / macOS 12+ / Debian, Ubuntu and other Linux distributions that install `.deb` packages (x64 or arm64)
+- Windows 10+ / macOS 13+ / Debian, Ubuntu and other Linux distributions that install `.deb` packages (x64 or arm64)
 
 ## Automatic Installation (Recommended, easiest)
 1. Go to the Sentry Studio [Releases](https://github.com/Sentry-Six/Sentry-Six/releases/) page
