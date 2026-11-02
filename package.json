@@ -44,7 +44,7 @@
     "appId": "com.sentry-six.revamped",
     "productName": "Sentry Studio",
     "win": {
-      "icon": "assets/Sentry_Six.ico",
+      "icon": "assets/Sentry_six.ico",
       "target": [
         {
           "target": "nsis",
@@ -77,7 +77,7 @@
       ]
     },
     "mac": {
-      "icon": "assets/Sentry_Six.icns",
+      "icon": "assets/Sentry_six.icns",
       "target": [
         {
           "target": "dmg",
@@ -126,7 +126,7 @@
       ]
     },
     "dmg": {
-      "icon": "assets/Sentry_Six.icns",
+      "icon": "assets/Sentry_six.icns",
       "contents": [
         {
           "x": 130,
