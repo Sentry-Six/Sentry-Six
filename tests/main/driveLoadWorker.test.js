@@ -17,6 +17,12 @@ test('drive load worker thread exits on its own after posting done', async () =>
     { workerData: { filePath: tmp } }
   );
 
+  // Listen for 'exit' from the start. When the main thread is busy, the worker
+  // can post 'done' and exit before either event is handled; Node then
+  // delivers the message and 'exit' in the same turn, so a listener added
+  // after `await done` would miss the exit.
+  const exited = new Promise((resolve) => worker.once('exit', () => resolve(true)));
+
   try {
     const done = new Promise((resolve, reject) => {
       worker.on('message', (m) => {
@@ -29,11 +35,13 @@ test('drive load worker thread exits on its own after posting done', async () =>
     const result = await done;
     expect(result.driveCount).toBe(0);
 
-    const exited = await new Promise((resolve) => {
-      const timer = setTimeout(() => resolve(false), 3000);
-      worker.once('exit', () => { clearTimeout(timer); resolve(true); });
-    });
-    expect(exited).toBe(true);
+    let timer;
+    const exitedInTime = await Promise.race([
+      exited,
+      new Promise((resolve) => { timer = setTimeout(() => resolve(false), 10000); }),
+    ]);
+    clearTimeout(timer);
+    expect(exitedInTime).toBe(true);
   } finally {
     await worker.terminate();
     fs.unlinkSync(tmp);

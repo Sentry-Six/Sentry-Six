@@ -222,10 +222,10 @@ describe('audited file-safety regressions using disposable files', () => {
     expect(recovered).toMatchObject({ state: 'paused', recovery: { action: 'manual-intervention' } });
     const persisted = await store.load(id);
     const backup = persisted.items[0].ownedPaths.replacementBackup;
-    expect(await fs.promises.readFile(backup)).toEqual(Buffer.alloc(1000000, 0x61));
+    expect(digest(await fs.promises.readFile(backup))).toBe(digest(Buffer.alloc(1000000, 0x61)));
     expect(persisted.items[0].expectedSource.sha256).toBe(digest(Buffer.alloc(1000000, 0x61)));
     await service.shutdown();
-    expect(await fs.promises.readFile(backup)).toEqual(Buffer.alloc(1000000, 0x61));
+    expect(digest(await fs.promises.readFile(backup))).toBe(digest(Buffer.alloc(1000000, 0x61)));
   });
 
   test('unsupported-cleanup copy recovery supplies partial ownership when resuming publication', async () => {
@@ -307,7 +307,7 @@ describe('audited file-safety regressions using disposable files', () => {
     const candidate = persisted.items[0].ownedPaths.encodedCandidate;
     expect(digest(await fs.promises.readFile(candidate))).toBe(digest(rejectedBytes));
     expect(persisted.items[0].ownedArtifacts.encodedCandidate.sha256).toBe(digest(rejectedBytes));
-    expect(await fs.promises.readFile(f.source)).toEqual(sourceBytes);
+    expect(digest(await fs.promises.readFile(f.source))).toBe(digest(sourceBytes));
     await expect(service.retryFailed(id)).rejects.toMatchObject({ code: 'RECOVERY_REQUIRED' });
     expect(encodes).toBe(1);
     expect((await store.load(id)).items[0].ownedPaths.encodedCandidate).toBe(candidate);
