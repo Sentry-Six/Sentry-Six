@@ -40,6 +40,13 @@
   const TILE_ORIGIN = 'https://tiles.sentryusb.com';
   const OSM_ATTRIBUTION = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
   const VERSATILES_LINK = '<a href="https://versatiles.org/">VersaTiles</a>';
+  // The VersaTiles styles also draw ESA WorldCover land cover (CC BY 4.0) at
+  // z0-10, GEBCO ocean depth up to z13 and Mapzen terrain shading up to z15.
+  // Exported minimaps render at z16, where only OpenStreetMap data remains.
+  const RELIEF_ATTRIBUTION = '&copy; <a href="https://esa-worldcover.org/en/data-access">ESA WorldCover</a>'
+    + ' (<a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>)'
+    + ' · <a href="https://www.gebco.net/">GEBCO</a>'
+    + ' · <a href="https://github.com/tilezen/joerd/blob/master/docs/attribution.md">Mapzen</a>';
 
   const PROVIDERS = {
     'versatiles': {
@@ -49,7 +56,7 @@
       styleUrl: TILE_ORIGIN + '/assets/styles/colorful/style.json',
       darkStyleUrl: TILE_ORIGIN + '/assets/styles/sentry-dark/style.json',
       maxZoom: 20,
-      attribution: VERSATILES_LINK + ' | ' + OSM_ATTRIBUTION,
+      attribution: VERSATILES_LINK + ' | ' + OSM_ATTRIBUTION + ' · ' + RELIEF_ATTRIBUTION,
       // Raster provider used where a bitmap must be stitched (export).
       rasterFallbackId: 'osm',
       // Credit drawn on exported minimaps

@@ -22,7 +22,11 @@ describe('map provider registry', () => {
     expect(p.styleUrl).toBe('https://tiles.sentryusb.com/assets/styles/colorful/style.json');
     expect(p.darkStyleUrl).toBe('https://tiles.sentryusb.com/assets/styles/sentry-dark/style.json');
     expect(p.attribution).toMatch(/VersaTiles.*OpenStreetMap/);
-    expect(p.attribution).not.toMatch(/WorldCover/);
+    // The styles also draw land cover, ocean depth and terrain shading.
+    expect(p.attribution).toMatch(/ESA WorldCover<\/a>.*CC BY 4\.0.*GEBCO.*Mapzen/);
+    // Exported minimaps render where only OpenStreetMap data is drawn.
+    expect(p.exportCredit).toBe('\u00a9 OpenStreetMap');
+    expect(MapProviders.getProvider('osm').attribution).not.toMatch(/WorldCover|GEBCO|Mapzen/);
   });
 
   test('migrates removed provider ids', () => {
