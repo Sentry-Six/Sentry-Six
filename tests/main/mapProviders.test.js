@@ -73,6 +73,37 @@ describe('map provider registry', () => {
   });
 });
 
+describe('vector style cache', () => {
+  const flush = () => new Promise((resolve) => setTimeout(resolve));
+  const ok = (url) => Promise.resolve({ ok: true, json: () => Promise.resolve({ url }) });
+
+  test('serves fetched style JSON once it arrives, the URL until then', async () => {
+    const { styleUrl, darkStyleUrl } = MapProviders.getProvider('versatiles');
+    const requested = [];
+    const cache = MapProviders.createStyleCache((url) => {
+      requested.push(url);
+      return url === darkStyleUrl ? ok(url) : Promise.resolve({ ok: false, status: 503 });
+    });
+    cache.prefetch([styleUrl, darkStyleUrl]);
+    cache.prefetch([darkStyleUrl]);
+    expect(cache.get(darkStyleUrl)).toBe(darkStyleUrl);
+    await flush();
+    expect(cache.get(darkStyleUrl)).toEqual({ url: darkStyleUrl });
+    // A failed fetch keeps the URL and is retried by the next prefetch.
+    expect(cache.get(styleUrl)).toBe(styleUrl);
+    cache.prefetch([styleUrl, darkStyleUrl]);
+    await flush();
+    expect(requested).toEqual([styleUrl, darkStyleUrl, styleUrl]);
+  });
+
+  test('a fetch that throws leaves the URL in place', async () => {
+    const cache = MapProviders.createStyleCache(() => { throw new Error('offline'); });
+    cache.prefetch(['https://tiles.sentryusb.com/x.json']);
+    await flush();
+    expect(cache.get('https://tiles.sentryusb.com/x.json')).toBe('https://tiles.sentryusb.com/x.json');
+  });
+});
+
 describe('exported minimap credit', () => {
   const seiData = [
     { timestampMs: 0, sei: { latitude_deg: 45.5, longitude_deg: -73.6, heading_deg: 0 } },

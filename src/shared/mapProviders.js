@@ -159,6 +159,38 @@
     return opts;
   }
 
+  /**
+   * Vector style JSON fetched once per URL, so a light/dark switch needs no
+   * network round trip. The map server's styles differ only in paint values,
+   * so MapLibre applies the switch as a diff and repaints without reloading
+   * tiles. get() returns the URL until the JSON has arrived, or after a
+   * failed fetch (which the next prefetch() retries).
+   */
+  function createStyleCache(fetchImpl) {
+    const styles = new Map();
+    return {
+      prefetch(urls) {
+        for (const url of urls) {
+          if (!url || styles.has(url)) continue;
+          const entry = { json: null };
+          styles.set(url, entry);
+          Promise.resolve()
+            .then(() => fetchImpl(url))
+            .then((res) => {
+              if (!res.ok) throw new Error('HTTP ' + res.status);
+              return res.json();
+            })
+            .then((json) => { entry.json = json; })
+            .catch(() => { styles.delete(url); });
+        }
+      },
+      get(url) {
+        const entry = styles.get(url);
+        return (entry && entry.json) || url;
+      }
+    };
+  }
+
   return {
     PROVIDERS,
     DEFAULT_PROVIDER_ID,
@@ -175,6 +207,7 @@
     getRasterProvider,
     isVectorProvider,
     buildTileUrl,
-    leafletRasterOptions
+    leafletRasterOptions,
+    createStyleCache
   };
 });

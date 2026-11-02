@@ -28,9 +28,21 @@ let selectedProviderId = null;   // resolved from settings (null until loaded)
 let sessionFallbackActive = false;
 let settingLoadPromise = null;
 let darkMode = false;
+let styleCache = null;
 
 function registry() {
     return window.MapProviders;
+}
+
+// Fetched light and dark style JSON, so a dark-mode switch is a style diff
+// with no network round trip.
+function vectorStyles() {
+    styleCache ||= registry().createStyleCache((url) => fetch(url));
+    return styleCache;
+}
+
+function vectorStyle(p, dark) {
+    return vectorStyles().get(dark ? p.darkStyleUrl : p.styleUrl);
 }
 
 function loadSelectedProvider() {
@@ -93,7 +105,7 @@ function createLayer(providerId, opts = {}) {
     const p = registry().getProvider(providerId);
     if (p.type === 'vector') {
         const layer = window.L.maplibreGL({
-            style: darkMode && opts.followDarkMode ? p.darkStyleUrl : p.styleUrl,
+            style: vectorStyle(p, darkMode && opts.followDarkMode),
             maxZoom: Math.min(p.maxZoom, opts.maxZoomCap ?? p.maxZoom),
             // The GL map only mirrors Leaflet; Leaflet handles all input.
             interactive: false,
@@ -121,7 +133,11 @@ function watchVectorLayer(layer) {
     // Mercator, so the GL map must stay Mercator to line up.
     glMap.on('style.load', () => glMap.setProjection({ type: 'mercator' }));
     let rendered = false;
-    glMap.once('load', () => { rendered = true; });
+    glMap.once('load', () => {
+        rendered = true;
+        const p = registry().getProvider(getEffectiveProviderId());
+        vectorStyles().prefetch([p.styleUrl, p.darkStyleUrl]);
+    });
     glMap.on('error', (e) => {
         // Individual tile errors after the style loaded are transient; only
         // a style that never loads means the provider is unusable.
@@ -250,7 +266,7 @@ export function setMapDarkMode(enabled) {
     for (const entry of registeredMaps.values()) {
         if (!entry.opts.followDarkMode || !entry.layer?._sentryVector) continue;
         try {
-            entry.layer.getMaplibreMap()?.setStyle(darkMode ? p.darkStyleUrl : p.styleUrl);
+            entry.layer.getMaplibreMap()?.setStyle(vectorStyle(p, darkMode));
         } catch (err) {
             console.warn('[MAP] Failed to switch map style:', err);
         }
