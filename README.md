@@ -129,7 +129,7 @@ Your dashcam footage stays on your computer unless you choose to share a clip. H
 - **AI Support (when used)**: Your messages, app version, platform and CPU architecture go to Sentry Six, and Anthropic processes them to write each answer. Redacted chats are stored in Canada for up to 90 days after your last message and may be reviewed by authorized maintainers; **New chat** deletes the current chat. Diagnostics are shared only when you approve a request in the chat, and are deleted within 7 days.
 - **Privacy Notice**: You'll see a notice about these features when you first launch the app, and again if they change.
 
-📄 **[Privacy Policy](https://sentry-six.com/privacy)** · **[Terms of Service](https://sentry-six.com/terms)**
+📄 **[Privacy Policy](https://sentry-six.com/privacy)** · **[Terms of Service](https://sentry-six.com/terms)** · **[Code signing policy](https://sentry-six.com/code-signing)**
 
 ## Community & Support
 

@@ -86,6 +86,8 @@ jobs:
             exit 0
           fi
 
+          # SignPath Foundation asks for a "Code signing policy" link on the download page.
+          BODY="$BODY"$'\n\n'"[Code signing policy](https://sentry-six.com/code-signing)"
           printf '%s\n' "$BODY" | gh release edit "$TAG" --notes-file -
           echo "Release notes populated for $TAG (current: $BASE_VERSION, since last stable: ${LAST_VERSION:-none})."
 
