@@ -91,7 +91,19 @@ jobs:
 
   build-windows:
     runs-on: windows-latest
-    timeout-minutes: 30
+    # Includes waiting on two SignPath signing requests, which may need a manual approval each.
+    timeout-minutes: 90
+    permissions:
+      contents: write
+      # SignPath's connector downloads the unsigned artifacts with the job token.
+      actions: read
+    env:
+      # SignPath Foundation organization "Sentry Studio [OSS]", project "Sentry-Six".
+      SIGNPATH_ORGANIZATION_ID: 0e1a61e3-e27f-49f4-abfd-58caacdb5b14
+      # test-signing uses SignPath's self-signed test certificate; set the repository
+      # variable SIGNPATH_SIGNING_POLICY to release-signing once the production
+      # certificate is issued.
+      SIGNPATH_SIGNING_POLICY: ${{ vars.SIGNPATH_SIGNING_POLICY || 'test-signing' }}
 
     steps:
       - name: Checkout code
@@ -106,10 +118,91 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build Windows installer
-        run: npm run build:win
+      - name: Read version
+        id: version
+        shell: bash
+        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
+      # Only files built from this repository are signed: Sentry Studio.exe and the
+      # installer. Electron's DLLs and the bundled FFmpeg stay unsigned, as the
+      # SignPath Foundation terms require for upstream binaries.
+      - name: Build unpacked app
+        run: npx electron-builder --win --dir --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
+
+      - name: Upload unsigned app executable
+        id: upload-unsigned-exe
+        uses: actions/upload-artifact@v7
+        with:
+          name: unsigned-app-exe
+          retention-days: 1
+          path: release/win-unpacked/Sentry Studio.exe
+
+      - name: Sign app executable
+        uses: signpath/github-action-submit-signing-request@v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ env.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: Sentry-Six
+          signing-policy-slug: ${{ env.SIGNPATH_SIGNING_POLICY }}
+          artifact-configuration-slug: app-exe
+          github-artifact-id: ${{ steps.upload-unsigned-exe.outputs.artifact-id }}
+          wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: 2400
+          output-artifact-directory: signed-app-exe
+          parameters: |
+            version: "${{ steps.version.outputs.version }}"
+
+      - name: Build installer around the signed app
+        shell: bash
+        run: |
+          cp "signed-app-exe/Sentry Studio.exe" "release/win-unpacked/Sentry Studio.exe"
+          npx electron-builder --win nsis --prepackaged release/win-unpacked --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+
+      - name: Upload unsigned installer
+        id: upload-unsigned-installer
+        uses: actions/upload-artifact@v7
+        with:
+          name: unsigned-installer
+          retention-days: 1
+          path: release/SentryStudioSetup${{ steps.version.outputs.version }}.exe
+
+      - name: Sign installer
+        uses: signpath/github-action-submit-signing-request@v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ env.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: Sentry-Six
+          signing-policy-slug: ${{ env.SIGNPATH_SIGNING_POLICY }}
+          artifact-configuration-slug: installer
+          github-artifact-id: ${{ steps.upload-unsigned-installer.outputs.artifact-id }}
+          wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: 2400
+          output-artifact-directory: signed-installer
+          parameters: |
+            version: "${{ steps.version.outputs.version }}"
+
+      - name: Use the signed installer and rebuild update metadata
+        shell: bash
+        run: |
+          cp "signed-installer/SentryStudioSetup${{ steps.version.outputs.version }}.exe" release/
+          node scripts/finalize-signed-windows-installer.js release
+
+      - name: Verify signatures
+        shell: pwsh
+        run: |
+          foreach ($file in @("release/win-unpacked/Sentry Studio.exe", "release/SentryStudioSetup${{ steps.version.outputs.version }}.exe")) {
+            $sig = Get-AuthenticodeSignature -FilePath $file
+            Write-Host "$file : $($sig.Status) : $($sig.SignerCertificate.Subject)"
+            # The test certificate is self-signed, so its chain reads UnknownError/NotTrusted;
+            # anything else (NotSigned, HashMismatch) means the file was not signed or changed after.
+            if ($null -eq $sig.SignerCertificate -or $sig.Status -notin @('Valid', 'UnknownError', 'NotTrusted')) {
+              throw "$file is not correctly signed: $($sig.Status)"
+            }
+          }
 
       - name: Upload Windows artifacts
         uses: actions/upload-artifact@v7
