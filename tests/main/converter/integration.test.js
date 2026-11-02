@@ -147,7 +147,11 @@ describeRealEncoders(`real pipeline (${encoderGate.reason || 'required CPU encod
       fs.promises.mkdir(destinationRoot, { recursive: true }), fs.promises.mkdir(userDataPath, { recursive: true })]);
     const filename = '2026-08-30_12-00-00-front.mp4';
     const sourcePath = path.join(sourceFolder, filename);
-    const durationSeconds = filesystemMode === 'default-success' ? 32 : 16;
+    // libaom's one-pass rate control undershoots on short clips and its two
+    // size corrections left a 16 s conservative encode at 5.1-7.1% savings on
+    // Windows CI, astride the 7% edge; at 32 s it settles near 6.4%.
+    const longClip = filesystemMode === 'default-success' || (codec === 'av1' && profileId === 'conservative');
+    const durationSeconds = longClip ? 32 : 16;
     const frameCount = durationSeconds * 12;
     const fixture = await createTeslaH264Fixture({ ffmpegPath: tools.ffmpegPath, outputPath: sourcePath,
       telemetryPattern: telemetryPattern(patternName, frameCount), durationSeconds,
@@ -186,7 +190,12 @@ describeRealEncoders(`real pipeline (${encoderGate.reason || 'required CPU encod
             return result;
           }
         }, async verifier(operation) {
-          const result = await real.verifier(operation);
+          // The refusal case proves fail-closed cleanup after a size refusal, so
+          // whether this machine's encoder lands inside the balanced band must
+          // not decide it: the real verifier checks the balanced encode against
+          // the aggressive band, 30 points away, and refuses it every time.
+          const result = await real.verifier(filesystemMode === 'default-refusal'
+            ? { ...operation, profileId: 'aggressive' } : operation);
           mediaDiagnostics.push({ stage: 'verifier', ok: result.ok, reason: result.reason,
             sourceBytes: result.sourceBytes, outputBytes: result.outputBytes, details: result.details });
           return result;
