@@ -118,3 +118,27 @@ describe('findFFprobePath', () => {
     expect(ffmpeg.findFFprobePath('/bundle/ffmpeg')).toBeNull();
   });
 });
+
+describe('findFFmpegPath without a usable FFmpeg', () => {
+  const originalPlatform = process.platform;
+
+  afterEach(() => {
+    Object.defineProperty(process, 'platform', { value: originalPlatform });
+    jest.restoreAllMocks();
+  });
+
+  test('a macOS source checkout without prepared binaries names the prepare script', () => {
+    Object.defineProperty(process, 'platform', { value: 'darwin' });
+    jest.spyOn(fs, 'existsSync').mockReturnValue(false);
+    const log = jest.spyOn(console, 'log').mockImplementation(() => {});
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const { ffmpeg } = loadFfmpegModule({ status: null, error: new Error('spawnSync ffmpeg ENOENT') });
+
+    expect(ffmpeg.findFFmpegPath()).toBeNull();
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('node scripts/prepare-macos-ffmpeg.js'));
+    const [, candidates] = log.mock.calls.find(([message]) => message === '[SEARCH] Searching for FFmpeg in:');
+    expect(candidates[0]).toBe(require('path').join('/tmp/sentry-test-app', 'ffmpeg_bin', 'macos', process.arch, 'ffmpeg'));
+    // The repository root holds only the Windows executables.
+    expect(candidates.filter(candidate => /ffmpeg_bin[\\/]ffmpeg$/.test(candidate))).toEqual([]);
+  });
+});

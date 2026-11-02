@@ -30,9 +30,9 @@ node scripts/prepare-macos-ffmpeg.js
 npm start
 ```
 
-Studio prefers these prepared native binaries over the legacy Intel files at
-this directory's root. Packaged apps prefer their bundled universal executable.
-The root Intel files are retained only for legacy development setups.
+Without them Studio falls back to a Homebrew or system FFmpeg, and if there is
+none it reports that FFmpeg is missing and names this script. Packaged apps use
+their bundled universal executable.
 
 ### Upstream sources and license
 

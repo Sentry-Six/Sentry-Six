@@ -54,7 +54,7 @@ const { settingsPath, loadSettings, saveSettings, registerSettingsIpc, applyPlay
 const { SUPPORT_SERVER_URL, registerSupportChatIpc } = require('./main/supportChat');
 const { registerDiagnosticsStorageIpc } = require('./main/diagnostics');
 const { UPDATE_CONFIG, autoUpdater, getLatestVersionFromGitHub, registerAutoUpdateIpc, resolveUpdateChannel, setupAutoUpdaterEvents } = require('./main/autoUpdate');
-const { findFFmpegPath, findFFprobePath, preCacheFFmpegPath, formatExportDuration, detectGpuHardware, detectGpuEncoder, detectHEVCEncoder, findVaapiDevice, getGpuEncoder, setGpuEncoder, getGpuEncoderHEVC, setGpuEncoderHEVC } = require('./main/ffmpeg');
+const { findFFmpegPath, ffmpegMissingMessage, findFFprobePath, preCacheFFmpegPath, formatExportDuration, detectGpuHardware, detectGpuEncoder, detectHEVCEncoder, findVaapiDevice, getGpuEncoder, setGpuEncoder, getGpuEncoderHEVC, setGpuEncoderHEVC } = require('./main/ffmpeg');
 const { registerConverterIpc } = require('./main/converter/ipc');
 const { createConverterLifecycle, createConverterRuntime, startConverterWithRecoveryPrompt } = require('./main/converter/runtime');
 const { calculateMinimapSize, downloadStaticMapBackground, preRenderMinimap, installTileRequestHeaders } = require('./main/minimap');
@@ -2203,7 +2203,7 @@ ipcMain.handle('export:start', async (event, exportId, exportData) => {
   try {
     const ffmpegPath = findFFmpegPath();
     if (!ffmpegPath) {
-      throw new Error('FFmpeg not found. Please install FFmpeg or place it in the ffmpeg_bin directory.');
+      throw new Error(ffmpegMissingMessage());
     }
 
     const result = await performVideoExport(event, exportId, exportData, ffmpegPath);

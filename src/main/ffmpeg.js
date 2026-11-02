@@ -46,11 +46,6 @@ function buildFFmpegCandidatePaths() {
     }
     paths.push(
       path.join(app.getAppPath(), 'ffmpeg_bin', 'macos', process.arch, 'ffmpeg'),
-      path.join(__dirname, '..', 'ffmpeg_bin', 'ffmpeg'),
-      path.join(__dirname, 'ffmpeg_bin', 'ffmpeg'),
-      path.join(process.cwd(), 'ffmpeg_bin', 'ffmpeg'),
-      path.join(app.getAppPath(), 'ffmpeg_bin', 'ffmpeg'),
-      path.join(app.getAppPath(), '..', 'ffmpeg_bin', 'ffmpeg'),
       '/opt/homebrew/bin/ffmpeg',
       '/usr/local/bin/ffmpeg',
       '/opt/local/bin/ffmpeg',
@@ -75,9 +70,6 @@ function buildFFmpegCandidatePaths() {
     }
     paths.push(
       path.join(app.getAppPath(), 'ffmpeg_bin', 'linux', process.arch, 'ffmpeg'),
-      path.join(__dirname, '..', 'ffmpeg_bin', 'ffmpeg'),
-      path.join(__dirname, 'ffmpeg_bin', 'ffmpeg'),
-      path.join(process.cwd(), 'ffmpeg_bin', 'ffmpeg'),
       '/usr/bin/ffmpeg',
       '/usr/local/bin/ffmpeg'
     );
@@ -85,6 +77,21 @@ function buildFFmpegCandidatePaths() {
 
   paths.push('ffmpeg');
   return paths;
+}
+
+/**
+ * Explains a failed FFmpeg lookup. Source checkouts keep no macOS or Linux
+ * FFmpeg in Git, so a development run there points at the script that
+ * downloads the pinned build.
+ */
+function ffmpegMissingMessage() {
+  if (!app.isPackaged && process.platform === 'darwin') {
+    return `FFmpeg not found. Run "node scripts/prepare-macos-ffmpeg.js" to download it to ffmpeg_bin/macos/${process.arch}, then restart Studio.`;
+  }
+  if (!app.isPackaged && process.platform === 'linux') {
+    return 'FFmpeg not found. Run "node scripts/prepare-linux-ffmpeg.js" or install a system FFmpeg with the drawtext and ass filters, then restart Studio.';
+  }
+  return 'FFmpeg not found. Please install FFmpeg or place it in the ffmpeg_bin directory.';
 }
 
 function findFFmpegPath() {
@@ -128,7 +135,7 @@ function findFFmpegPath() {
     }
   }
 
-  console.warn('[ERROR] FFmpeg not found in any of the checked paths');
+  console.warn(`[ERROR] ${ffmpegMissingMessage()}`);
   cachedFFmpegPath = null;
   return null;
 }
@@ -228,7 +235,7 @@ function findFFmpegPathAsync() {
       }
     }
 
-    console.warn('[ERROR] FFmpeg not found in any of the checked paths');
+    console.warn(`[ERROR] ${ffmpegMissingMessage()}`);
     cachedFFmpegPath = null;
     return null;
   })();
@@ -549,6 +556,7 @@ function setGpuEncoderHEVC(val) { gpuEncoderHEVC = val; }
 
 module.exports = {
   findFFmpegPath,
+  ffmpegMissingMessage,
   findFFprobePath,
   preCacheFFmpegPath,
   formatExportDuration,

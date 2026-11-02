@@ -85,6 +85,13 @@ function inspectOutput(codec, bytes) {
 
 describe('converter bundled-FFmpeg integration', () => {
   test('locates the bundled FFmpeg and FFprobe pair', async () => {
+    // Only the Windows executables are kept in Git; macOS and Linux packaging
+    // downloads its own, so those checkouts have no pair and the real encoder
+    // suite below skips with an ENOENT reason.
+    if (process.platform !== 'win32') {
+      await expect(locateBundledTools()).rejects.toMatchObject({ code: 'ENOENT' });
+      return;
+    }
     await expect(locateBundledTools()).resolves.toEqual(expect.objectContaining({ ffmpegPath: expect.any(String), ffprobePath: expect.any(String) }));
   });
 

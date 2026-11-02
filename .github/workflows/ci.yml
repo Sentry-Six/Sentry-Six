@@ -35,7 +35,7 @@ jobs:
       # Not on Windows yet: there the bundled ffmpeg.exe can run, so the real
       # encoder integration suite and the Windows-only file tests would run in
       # CI for the first time. Elsewhere the integration suite skips itself
-      # with a SKIP message because ffmpeg_bin/ffmpeg isn't executable.
+      # with a SKIP message because the checkout has no macOS or Linux FFmpeg.
       - name: Run tests
         if: runner.os != 'Windows'
         run: |
