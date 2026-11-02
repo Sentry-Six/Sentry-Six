@@ -34,7 +34,7 @@
     "electron-updater": "^6.8.11",
     "node-machine-id": "^1.1.12",
     "pngjs": "^7.0.0",
-    "protobufjs": "^7.5.4",
+    "protobufjs": "^8.8.1",
     "stream-json": "^3.8.0"
   },
   "overrides": {
