@@ -27,15 +27,18 @@
   "type": "commonjs",
   "devDependencies": {
     "electron": "43.8.6",
-    "electron-builder": "^26.6.0",
-    "jest": "^30.4.2"
+    "electron-builder": "^26.18.0",
+    "jest": "^30.5.2"
   },
   "dependencies": {
-    "electron-updater": "^6.1.7",
+    "electron-updater": "^6.8.11",
     "node-machine-id": "^1.1.12",
     "pngjs": "^7.0.0",
     "protobufjs": "^7.5.4",
-    "stream-json": "^3.1.0"
+    "stream-json": "^3.8.0"
+  },
+  "overrides": {
+    "test-exclude": "^8.0.0"
   },
   "build": {
     "appId": "com.sentry-six.revamped",
