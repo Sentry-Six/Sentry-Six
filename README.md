@@ -178,6 +178,8 @@ See [ffmpeg_bin/README.md](ffmpeg_bin/README.md) for details about the bundled F
 
 ## Project Origin & Credits
 
+Originally conceived by [**ChadR23**](https://github.com/ChadR23), this project is now co-developed alongside [**Scottmg1**](https://github.com/Scottmg1). Both serve as main developers.
+
 Special thanks to [**JeffFromTheIRS**](https://github.com/JeffFromTheIRS) for his contributions via Pull Requests and beta testing, and to  [**Parallax**](https://github.com/DennisGarvey) and **38tu** for their hands-on testing and invaluable feedback.
 
 ## License
