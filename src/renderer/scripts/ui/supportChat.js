@@ -531,6 +531,53 @@ function renderMessage(message) {
     return row;
 }
 
+// Rows are reused while their message is unchanged: rebuilding them on every
+// 2 s poll replayed each row's entry animation, so the whole chat flickered.
+const renderedRows = new Map();
+let typingRow = null;
+
+function messageRow(message) {
+    const fileStates = Object.entries(state.fileStates).filter(([key]) => key.startsWith(`${message.id}:`));
+    const key = JSON.stringify([message.role, message.content, message.createdAt, message.actions || null, fileStates]);
+    const cached = renderedRows.get(message.id);
+    if (cached?.key === key) return cached.row;
+    const row = renderMessage(message);
+    // A message that changed in place updates without sliding in again.
+    if (cached) row.classList.add('no-entry-animation');
+    renderedRows.set(message.id, { key, row });
+    return row;
+}
+
+function typingIndicator() {
+    if (!typingRow) {
+        typingRow = el('div', 'chat-message-row support-row ai-support-typing');
+        typingRow.setAttribute('role', 'status');
+        typingRow.append(el('div', 'message-avatar avatar-support', 'AI'), el('div', 'chat-message support-message', 'Sentry Assistant is preparing a response…'));
+    }
+    return typingRow;
+}
+
+// Puts `nodes` in `container` without detaching ones already in place, which
+// would restart their animations. Returns the nodes that were newly inserted.
+function syncChildren(container, nodes) {
+    const inserted = [];
+    let current = container.firstChild;
+    for (const node of nodes) {
+        if (node === current) {
+            current = current.nextSibling;
+            continue;
+        }
+        container.insertBefore(node, current);
+        inserted.push(node);
+    }
+    while (current) {
+        const next = current.nextSibling;
+        current.remove();
+        current = next;
+    }
+    return inserted;
+}
+
 function renderWelcome(container) {
     const welcome = el('div', 'support-chat-welcome');
     const iconWrap = el('div', 'welcome-icon');
@@ -546,19 +593,24 @@ function render() {
     const messagesEl = $('supportChatMessages');
     const composer = $('supportChatComposer');
     const newChat = $('aiSupportNewChat');
-    messagesEl.replaceChildren();
+    const wasNearBottom = messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight < 80;
+    let inserted = [];
 
     const gated = (state.conversation && state.requiresDisclosureReset) || (!state.conversation && !state.disclosureAccepted);
-    if (state.conversation && state.requiresDisclosureReset) renderDisclosureRefresh(messagesEl);
-    else if (!state.conversation && !state.disclosureAccepted) renderDisclosure(messagesEl);
-    else if (state.messages.length === 0) renderWelcome(messagesEl);
-    else state.messages.forEach(message => messagesEl.append(renderMessage(message)));
-
-    if (!gated && state.status === 'generating') {
-        const typing = el('div', 'chat-message-row support-row ai-support-typing');
-        typing.setAttribute('role', 'status');
-        typing.append(el('div', 'message-avatar avatar-support', 'AI'), el('div', 'chat-message support-message', 'Sentry Assistant is preparing a response…'));
-        messagesEl.append(typing);
+    if (gated || state.messages.length === 0) {
+        renderedRows.clear();
+        messagesEl.replaceChildren();
+        if (state.conversation && state.requiresDisclosureReset) renderDisclosureRefresh(messagesEl);
+        else if (!state.conversation && !state.disclosureAccepted) renderDisclosure(messagesEl);
+        else renderWelcome(messagesEl);
+        if (!gated && state.status === 'generating') messagesEl.append(typingIndicator());
+        inserted = [...messagesEl.children];
+    } else {
+        const ids = new Set(state.messages.map(message => message.id));
+        for (const id of renderedRows.keys()) if (!ids.has(id)) renderedRows.delete(id);
+        const rows = state.messages.map(messageRow);
+        if (state.status === 'generating') rows.push(typingIndicator());
+        inserted = syncChildren(messagesEl, rows);
     }
 
     composer.classList.toggle('hidden', Boolean(gated));
@@ -580,7 +632,9 @@ function render() {
         status.textContent = 'This conversation is closed. Use New chat to delete it and start again.';
         status.className = 'support-chat-status';
     }
-    messagesEl.scrollTop = messagesEl.scrollHeight;
+    // Follow new content, but leave a reader who scrolled up where they are.
+    const sentByUser = inserted.some(node => node.classList?.contains('user-row'));
+    if (inserted.length && (wasNearBottom || sentByUser)) messagesEl.scrollTop = messagesEl.scrollHeight;
 }
 
 function createSupportChatPanel() {
