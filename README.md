@@ -122,10 +122,10 @@ Not affiliated with Tesla, Inc. Unrelated to the Sentry (sentry.io) error-monito
 Your dashcam footage stays on your computer unless you choose to share a clip. Here's what Sentry Studio sends, and when:
 
 - **Update checks**: On startup and when you click Check Now, the app sends a pseudonymous install ID (a SHA-256 hash of your machine ID with a salt that is public in the source code), your platform, CPU architecture and app version. Records are stored in Canada; a private maintainers' Discord channel gets the platform and version.
-- **Map tiles**: OpenStreetMap maps load from our map server at tiles.sentryusb.com (built with [VersaTiles](https://versatiles.org)) by default, or from OpenStreetMap's tile server if selected in Settings; the selected server sees roughly where you drive. Exported static minimaps use OpenStreetMap tiles.
+- **Map tiles**: Maps load from our map server at tiles.sentryusb.com (OpenStreetMap data plus ESA WorldCover, GEBCO and Mapzen terrain, built with [VersaTiles](https://versatiles.org)). Exported static minimaps, and computers that can't draw the vector map, use OpenStreetMap's tile server. The server used sees roughly where you drive.
 - **Place Names (opt-in)**: When turned on in Settings → Playback & Overlays, drive start and end coordinates are sent to OpenStreetMap Nominatim to look up place names.
 - **Clip sharing (when you share)**: The exported MP4 (up to 3 GB) is uploaded to clip.sentry-six.com for the time you choose (30 minutes to 7 days, 72 hours by default). The original filename is shown on the public clip page and used as the download name. Your IP address, the filename and a delete token are kept until the clip is deleted or expires. Moderators may keep a reported clip up to 30 days past expiry to investigate abuse. Anyone can report a clip from its page.
-- **Diagnostics (when you send them)**: Logs and selected settings, with your home-folder user name redacted from file paths; logs can include details such as event locations. Your IP address is stored with the upload, and diagnostics are deleted after 7 days.
+- **Diagnostics (when you send them)**: Logs and selected settings. The app replaces your home-folder user name in file paths and removes logged event locations; other details in the logs are sent as they are, so review what you send. Your IP address is stored with the upload, and diagnostics are deleted after 7 days.
 - **AI Support (when used)**: Your messages, app version, platform and CPU architecture go to Sentry Six, and Anthropic processes them to write each answer. Redacted chats are stored in Canada for up to 90 days after your last message and may be reviewed by authorized maintainers; **New chat** deletes the current chat. Diagnostics are shared only when you approve a request in the chat, and are deleted within 7 days.
 - **Privacy Notice**: You'll see a notice about these features when you first launch the app, and again if they change.
 
@@ -177,8 +177,6 @@ See [ffmpeg_bin/README.md](ffmpeg_bin/README.md) for details about the bundled F
 - Brake/accelerator pedal data is not logged during Self Driving. Pedal activity while Autopilot/Self Driving is engaged indicates driver input.
 
 ## Project Origin & Credits
-
-Originally concepted by  [**ChadR23**](https://github.com/ChadR23), this project is now co-developed alongside [**Scottmg1**](https://github.com/Scottmg1). Both serve as Main Developers, utilizing the **Claude Opus 4.5 AI Model** to aid in development.
 
 Special thanks to [**JeffFromTheIRS**](https://github.com/JeffFromTheIRS) for his contributions via Pull Requests and beta testing, and to  [**Parallax**](https://github.com/DennisGarvey) and **38tu** for their hands-on testing and invaluable feedback.
 
