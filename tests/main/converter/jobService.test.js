@@ -11,6 +11,8 @@ const tmpRoot = fs.realpathSync.native(os.tmpdir());
 
 const { createConverterJobService } = require('../../../src/main/converter/jobService');
 const { createJobStore } = require('../../../src/main/converter/jobStore');
+const { calculateRetryBitrate, calculateSecantRetryBitrate } = require('../../../src/main/converter/encoderPlanner');
+const { isWithinProfile } = require('../../../src/main/converter/contracts');
 
 const temporaryRoots = [];
 
@@ -728,6 +730,41 @@ describe('converter job orchestration', () => {
       operation.ownedPaths?.encodedCandidate)).toHaveLength(3);
     expect((await h.service.get(id)).items[0]).toMatchObject({ state: 'failed', attempts: 3,
       failure: { code: 'profile-size' } });
+  });
+
+  test('steers libaom-av1 corrections by the secant through its earlier size misses', async () => {
+    // A libaom-like encoder whose output responds to bitrate^0.35: two
+    // proportional steps would leave it at about 8% savings, outside the
+    // conservative 3-7% band.
+    const sourceBytes = 1_000_000;
+    let scale;
+    const outputBytesFor = (bitrate) => Math.round(10_000 + scale * bitrate ** 0.35);
+    const h = harness({
+      planner: { select: jest.fn(async () => ({ family: 'av1', codec: 'libaom-av1', hardware: false })) },
+      deps: { verifier: jest.fn(async ({ candidate }) => {
+        const [, args] = h.spawnProcess.mock.calls.at(-1);
+        const bitrate = Number(args[args.indexOf('-b:v') + 1]);
+        if (scale === undefined) scale = (sourceBytes * 0.88 - 10_000) / bitrate ** 0.35;
+        const outputBytes = outputBytesFor(bitrate);
+        if (!isWithinProfile(sourceBytes, outputBytes, 'conservative')) {
+          return { ok: false, reason: 'profile-size', retryable: true, sourceBytes, outputBytes, details: {} };
+        }
+        return { ok: true, reason: null, retryable: false, sourceBytes, outputBytes, details: {},
+          publicationArtifact: { path: `${candidate}.snapshot`, token: 'token', sha256: 'b'.repeat(64), size: outputBytes } };
+      }) }
+    });
+    const id = await h.service.start({ ...CONFIG, codec: 'av1', profileId: 'conservative' });
+    await h.service.whenIdle(id);
+
+    const bitrates = h.spawnProcess.mock.calls.map(([, args]) => Number(args[args.indexOf('-b:v') + 1]));
+    expect(bitrates).toHaveLength(3);
+    const [first, second] = bitrates.map(outputBytesFor);
+    expect(bitrates[1]).toBe(calculateRetryBitrate(bitrates[0], first, 950_000, { codec: 'av1' }));
+    expect(bitrates[2]).toBe(calculateSecantRetryBitrate({ bitrate: bitrates[0], actualBytes: first },
+      { bitrate: bitrates[1], actualBytes: second }, 950_000, { codec: 'av1' }));
+    // The proportional step the old logic took would still miss the band.
+    expect(isWithinProfile(sourceBytes, outputBytesFor(calculateRetryBitrate(bitrates[1], second, 950_000, { codec: 'av1' })), 'conservative')).toBe(false);
+    expect((await h.service.get(id)).items[0]).toMatchObject({ state: 'completed', attempts: 3 });
   });
 
   test.each([

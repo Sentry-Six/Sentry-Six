@@ -125,20 +125,24 @@ describeRealEncoders(`real pipeline (${encoderGate.reason || 'required CPU encod
       + `matrixCpu=h265:${encoderGate.selected.h265},av1:${encoderGate.selected.av1}`);
   });
 
+  // The last column is the clip length in seconds. The 16 s av1/conservative
+  // case covers libaom's short-clip undershoot, where the size corrections
+  // must converge on the 3-7% band; the 32 s one is the settled case.
   const cases = [
-    ['h265', 'conservative', 'driving', null],
-    ['h265', 'balanced', 'parked-to-driving', null],
-    ['h265', 'aggressive', 'multiple-gaps', null],
-    ['av1', 'conservative', 'parked', null],
-    ['av1', 'balanced', 'driving-to-parked', null],
-    ['av1', 'aggressive', 'multiple-gaps', null],
-    ['h265', 'aggressive', 'multiple-gaps', 'default-success'],
-    ['av1', 'aggressive', 'multiple-gaps', 'default-success'],
-    ['h265', 'balanced', 'parked-to-driving', 'default-refusal']
+    ['h265', 'conservative', 'driving', null, 16],
+    ['h265', 'balanced', 'parked-to-driving', null, 16],
+    ['h265', 'aggressive', 'multiple-gaps', null, 16],
+    ['av1', 'conservative', 'parked', null, 16],
+    ['av1', 'conservative', 'parked', null, 32],
+    ['av1', 'balanced', 'driving-to-parked', null, 16],
+    ['av1', 'aggressive', 'multiple-gaps', null, 16],
+    ['h265', 'aggressive', 'multiple-gaps', 'default-success', 32],
+    ['av1', 'aggressive', 'multiple-gaps', 'default-success', 32],
+    ['h265', 'balanced', 'parked-to-driving', 'default-refusal', 16]
   ];
 
-  test.each(cases)('%s/%s preserves %s telemetry through the real runtime (%s)', async (codec, profileId, patternName, filesystemMode) => {
-    const caseRoot = path.join(root, `${codec}-${profileId}-${filesystemMode || 'injected'}`);
+  test.each(cases)('%s/%s preserves %s telemetry through the real runtime (%s, %ss)', async (codec, profileId, patternName, filesystemMode, durationSeconds) => {
+    const caseRoot = path.join(root, `${codec}-${profileId}-${filesystemMode || 'injected'}-${durationSeconds}s`);
     const sourceRoot = path.join(caseRoot, 'source');
     const sourceFolder = path.join(sourceRoot, 'RecentClips');
     const destinationRoot = path.join(caseRoot, 'destination');
@@ -147,11 +151,6 @@ describeRealEncoders(`real pipeline (${encoderGate.reason || 'required CPU encod
       fs.promises.mkdir(destinationRoot, { recursive: true }), fs.promises.mkdir(userDataPath, { recursive: true })]);
     const filename = '2026-08-30_12-00-00-front.mp4';
     const sourcePath = path.join(sourceFolder, filename);
-    // libaom's one-pass rate control undershoots on short clips and its two
-    // size corrections left a 16 s conservative encode at 5.1-7.1% savings on
-    // Windows CI, astride the 7% edge; at 32 s it settles near 6.4%.
-    const longClip = filesystemMode === 'default-success' || (codec === 'av1' && profileId === 'conservative');
-    const durationSeconds = longClip ? 32 : 16;
     const frameCount = durationSeconds * 12;
     const fixture = await createTeslaH264Fixture({ ffmpegPath: tools.ffmpegPath, outputPath: sourcePath,
       telemetryPattern: telemetryPattern(patternName, frameCount), durationSeconds,
@@ -300,8 +299,11 @@ describeRealEncoders(`real pipeline (${encoderGate.reason || 'required CPU encod
       quality = `SSIM=${metrics.ssim.toFixed(6)} PSNR=${metrics.psnr.toFixed(6)}`;
     }
     const writerDiagnostic = mediaDiagnostics.find((entry) => entry.stage === 'av1-writer');
-    console.info(`REAL_MATRIX ${codec}/${profileId} pattern=${patternName} encoder=${job.items[0].encoder} `
-      + `attempts=${job.items[0].attempts} sourceBytes=${fixture.sourceBytes} outputBytes=${outputBytes.length} `
+    const encodeBitrates = spawnCalls.filter(({ args }) => args.includes('-progress')).map(({ args }) => args[args.indexOf('-b:v') + 1]);
+    const trajectory = mediaDiagnostics.filter((entry) => entry.stage === 'verifier').map((entry, index) =>
+      `${encodeBitrates[index]}:${((entry.sourceBytes - entry.outputBytes) / entry.sourceBytes * 100).toFixed(2)}%`).join(',');
+    console.info(`REAL_MATRIX ${codec}/${profileId} ${durationSeconds}s pattern=${patternName} encoder=${job.items[0].encoder} `
+      + `attempts=${job.items[0].attempts} trajectory=${trajectory} sourceBytes=${fixture.sourceBytes} outputBytes=${outputBytes.length} `
       + `savings=${savings}% codec=${stream.codec_name}/${stream.codec_tag_string} frames=${stream.nb_read_frames} `
       + `duration=${stream.duration}s pts=start:${outputPts[0].toFixed(6)},step:${(outputPts[1] - outputPts[0]).toFixed(6)} `
       + `events=${events} markers=${inspected.markers.length} strictDecode=pass `

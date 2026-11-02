@@ -719,6 +719,8 @@ function createConverterJobService(deps) {
     // remains available for encoders that still miss.
     if (selected.hardware === true) bitrate = Math.max(SAFE_VIDEO_BITRATE_FLOORS[codec], Math.floor(bitrate * 0.93));
     let sizeRetryCount = 0;
+    // Size misses of this item with the current encoder, for the secant step.
+    let sizeMisses = [];
     let attempts = currentItem(runtime, item.id)?.attempts || 0;
     let latestOwnership = staged.ownership;
 
@@ -760,6 +762,7 @@ function createConverterJobService(deps) {
         if (selected.hardware === true && !usedCpuFallback) {
           selected = await planner.selectCpuFallback(codec);
           usedCpuFallback = true;
+          sizeMisses = [];
           continue;
         }
         throw Object.assign(new Error('encode failed'), { code: 'ENCODER_FAILED' });
@@ -824,7 +827,8 @@ function createConverterJobService(deps) {
           encoder: selected.codec,
           currentBitrate: bitrate,
           actualBytes: verification?.outputBytes,
-          targetBytes
+          targetBytes,
+          history: sizeMisses
         });
         const cleanup = await cleanupOwnership(runtime, item.id, adopted);
         if (cleanup.cleaned === false) {
@@ -837,6 +841,7 @@ function createConverterJobService(deps) {
         }
         if (retry.retry) {
           sizeRetryCount += 1;
+          sizeMisses = [...sizeMisses, { bitrate, actualBytes: verification.outputBytes }];
           bitrate = retry.bitrate;
           continue;
         }

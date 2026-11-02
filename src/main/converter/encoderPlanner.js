@@ -273,6 +273,52 @@ function calculateRetryBitrate(currentBitrate, actualBytes, targetBytes, options
   return requirePositiveSafeInteger('calculated bitrate', Math.max(bitrateFloor(codec), calculated));
 }
 
+// A secant step needs two attempts whose bitrates differ by at least this
+// fraction; closer points give a slope dominated by encoder noise.
+const SECANT_MIN_BITRATE_SPREAD = 0.01;
+// The secant step may move the bitrate at most this many times as far (in
+// ratio terms) as the proportional step would, and never more than 2x either way.
+const SECANT_MAX_STEP_MULTIPLE = 4;
+const SECANT_MAX_RATIO = 2;
+
+/**
+ * Corrects from the last two attempts with the same encoder. The proportional
+ * step assumes output bytes scale with bitrate; libaom's one-pass rate control
+ * on short clips responds less than proportionally, and the fixed container
+ * and telemetry bytes never scale, so proportional steps keep landing short of
+ * the target. The secant through the last two (bitrate, bytes) points measures
+ * the actual response and aims it at targetBytes, the centre of the profile
+ * band. Returns null when the points cannot give a trustworthy slope; the
+ * caller then keeps the proportional step.
+ */
+function calculateSecantRetryBitrate(previous, current, targetBytes, options = {}) {
+  if (!previous || !current) return null;
+  const values = [previous.bitrate, previous.actualBytes, current.bitrate, current.actualBytes, targetBytes];
+  if (!values.every((value) => Number.isFinite(value) && value > 0)) return null;
+  const bitrateDelta = current.bitrate - previous.bitrate;
+  if (Math.abs(bitrateDelta) < current.bitrate * SECANT_MIN_BITRATE_SPREAD) return null;
+  const slope = (current.actualBytes - previous.actualBytes) / bitrateDelta;
+  if (!Number.isFinite(slope) || slope <= 0) return null;
+  const proportionalRatio = targetBytes / current.actualBytes;
+  const secantRatio = (current.bitrate + (targetBytes - current.actualBytes) / slope) / current.bitrate;
+  if (!Number.isFinite(secantRatio) || secantRatio <= 0) return null;
+  // Both steps must point the same way; otherwise the slope is not describing
+  // this encoder near the target.
+  if (Math.sign(Math.log(secantRatio)) !== Math.sign(Math.log(proportionalRatio))) return null;
+  const limit = Math.min(Math.log(SECANT_MAX_RATIO), Math.abs(Math.log(proportionalRatio)) * SECANT_MAX_STEP_MULTIPLE);
+  const boundedLog = Math.max(-limit, Math.min(limit, Math.log(secantRatio)));
+  const codec = options.codec || 'h265';
+  const calculated = Math.round(current.bitrate * Math.exp(boundedLog));
+  if (!Number.isSafeInteger(calculated) || calculated <= 0) return null;
+  return Math.max(bitrateFloor(codec), calculated);
+}
+
+/**
+ * history lists the earlier size misses of this item with the same encoder,
+ * oldest first, as { bitrate, actualBytes }. The first correction is always
+ * proportional; later corrections use the secant through the last miss and
+ * this one when it gives a usable slope.
+ */
 function decideSizeRetry({
   retryCount,
   failureReason,
@@ -280,16 +326,19 @@ function decideSizeRetry({
   encoder,
   currentBitrate,
   actualBytes,
-  targetBytes
+  targetBytes,
+  history = []
 }) {
   if (!Number.isInteger(retryCount) || retryCount < 0) throw new RangeError('retryCount must be a non-negative integer');
   const correctionLimit = encoder === 'libaom-av1' ? 2 : 1;
   if (failureReason !== RETRY_REASONS.PROFILE_SIZE || retryCount >= correctionLimit) {
     return { retry: false, bitrate: null };
   }
+  const previous = Array.isArray(history) && history.length ? history[history.length - 1] : null;
+  const secant = calculateSecantRetryBitrate(previous, { bitrate: currentBitrate, actualBytes }, targetBytes, { codec });
   return {
     retry: true,
-    bitrate: calculateRetryBitrate(currentBitrate, actualBytes, targetBytes, { codec })
+    bitrate: secant ?? calculateRetryBitrate(currentBitrate, actualBytes, targetBytes, { codec })
   };
 }
 
@@ -301,6 +350,7 @@ module.exports = {
   createEncoderPlanner,
   calculateInitialBitrate,
   calculateRetryBitrate,
+  calculateSecantRetryBitrate,
   decideSizeRetry,
   nextBitrate: calculateRetryBitrate
 };

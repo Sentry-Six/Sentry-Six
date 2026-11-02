@@ -6,10 +6,12 @@ const {
   buildEncodeArgs,
   calculateInitialBitrate,
   calculateRetryBitrate,
+  calculateSecantRetryBitrate,
   decideSizeRetry,
   probeCandidate,
   createEncoderPlanner
 } = require('../../../src/main/converter/encoderPlanner');
+const { targetOutputBytes, isWithinProfile } = require('../../../src/main/converter/contracts');
 
 function encoderFromArgs(args) {
   const index = args.indexOf('-c:v');
@@ -357,5 +359,144 @@ describe('bitrate and retry planning', () => {
     }
     expect(decideSizeRetry({ ...request, encoder: 'libaom-av1', retryCount: 0,
       failureReason: 'telemetry-mismatch' })).toEqual({ retry: false, bitrate: null });
+  });
+});
+
+describe('size correction convergence with a simulated encoder', () => {
+  const sourceBytes = 2_500_000;
+  const initialBitrate = 1_200_000;
+
+  // Output bytes = fixed container/telemetry bytes + a video part that scales
+  // with bitrate^exponent. An exponent below 1 responds less than
+  // proportionally, like libaom's one-pass rate control on a short clip; above
+  // 1 it over-responds. `firstSavings` sets where the first attempt lands.
+  function simulatedEncoder({ firstSavings, exponent, fixedBytes = 20_000 }) {
+    const scale = (sourceBytes * (1 - firstSavings) - fixedBytes) / initialBitrate ** exponent;
+    return (bitrate) => Math.round(fixedBytes + scale * bitrate ** exponent);
+  }
+
+  // Mirrors jobService's loop: verify, ask decideSizeRetry, re-encode. With
+  // withHistory false every correction is the previous proportional step.
+  function runSizeLoop({ outputBytesFor, encoder = 'libaom-av1', codec = 'av1', profileId = 'conservative', withHistory = true }) {
+    const targetBytes = targetOutputBytes(sourceBytes, profileId);
+    const attempts = [];
+    let bitrate = initialBitrate;
+    let history = [];
+    for (let retryCount = 0; ; retryCount += 1) {
+      const actualBytes = outputBytesFor(bitrate);
+      attempts.push({ bitrate, actualBytes, savings: 1 - actualBytes / sourceBytes });
+      if (isWithinProfile(sourceBytes, actualBytes, profileId)) return { ok: true, attempts };
+      const decision = decideSizeRetry({ retryCount, failureReason: RETRY_REASONS.PROFILE_SIZE, codec, encoder,
+        currentBitrate: bitrate, actualBytes, targetBytes, history: withHistory ? history : [] });
+      if (!decision.retry) return { ok: false, attempts };
+      history = [...history, { bitrate, actualBytes }];
+      bitrate = decision.bitrate;
+    }
+  }
+
+  test.each([
+    { firstSavings: 0.12, exponent: 0.35 },
+    { firstSavings: 0.14, exponent: 0.5 },
+    { firstSavings: 0.10, exponent: 0.3 },
+    { firstSavings: 0.20, exponent: 0.6 },
+    { firstSavings: 0.30, exponent: 0.5 }
+  ])('an undershooting libaom-like encoder ($firstSavings first savings, exponent $exponent) converges where proportional steps failed', (model) => {
+    const outputBytesFor = simulatedEncoder(model);
+    const proportional = runSizeLoop({ outputBytesFor, withHistory: false });
+    const secant = runSizeLoop({ outputBytesFor });
+
+    // The old logic: three attempts, all still saving more than the 3-7% band.
+    expect(proportional.ok).toBe(false);
+    expect(proportional.attempts).toHaveLength(3);
+    expect(proportional.attempts.at(-1).savings).toBeGreaterThan(0.07);
+    // The same first two attempts, then a secant step that lands near the
+    // band's 5% centre rather than creeping toward its edge.
+    expect(secant.ok).toBe(true);
+    expect(secant.attempts).toHaveLength(3);
+    expect(secant.attempts.slice(0, 2)).toEqual(proportional.attempts.slice(0, 2));
+    expect(Math.abs(secant.attempts[2].savings - 0.05)).toBeLessThan(0.02);
+  });
+
+  test('an over-responding encoder that oscillates under proportional steps converges', () => {
+    const outputBytesFor = simulatedEncoder({ firstSavings: 0.01, exponent: 2 });
+    const proportional = runSizeLoop({ outputBytesFor, withHistory: false });
+    const secant = runSizeLoop({ outputBytesFor });
+
+    expect(proportional.ok).toBe(false);
+    expect(proportional.attempts.map(({ savings }) => savings > 0.07)).toEqual([false, true, false]);
+    expect(secant.ok).toBe(true);
+    expect(secant.attempts.at(-1).savings).toBeCloseTo(0.05, 1);
+  });
+
+  test('a proportional encoder still converges on the first correction', () => {
+    const result = runSizeLoop({ outputBytesFor: simulatedEncoder({ firstSavings: 0.11, exponent: 1, fixedBytes: 0 }) });
+    expect(result.ok).toBe(true);
+    expect(result.attempts).toHaveLength(2);
+  });
+
+  test('success bands are unchanged: a miss just outside the band still fails after the correction budget', () => {
+    // Every attempt lands at 7.1% savings whatever the bitrate.
+    const result = runSizeLoop({ outputBytesFor: () => Math.round(sourceBytes * 0.929) });
+    expect(result.ok).toBe(false);
+    expect(result.attempts).toHaveLength(3);
+  });
+
+  test.each(['libx265', 'hevc_nvenc', 'libsvtav1', 'av1_nvenc'])('%s keeps one proportional correction', (encoder) => {
+    const codec = /hevc|x265/.test(encoder) ? 'h265' : 'av1';
+    const outputBytesFor = simulatedEncoder({ firstSavings: 0.12, exponent: 0.35 });
+    const result = runSizeLoop({ outputBytesFor, encoder, codec });
+    expect(result.attempts).toHaveLength(2);
+    expect(result.attempts[1].bitrate).toBe(calculateRetryBitrate(
+      initialBitrate, result.attempts[0].actualBytes, targetOutputBytes(sourceBytes, 'conservative'), { codec }));
+  });
+
+  test('the first correction is proportional even when history is passed', () => {
+    const request = { retryCount: 0, failureReason: RETRY_REASONS.PROFILE_SIZE, codec: 'av1', encoder: 'libaom-av1',
+      currentBitrate: 1_200_000, actualBytes: 2_200_000, targetBytes: 2_375_000 };
+    expect(decideSizeRetry({ ...request, history: [] }).bitrate).toBe(calculateRetryBitrate(1_200_000, 2_200_000, 2_375_000, { codec: 'av1' }));
+  });
+
+  describe('calculateSecantRetryBitrate', () => {
+    const target = 2_375_000;
+
+    test('aims the line through two attempts at the target', () => {
+      // bytes = bitrate + 100_000 exactly, so the secant lands on the target.
+      const bytes = (bitrate) => bitrate + 100_000;
+      const next = calculateSecantRetryBitrate({ bitrate: 2_000_000, actualBytes: bytes(2_000_000) },
+        { bitrate: 2_100_000, actualBytes: bytes(2_100_000) }, target, { codec: 'av1' });
+      expect(next).toBe(2_275_000);
+    });
+
+    test.each([
+      ['a non-positive slope', { bitrate: 1_000_000, actualBytes: 2_300_000 }, { bitrate: 1_100_000, actualBytes: 2_200_000 }],
+      ['equal bitrates', { bitrate: 1_100_000, actualBytes: 2_100_000 }, { bitrate: 1_100_000, actualBytes: 2_200_000 }],
+      ['bitrates under 1% apart', { bitrate: 1_100_000, actualBytes: 2_100_000 }, { bitrate: 1_105_000, actualBytes: 2_200_000 }],
+      ['a missing previous attempt', null, { bitrate: 1_100_000, actualBytes: 2_200_000 }],
+      ['non-finite bytes', { bitrate: 1_000_000, actualBytes: Number.NaN }, { bitrate: 1_100_000, actualBytes: 2_200_000 }]
+    ])('declines %s, leaving the proportional step', (_label, previous, current) => {
+      expect(calculateSecantRetryBitrate(previous, current, target, { codec: 'av1' })).toBeNull();
+      if (previous) {
+        expect(decideSizeRetry({ retryCount: 1, failureReason: RETRY_REASONS.PROFILE_SIZE, codec: 'av1', encoder: 'libaom-av1',
+          currentBitrate: current.bitrate, actualBytes: current.actualBytes, targetBytes: target, history: [previous] }).bitrate)
+          .toBe(calculateRetryBitrate(current.bitrate, current.actualBytes, target, { codec: 'av1' }));
+      }
+    });
+
+    test('bounds a nearly flat response to four proportional steps and at most 2x', () => {
+      const previous = { bitrate: 1_000_000, actualBytes: 2_300_000 };
+      const current = { bitrate: 1_100_000, actualBytes: 2_300_100 };
+      const proportionalRatio = target / current.actualBytes;
+      const next = calculateSecantRetryBitrate(previous, current, target, { codec: 'av1' });
+      expect(next / current.bitrate).toBeCloseTo(proportionalRatio ** 4, 6);
+      const far = calculateSecantRetryBitrate({ bitrate: 1_000_000, actualBytes: 1_000_000 },
+        { bitrate: 1_100_000, actualBytes: 1_000_100 }, target, { codec: 'av1' });
+      expect(far).toBe(2_200_000);
+    });
+
+    test('never goes below the codec floor', () => {
+      const next = calculateSecantRetryBitrate({ bitrate: 260_000, actualBytes: 3_000_000 },
+        { bitrate: 250_000, actualBytes: 2_900_000 }, 1_000_000, { codec: 'av1' });
+      expect(next).toBe(SAFE_VIDEO_BITRATE_FLOORS.av1);
+    });
   });
 });
