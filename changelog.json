@@ -1,6 +1,29 @@
 {
   "versions": [
     {
+      "version": "2026.44.37",
+      "date": "2026-11-01",
+      "title": "Linux Packages & Time Zone Update",
+      "changes": [
+        {
+          "type": "feature",
+          "description": "Linux: Studio now comes as a .deb package for Debian, Ubuntu and similar systems, on x64 and ARM. FFmpeg is included and Studio updates itself."
+        },
+        {
+          "type": "improvement",
+          "description": "Maps always come from our own map server. The OpenStreetMap choice is gone, and anyone who picked it moves over automatically."
+        },
+        {
+          "type": "improvement",
+          "description": "Updated time zone data for the Nov 1 time zone changes in British Columbia, Alberta, Manitoba and the Northwest Territories."
+        },
+        {
+          "type": "fix",
+          "description": "The AI Support chat no longer flickers while Sentry Assistant is answering, and stays where you scrolled."
+        }
+      ]
+    },
+    {
       "version": "2026.44.36",
       "date": "2026-11-01",
       "title": "New Maps, AI Support & More",
