@@ -11,8 +11,6 @@
     "build": "electron-builder --publish never",
     "build:win": "electron-builder --win --publish never",
     "build:mac": "electron-builder --mac --publish never",
-    "build:mac-intel": "electron-builder --mac --x64 --publish never",
-    "build:mac-apple-silicon": "electron-builder --mac --arm64 --publish never",
     "build:linux": "electron-builder --linux --publish never",
     "build:all": "electron-builder --win --mac --publish never"
   },
