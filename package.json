@@ -208,5 +208,10 @@
       "releaseType": "release"
     },
     "beforePack": "scripts/prepare-ffmpeg.js"
+  },
+  "allowScripts": {
+    "electron-winstaller": true,
+    "protobufjs": true,
+    "@parcel/watcher": true
   }
 }
