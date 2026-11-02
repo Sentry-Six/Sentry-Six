@@ -3,6 +3,10 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+// Real path of the temp folder, resolved like fs.promises.realpath: on macOS
+// os.tmpdir() is under /var, a link to /private/var, and on Windows it can be
+// an 8.3 short path; staging refuses paths whose real location differs.
+const tmpRoot = fs.realpathSync.native(os.tmpdir());
 const crypto = require('crypto');
 const { EventEmitter } = require('events');
 const { createConverterJobService } = require('../../../src/main/converter/jobService');
@@ -40,7 +44,7 @@ async function authority(target) {
 
 describe('audited file-safety regressions using disposable files', () => {
   let root;
-  beforeEach(async () => { root = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'converter-safety-')); });
+  beforeEach(async () => { root = await fs.promises.mkdtemp(path.join(tmpRoot, 'converter-safety-')); });
   afterEach(async () => { await fs.promises.rm(root, { recursive: true, force: true }); });
 
   async function fixture(adapters) {

@@ -4,6 +4,10 @@ const { EventEmitter } = require('events');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+// Real path of the temp folder, resolved like fs.promises.realpath: on macOS
+// os.tmpdir() is under /var, a link to /private/var, and on Windows it can be
+// an 8.3 short path; staging refuses paths whose real location differs.
+const tmpRoot = fs.realpathSync.native(os.tmpdir());
 const { createConverterRuntime, createConverterLifecycle, startConverterBeforeWindow } = require('../../../src/main/converter/runtime');
 const { createConverterJobService } = require('../../../src/main/converter/jobService');
 const { registerConverterIpc } = require('../../../src/main/converter/ipc');
@@ -24,7 +28,7 @@ async function bounded(promise) {
 }
 
 async function fixture({ state = 'waiting', pendingInspection = false, failInspection = false, backgroundFailure = false, count = 1 } = {}) {
-  const root = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'sentry-six-lifecycle-'));
+  const root = await fs.promises.mkdtemp(path.join(tmpRoot, 'sentry-six-lifecycle-'));
   const sourceRoot = path.join(root, 'source');
   const destinationRoot = path.join(root, 'destination');
   await Promise.all([fs.promises.mkdir(sourceRoot), fs.promises.mkdir(destinationRoot)]);

@@ -3,6 +3,10 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+// Real path of the temp folder, resolved like fs.promises.realpath: on macOS
+// os.tmpdir() is under /var, a link to /private/var, and on Windows it can be
+// an 8.3 short path; staging refuses paths whose real location differs.
+const tmpRoot = fs.realpathSync.native(os.tmpdir());
 
 const { createConverterAdapters } = require('../../../src/main/converter/converterAdapters');
 const { inspectH265Telemetry } = require('../../../src/main/converter/h265Telemetry');
@@ -20,7 +24,7 @@ describe('real converter writer and verifier adapters', () => {
     ['h265', () => h265Mp4({ samples: [lengthPrefixedSample([hevcNal(19, [0x80])])] }), inspectH265Telemetry],
     ['av1', () => av1Mp4({ samples: [Buffer.from([0x12, 0x20, 0x00])] }), inspectAv1Telemetry]
   ])('maps output timing and invokes the actual %s writer while preserving the inode', async (codec, fixture, inspect) => {
-    const root = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'sentry-six-adapter-'));
+    const root = await fs.promises.mkdtemp(path.join(tmpRoot, 'sentry-six-adapter-'));
     roots.push(root);
     const candidatePath = path.join(root, `${codec}.mp4`);
     await fs.promises.writeFile(candidatePath, fixture());
@@ -46,7 +50,7 @@ describe('real converter writer and verifier adapters', () => {
   });
 
   test('runs the actual verifier pipeline and forwards cancellation to both owned process runners', async () => {
-    const root = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'sentry-six-adapter-verify-'));
+    const root = await fs.promises.mkdtemp(path.join(tmpRoot, 'sentry-six-adapter-verify-'));
     roots.push(root);
     const candidate = path.join(root, 'candidate.mp4');
     const source = path.join(root, 'source.mp4');

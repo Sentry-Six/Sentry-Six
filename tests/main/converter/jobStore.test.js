@@ -3,6 +3,10 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+// Real path of the temp folder, resolved like fs.promises.realpath: on macOS
+// os.tmpdir() is under /var, a link to /private/var, and on Windows it can be
+// an 8.3 short path; staging refuses paths whose real location differs.
+const tmpRoot = fs.realpathSync.native(os.tmpdir());
 
 const {
   MANIFEST_VERSION,
@@ -249,7 +253,7 @@ describe('converter job store', () => {
   });
 
   test('persists bounded discovery completion state for restart-safe queue draining', async () => {
-    const root = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'converter-job-store-discovery-'));
+    const root = await fs.promises.mkdtemp(path.join(tmpRoot, 'converter-job-store-discovery-'));
     const store = createJobStore({ rootDir: root, fs: fs.promises });
     try {
       await store.create(job('discovery-cursor-job', { discoveryComplete: false }));
@@ -265,7 +269,7 @@ describe('converter job store', () => {
   let rootDir;
 
   beforeEach(async () => {
-    temporaryRoot = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'sentry-job-store-'));
+    temporaryRoot = await fs.promises.mkdtemp(path.join(tmpRoot, 'sentry-job-store-'));
     rootDir = path.join(temporaryRoot, 'converter-jobs');
   });
 

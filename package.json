@@ -6,7 +6,7 @@
   "scripts": {
     "start": "electron .",
     "dev": "electron .",
-    "test": "jest",
+    "test": "node --experimental-vm-modules --disable-warning=ExperimentalWarning node_modules/jest/bin/jest.js",
     "test:dashcam": "node --test \"tests/renderer/*.test.mjs\"",
     "build": "electron-builder --publish never",
     "build:win": "electron-builder --win --publish never",

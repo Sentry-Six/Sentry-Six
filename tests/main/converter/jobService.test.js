@@ -4,6 +4,10 @@ const { EventEmitter } = require('events');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+// Real path of the temp folder, resolved like fs.promises.realpath: on macOS
+// os.tmpdir() is under /var, a link to /private/var, and on Windows it can be
+// an 8.3 short path; staging refuses paths whose real location differs.
+const tmpRoot = fs.realpathSync.native(os.tmpdir());
 
 const { createConverterJobService } = require('../../../src/main/converter/jobService');
 const { createJobStore } = require('../../../src/main/converter/jobStore');
@@ -1022,7 +1026,7 @@ describe('converter job orchestration', () => {
   });
 
   test('executes Task 9 passive discovery recovery and drains persisted plus newly discovered siblings', async () => {
-    const root = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'sentry-six-job-service-discovery-recover-'));
+    const root = await fs.promises.mkdtemp(path.join(tmpRoot, 'sentry-six-job-service-discovery-recover-'));
     temporaryRoots.push(root);
     const store = createJobStore({ rootDir: root, fs: fs.promises });
     await store.create({
@@ -1052,7 +1056,7 @@ describe('converter job orchestration', () => {
   });
 
   test('requeues the interrupted current item before executing Task 9 waiting recovery', async () => {
-    const root = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'sentry-six-job-service-waiting-recover-'));
+    const root = await fs.promises.mkdtemp(path.join(tmpRoot, 'sentry-six-job-service-waiting-recover-'));
     temporaryRoots.push(root);
     const store = createJobStore({ rootDir: root, fs: fs.promises });
     const counters = {
@@ -1082,7 +1086,7 @@ describe('converter job orchestration', () => {
   });
 
   test('resumes a canonical paused-network destination check before restarting the item and siblings', async () => {
-    const root = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'sentry-six-job-service-network-recover-'));
+    const root = await fs.promises.mkdtemp(path.join(tmpRoot, 'sentry-six-job-service-network-recover-'));
     temporaryRoots.push(root);
     const store = createJobStore({ rootDir: root, fs: fs.promises });
     const counters = {
@@ -1226,7 +1230,7 @@ describe('converter job orchestration', () => {
   });
 
   test('serializes real-store recovery so one action and one counter update occur', async () => {
-    const root = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'sentry-six-job-service-recover-gate-'));
+    const root = await fs.promises.mkdtemp(path.join(tmpRoot, 'sentry-six-job-service-recover-gate-'));
     temporaryRoots.push(root);
     const store = createJobStore({ rootDir: root, fs: fs.promises });
     const publicationArtifact = {
@@ -1285,7 +1289,7 @@ describe('converter job orchestration', () => {
   });
 
   test('does not rerun or recount an item durably completed before recovery bookkeeping crashed', async () => {
-    const root = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'sentry-six-recovery-idempotent-counter-'));
+    const root = await fs.promises.mkdtemp(path.join(tmpRoot, 'sentry-six-recovery-idempotent-counter-'));
     temporaryRoots.push(root);
     const store = createJobStore({ rootDir: root, fs: fs.promises });
     const counters = emptyCounters();
@@ -1321,7 +1325,7 @@ describe('converter job orchestration', () => {
   test.each(['shutdown', 'cancel'])(
     '%s aborts and awaits blocked real-store recovery inspection without resuming work',
     async (command) => {
-      const root = await fs.promises.mkdtemp(path.join(os.tmpdir(), `sentry-six-recovery-${command}-`));
+      const root = await fs.promises.mkdtemp(path.join(tmpRoot, `sentry-six-recovery-${command}-`));
       temporaryRoots.push(root);
       const store = createJobStore({ rootDir: root, fs: fs.promises });
       await store.create({
@@ -1512,7 +1516,7 @@ describe('converter job orchestration', () => {
   });
 
   test('recovers the exact candidate-written replacement after a persisted network pause', async () => {
-    const root = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'sentry-six-network-replacement-'));
+    const root = await fs.promises.mkdtemp(path.join(tmpRoot, 'sentry-six-network-replacement-'));
     temporaryRoots.push(root);
     const store = createJobStore({ rootDir: root, fs: fs.promises });
     const config = { ...CONFIG, destinationRoot: null, outputMode: 'replace', replacementConfirmed: true };
@@ -1617,7 +1621,7 @@ describe('converter job orchestration', () => {
   });
 
   test('persists canonical paused-network recovery before waiting on the affected source', async () => {
-    const root = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'sentry-six-job-service-network-persist-'));
+    const root = await fs.promises.mkdtemp(path.join(tmpRoot, 'sentry-six-job-service-network-persist-'));
     temporaryRoots.push(root);
     const store = createJobStore({ rootDir: root, fs: fs.promises });
     const waiting = deferred();
@@ -1650,7 +1654,7 @@ describe('converter job orchestration', () => {
   });
 
   test('keeps a producer network wait out of an active consumer transaction and resumes the same iterator', async () => {
-    const root = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'sentry-six-producer-network-concurrency-'));
+    const root = await fs.promises.mkdtemp(path.join(tmpRoot, 'sentry-six-producer-network-concurrency-'));
     temporaryRoots.push(root);
     const store = createJobStore({ rootDir: root, fs: fs.promises });
     const consumerEntered = deferred();
@@ -1950,7 +1954,7 @@ describe('converter job orchestration', () => {
   });
 
   test('uses one real singleton store through encode, asset transaction, completion, and restart', async () => {
-    const root = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'sentry-six-job-service-store-'));
+    const root = await fs.promises.mkdtemp(path.join(tmpRoot, 'sentry-six-job-service-store-'));
     temporaryRoots.push(root);
     const store = createJobStore({ rootDir: root, fs: fs.promises });
     const h = harness({
@@ -2089,7 +2093,7 @@ describe('converter job orchestration', () => {
   });
 
   test('treats a real scanner AbortError during shutdown as paused and resumes from a fresh real store', async () => {
-    const root = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'sentry-six-job-service-scanner-abort-'));
+    const root = await fs.promises.mkdtemp(path.join(tmpRoot, 'sentry-six-job-service-scanner-abort-'));
     temporaryRoots.push(root);
     const store = createJobStore({ rootDir: root, fs: fs.promises });
     const entered = deferred();

@@ -3,6 +3,10 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+// Real path of the temp folder, resolved like fs.promises.realpath: on macOS
+// os.tmpdir() is under /var, a link to /private/var, and on Windows it can be
+// an 8.3 short path; staging refuses paths whose real location differs.
+const tmpRoot = fs.realpathSync.native(os.tmpdir());
 const crypto = require('crypto');
 const { spawn } = require('child_process');
 const { createConverterRuntime } = require('../../../src/main/converter/runtime');
@@ -95,7 +99,7 @@ describeRealEncoders(`real pipeline (${encoderGate.reason || 'required CPU encod
   let tools;
   beforeAll(async () => {
     tools = await locateBundledTools();
-    root = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'sentry-converter-integration-'));
+    root = await fs.promises.mkdtemp(path.join(tmpRoot, 'sentry-converter-integration-'));
   });
   afterAll(async () => { if (root) await fs.promises.rm(root, { recursive: true, force: true }); });
 
@@ -329,7 +333,7 @@ describeRealEncoders(`real pipeline (${encoderGate.reason || 'required CPU encod
     const checkOptions = [];
     const events = [];
     const runtime = await createConverterRuntime({
-      userDataPath, tempPath: os.tmpdir(), ffmpegPath: tools.ffmpegPath, ffprobePath: tools.ffprobePath, spawn,
+      userDataPath, tempPath: tmpRoot, ffmpegPath: tools.ffmpegPath, ffprobePath: tools.ffprobePath, spawn,
       removeOwned: ownedFileRemover(), renameExclusive: noReplacePromoter(),
       network: { isRetryable: (error) => error?.code === 'ENETDOWN', checkPath: async (target, options) => {
         checks.push(target);
@@ -372,7 +376,7 @@ describeRealEncoders(`real pipeline (${encoderGate.reason || 'required CPU encod
 
 describe('converter transaction integration', () => {
   let root;
-  beforeEach(async () => { root = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'sentry-converter-transactions-')); });
+  beforeEach(async () => { root = await fs.promises.mkdtemp(path.join(tmpRoot, 'sentry-converter-transactions-')); });
   afterEach(async () => { await fs.promises.rm(root, { recursive: true, force: true }); });
 
   function digest(bytes) { return crypto.createHash('sha256').update(bytes).digest('hex'); }

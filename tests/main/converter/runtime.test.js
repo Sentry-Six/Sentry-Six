@@ -6,6 +6,10 @@ const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+// Real path of the temp folder, resolved like fs.promises.realpath: on macOS
+// os.tmpdir() is under /var, a link to /private/var, and on Windows it can be
+// an 8.3 short path; staging refuses paths whose real location differs.
+const tmpRoot = fs.realpathSync.native(os.tmpdir());
 const { createVerificationSnapshot } = require('../../../src/main/converter/verificationSnapshot');
 
 const {
@@ -23,7 +27,7 @@ const roots = [];
 afterAll(async () => Promise.all(roots.splice(0).map((root) => fs.promises.rm(root, { recursive: true, force: true }))));
 
 async function temporaryRoot(label) {
-  const root = await fs.promises.mkdtemp(path.join(os.tmpdir(), `sentry-six-runtime-${label}-`));
+  const root = await fs.promises.mkdtemp(path.join(tmpRoot, `sentry-six-runtime-${label}-`));
   roots.push(root);
   return root;
 }
@@ -232,7 +236,7 @@ describe('verification snapshot capability registry', () => {
   test('allows one live consume and an exact persisted restart reconciliation only', async () => {
     const bytes = Buffer.from('verified');
     const record = {
-      path: path.join(os.tmpdir(), 'sentry-six-verification-test', 'token.mp4'),
+      path: path.join(tmpRoot, 'sentry-six-verification-test', 'token.mp4'),
       token: 'token',
       size: bytes.length,
       sha256: crypto.createHash('sha256').update(bytes).digest('hex')
@@ -245,7 +249,7 @@ describe('verification snapshot capability registry', () => {
         transfer: async () => ({ path: record.path, token: record.token })
       })),
       pathApi: path,
-      tempRoot: os.tmpdir()
+      tempRoot: tmpRoot
     });
 
     const snapshot = await registry.createSnapshot({ bytes, size: bytes.length, sha256: record.sha256 });

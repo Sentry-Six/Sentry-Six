@@ -4,6 +4,10 @@ const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+// Real path of the temp folder, resolved like fs.promises.realpath: on macOS
+// os.tmpdir() is under /var, a link to /private/var, and on Windows it can be
+// an 8.3 short path; staging refuses paths whose real location differs.
+const tmpRoot = fs.realpathSync.native(os.tmpdir());
 
 const {
   FileTransactionError,
@@ -20,7 +24,7 @@ function digest(bytes) {
 }
 
 async function temporaryRoot(label) {
-  const root = await fs.promises.mkdtemp(path.join(os.tmpdir(), `sentry-six-staging-${label}-`));
+  const root = await fs.promises.mkdtemp(path.join(tmpRoot, `sentry-six-staging-${label}-`));
   roots.push(root);
   return root;
 }
