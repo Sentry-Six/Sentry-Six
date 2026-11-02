@@ -24,7 +24,7 @@ This document describes the multi-language (internationalization/i18n) system im
 
 2. **`src/renderer/scripts/data/translations.js`**
    - Translation strings for all 13 supported languages
-   - Organized by category: `ui.dropOverlay`, `ui.startup`, `ui.loading`, `ui.clipBrowser`, `ui.changelog`, `ui.eventTypes`, `ui.map`, `ui.playback`, `ui.export`, `ui.settings`, `ui.cameras`, `ui.dashboard`, `ui.notifications`, `ui.supportChat`, `ui.sharedClips`, plus top-level `welcome` (Welcome Guide) and `welcomeScreen` (privacy notice)
+   - Organized by category: `ui.converter`, `ui.dropOverlay`, `ui.startup`, `ui.loading`, `ui.clipBrowser`, `ui.changelog`, `ui.eventTypes`, `ui.map`, `ui.playback`, `ui.export`, `ui.settings`, `ui.cameras`, `ui.dashboard`, `ui.notifications`, `ui.supportChat`, `ui.sharedClips`, plus top-level `welcome` (Welcome Guide) and `welcomeScreen` (privacy notice)
    - Export keys include: position options, blur zone editor, FFmpeg status, warnings
    - Compact format to minimize file size while maintaining readability
 
@@ -218,7 +218,7 @@ If a translation key is missing in the selected language:
 - Translations are loaded once at startup
 - Language switching is instant (no file loading)
 - Translation lookup is O(1) using object property access
-- All languages live in a single `translations.js` file (~320KB)
+- All languages live in a single `translations.js` file (~340KB)
 
 ## Future Enhancements
 

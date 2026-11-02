@@ -36,6 +36,7 @@ Not affiliated with Tesla, Inc. Unrelated to the Sentry (sentry.io) error-monito
   - Load clips from any folder - no Tesla USB structure needed
   - Easily browse files by date
   - Supports Recent, Sentry, and Saved Clips
+  - Also plays GM Surround Vision footage
   - Event Triggers (e.g. "Manual Save", "Sentry", "Honk", "Object Detected", etc.)
   - Delete folders/events with the trash icon in the Clip Browser
 
@@ -61,13 +62,17 @@ Not affiliated with Tesla, Inc. Unrelated to the Sentry (sentry.io) error-monito
 
   ![Dashboard](https://github.com/user-attachments/assets/6bc6ff11-0066-427f-b2ab-c95530eaa2e3)
 
+- **Sentry USB Drives**
+  - Load the `drive-data.json` from [Sentry USB](https://github.com/Sentry-Six/Sentry-USB-Rusty) to browse your drive history in the Drives tab
+  - See the route map for the whole drive, filter by tag, and play its footage when the clips are in your loaded folder
+
 - **Clip Exporting**
   - Trim clips with ease using in/out points
   - Hardware-accelerated encoding (NVIDIA, AMD, Intel QuickSync, Apple Silicon)
   - Pick different export qualities
     - Mobile, Medium, High, Maximum
   - Add the SEI overlay to your export
-    - Compact dashboard overlays
+    - Dashboard styles: Compact, Detailed, Tesla Mobile, and Tesla Screen Dash
     - Configurable dashboard size (Small to X-Large)
     - Overlay is pre-rendered for optimal performance
   - Add a GPS minimap to your export (Beta)
@@ -75,6 +80,7 @@ Not affiliated with Tesla, Inc. Unrelated to the Sentry (sentry.io) error-monito
   - Use blur zones to ensure privacy
   - Export a time-lapse with an adjustable speed multiplier
   - Minimize the export modal and track progress via floating notification
+  - Advanced Editor (Beta): place and resize each camera and overlay freely on the canvas
 
 - **Clip Sharing**
   - Generate a shareable link after exporting a clip
@@ -82,16 +88,21 @@ Not affiliated with Tesla, Inc. Unrelated to the Sentry (sentry.io) error-monito
   - Manage your shared clips from the "My Shared Clips" modal
     - Preview, copy link, open in browser, or delete shared clips
   - Available for exports up to 10 minutes long
- <img width="468.5" height="410" alt="Export Modal" src="https://github.com/user-attachments/assets/0bd241b7-34a3-43fe-b577-e81359cd538e" />
+
+- **Footage Converter**
+  - Re-encode original Tesla camera files to H.265 or AV1 to save space, keeping their telemetry and folder structure
+  - Save to a separate folder and keep the originals, or replace the originals after each file is verified
+  - Choose a compression profile: High Quality, Balanced, or Smaller
 
 - **Customizable Settings**
   - Adjustable glass blur intensity
   - Toggle between metric or imperial measurements (Km/H or MPH)
   - Choose between 12-hour and 24-hour time formats
   - Customizable keyboard shortcuts with adjustable fast forward/backward duration
+  - Light or dark map style
   - Event Highlights
     - See which camera was triggered, visualized with a yellow or red highlight
-  <img width="260" height="406" alt="Settings Modal" src="https://github.com/user-attachments/assets/8eb489b6-2b4c-4f64-ad91-af48be6a686b" />
+  - Hardware Video Acceleration, which you can turn off if cameras freeze or stutter on older or integrated graphics
 
 - **Multi-Language Support**
   - 13 languages supported: English, Spanish, French, German, Chinese (Simplified), Japanese, Korean, Portuguese, Russian, Italian, Dutch, Polish, and Turkish
@@ -104,6 +115,7 @@ Not affiliated with Tesla, Inc. Unrelated to the Sentry (sentry.io) error-monito
 - **Auto Update**
   - Checks for new updates on start up with a one-click install.
     - You can also check for updates via the settings
+  - Turn on Pre-release Updates in Settings to get early beta builds
 
 ## Privacy & Updates
 
@@ -134,22 +146,23 @@ Join our [Discord Server](https://discord.com/invite/9QZEzVwdnt)!
 3. Run the installer
 4. Run Sentry Studio
 
-On Linux, download `SentryStudio-<version>-linux-amd64.deb` (most PCs) or `SentryStudio-<version>-linux-arm64.deb` (ARM computers) and install it with `sudo apt install ./SentryStudio-<version>-linux-amd64.deb`. FFmpeg is included. Sentry Studio then updates itself, asking for your password to install each update.
+The macOS app is signed and notarized by Apple, so it opens normally.
 
- <img width="245.5" height="96.5" alt="Screenshot_2026-01-02_at_1 17 05_PM" src="https://github.com/user-attachments/assets/81c21fef-6eb6-49c9-a0d3-75765eb32685" />
+On Linux, download `SentryStudio-<version>-linux-amd64.deb` (most PCs) or `SentryStudio-<version>-linux-arm64.deb` (ARM computers) and install it with `sudo apt install ./SentryStudio-<version>-linux-amd64.deb`. FFmpeg is included. Sentry Studio then updates itself, asking for your password to install each update.
 
 
 ## Manual Installation
 
 To run from source instead:
 
-1. Install [node.js](https://nodejs.org/en/download)
-2. Extract Sentry Studio to your desired location.
-3. Open a new Terminal (Command Prompt or Power Shell) and head to the Sentry Studio folder `cd C:\Users\yourname\Downloads\Sentry-Six`
-4. In your Sentry Studio folder, use the following command: `npm install`
-5. To run Sentry Studio, use `npm start`
+1. Install [Node.js](https://nodejs.org/en/download) 22 or newer
+2. Clone this repository, or download it with **Code → Download ZIP** and extract it
+3. Open a terminal (Command Prompt or PowerShell on Windows) in the Sentry Studio folder, for example `cd C:\Users\yourname\Downloads\Sentry-Six`
+4. Install the dependencies: `npm install`
+5. On macOS, download the pinned FFmpeg: `node scripts/prepare-macos-ffmpeg.js`. On Linux, run `node scripts/prepare-linux-ffmpeg.js`, or use a system FFmpeg with the `drawtext` and `ass` filters. Windows uses the FFmpeg in `ffmpeg_bin`.
+6. Start Sentry Studio: `npm start`
 
-On Linux, also install a system FFmpeg build with the `drawtext` and `ass` filters. On macOS, prepare the bundled FFmpeg first with `node scripts/prepare-macos-ffmpeg.js`. See [ffmpeg_bin/README.md](ffmpeg_bin/README.md) for details.
+See [ffmpeg_bin/README.md](ffmpeg_bin/README.md) for details about the bundled FFmpeg.
 
 ## Usage
 
