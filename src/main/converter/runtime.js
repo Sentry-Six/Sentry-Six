@@ -629,8 +629,22 @@ async function createConverterRuntime(options = {}) {
   return Object.freeze(runtime);
 }
 
-function createConverterLifecycle({ initialize, app, onError = () => {} } = {}) {
-  if (typeof initialize !== 'function' || !app || typeof app.quit !== 'function') {
+/**
+ * Electron's app.quit() must not run inside a before-quit dispatch. When a
+ * quit starts in native code, as SIGTERM's does, Electron drains the
+ * microtask queue before before-quit returns there. If the converter
+ * shutdown settles without real I/O (no job running), a quit chained on it
+ * re-enters Quit() inside that dispatch: the nested call closes the windows,
+ * then the outer call records the original quit as cancelled, and Studio
+ * stays running with no window and never emits will-quit. A macrotask runs
+ * after the dispatch has finished.
+ */
+function scheduleQuitAfterDispatch(callback) {
+  setImmediate(callback);
+}
+
+function createConverterLifecycle({ initialize, app, onError = () => {}, scheduleQuit = scheduleQuitAfterDispatch } = {}) {
+  if (typeof initialize !== 'function' || !app || typeof app.quit !== 'function' || typeof scheduleQuit !== 'function') {
     throw new TypeError('initialize and app are required');
   }
   let startPromise;
@@ -681,11 +695,19 @@ function createConverterLifecycle({ initialize, app, onError = () => {} } = {}) 
         ? Promise.resolve(runtimeInstance.shutdown?.())
         : runtimeAvailable.then((runtime) => runtime?.shutdown?.());
       shutdownPromise = shutdown
-        .catch((error) => { onError(error); })
-        .finally(() => {
-          quitReady = true;
-          app.quit();
-        });
+        .catch((error) => {
+          try { onError(error); } catch (_error) { /* reporting must not block the quit */ }
+        })
+        .then(() => new Promise((resolve) => {
+          scheduleQuit(() => {
+            quitReady = true;
+            try {
+              app.quit();
+            } finally {
+              resolve();
+            }
+          });
+        }));
     }
     return shutdownPromise;
   };

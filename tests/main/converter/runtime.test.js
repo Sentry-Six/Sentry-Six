@@ -467,6 +467,68 @@ describe('converter app lifecycle', () => {
     expect(finalEvent.preventDefault).not.toHaveBeenCalled();
   });
 
+  test('quits from a later macrotask when shutdown settles without I/O, so app.quit never re-enters before-quit', async () => {
+    // Electron drains microtasks before before-quit returns to native code. A
+    // quit reached through microtasks alone would run inside that dispatch,
+    // which left Studio alive with no window after one SIGTERM or Cmd+Q.
+    const runtime = { shutdown: jest.fn(async () => {}) };
+    const app = { quit: jest.fn() };
+    const lifecycle = createConverterLifecycle({ initialize: jest.fn(async () => runtime), app });
+    await lifecycle.start();
+
+    const event = { preventDefault: jest.fn() };
+    const quitting = lifecycle.beforeQuit(event);
+    for (let turn = 0; turn < 20; turn += 1) await Promise.resolve();
+    expect(event.preventDefault).toHaveBeenCalledTimes(1);
+    expect(runtime.shutdown).toHaveBeenCalledTimes(1);
+    expect(app.quit).not.toHaveBeenCalled();
+
+    await quitting;
+    expect(app.quit).toHaveBeenCalledTimes(1);
+    // The before-quit that app.quit() emits lets the quit proceed.
+    const requit = { preventDefault: jest.fn() };
+    await lifecycle.beforeQuit(requit);
+    expect(requit.preventDefault).not.toHaveBeenCalled();
+    expect(runtime.shutdown).toHaveBeenCalledTimes(1);
+    expect(app.quit).toHaveBeenCalledTimes(1);
+  });
+
+  test('a quit request during shutdown waits for the one scheduled quit', async () => {
+    const scheduled = [];
+    const runtime = { shutdown: jest.fn(async () => {}) };
+    const app = { quit: jest.fn() };
+    const lifecycle = createConverterLifecycle({ initialize: jest.fn(async () => runtime), app,
+      scheduleQuit: (callback) => scheduled.push(callback) });
+    await lifecycle.start();
+
+    const first = lifecycle.beforeQuit({ preventDefault: jest.fn() });
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(scheduled).toHaveLength(1);
+    const again = { preventDefault: jest.fn() };
+    const second = lifecycle.beforeQuit(again);
+    expect(again.preventDefault).toHaveBeenCalledTimes(1);
+    expect(app.quit).not.toHaveBeenCalled();
+
+    scheduled[0]();
+    await Promise.all([first, second]);
+    expect(scheduled).toHaveLength(1);
+    expect(runtime.shutdown).toHaveBeenCalledTimes(1);
+    expect(app.quit).toHaveBeenCalledTimes(1);
+  });
+
+  test('still quits once when shutdown fails, after reporting the failure', async () => {
+    const failure = Object.assign(new Error('cleanup failed'), { code: 'OWNED_CLEANUP_FAILED' });
+    const runtime = { shutdown: jest.fn(async () => { throw failure; }) };
+    const app = { quit: jest.fn() };
+    const onError = jest.fn();
+    const lifecycle = createConverterLifecycle({ initialize: jest.fn(async () => runtime), app, onError });
+    await lifecycle.start();
+
+    await lifecycle.beforeQuit({ preventDefault: jest.fn() });
+    expect(onError).toHaveBeenCalledWith(failure);
+    expect(app.quit).toHaveBeenCalledTimes(1);
+  });
+
   test('does not permanently memoize a failed initialization attempt', async () => {
     const runtime = { shutdown: jest.fn(async () => {}) };
     const failure = Object.assign(new Error('startup recovery failed'), { code: 'RECOVERY_FAILED' });
