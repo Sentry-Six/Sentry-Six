@@ -3,6 +3,7 @@
   "version": "2026.44.37",
   "description": "Sentry Studio - Tesla Dashcam Viewer",
   "main": "src/main.js",
+  "desktopName": "sentry-six-revamped.desktop",
   "scripts": {
     "start": "electron .",
     "dev": "electron .",
@@ -146,6 +147,12 @@
       "icon": "build/icons",
       "category": "AudioVideo",
       "maintainer": "Sentry-Six <noreply@sentry-six.com>",
+      "syncDesktopName": true,
+      "desktop": {
+        "entry": {
+          "StartupWMClass": "Sentry Studio"
+        }
+      },
       "target": [
         "deb"
       ],
