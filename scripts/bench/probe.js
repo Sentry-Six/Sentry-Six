@@ -159,12 +159,30 @@
       R.folderOpen = { ms: Date.now() - t0, items: items().length, dates: $('dayFilter').options.length - 1, firstDate: $('dayFilter').value, subtitle: $('clipBrowserSubtitle')?.textContent };
       report('folderOpen');
 
-      R.dateBig = await selectDate(B.bigDate);
+      if (!B.playbackOnly) R.dateBig = await selectDate(B.bigDate);
       R.dateEvent = await selectDate(B.eventDate);
       report('dates');
 
       // Open the SavedClips event and start synced playback
       const tiles = () => ['videoTL', 'videoTC', 'videoTR', 'videoBL', 'videoBC', 'videoBR'].map($).filter((v) => v && v.currentSrc);
+      // Media-event trace for every tile (epoch ms, so it lines up with
+      // electron-ipc.log's helper calls and electron-slowio.log's reads):
+      // tells a stalled element (no events, no reads) from a slow share
+      // (waiting/progress events and reads still trickling in).
+      R.mediaTrace = [];
+      const tileState = (v) => ({ id: v.id, src: (v.currentSrc || '').split('/').pop().slice(-24), paused: v.paused,
+        t: Math.round(v.currentTime * 100) / 100, ready: v.readyState, net: v.networkState, err: v.error && v.error.code,
+        seeking: v.seeking, buf: Array.from({ length: v.buffered.length }, (_, i) => [+v.buffered.start(i).toFixed(1), +v.buffered.end(i).toFixed(1)]) });
+      const MEDIA_EVENTS = ['loadstart', 'loadedmetadata', 'loadeddata', 'canplay', 'canplaythrough', 'play', 'playing', 'pause',
+        'waiting', 'stalled', 'suspend', 'seeking', 'seeked', 'emptied', 'abort', 'error', 'ended'];
+      for (const id of ['videoTL', 'videoTC', 'videoTR', 'videoBL', 'videoBC', 'videoBR']) {
+        const v = $(id);
+        if (!v) continue;
+        for (const type of MEDIA_EVENTS) v.addEventListener(type, () => {
+          if (R.mediaTrace.length >= 600) R.mediaTrace.splice(0, 100);
+          R.mediaTrace.push([Date.now(), id, type, Math.round(v.currentTime * 100) / 100, v.readyState, v.networkState, v.paused ? 1 : 0]);
+        });
+      }
       const ev = items().find((i) => (i.dataset.groupid || '').includes(B.eventId));
       const t2 = Date.now();
       ev.click();
@@ -172,9 +190,16 @@
       R.eventLoaded = { ms: Date.now() - t2, videos: tiles().length };
       const starts = tiles().map((v) => v.currentTime);
       const t3 = Date.now();
-      if (tiles().every((v) => v.paused)) $('playBtn').click();
-      await waitFor(() => tiles().every((v, i) => !v.paused && v.currentTime > starts[i] + 0.5), 60000, 'playback advancing');
+      R.playStarts = { at: t3, starts: starts.map((x) => Math.round(x * 100) / 100), clicked: tiles().every((v) => v.paused) };
+      if (R.playStarts.clicked) $('playBtn').click();
+      // One snapshot of every tile per second until playback advances.
+      R.playSamples = [];
+      const sampler = setInterval(() => { if (R.playSamples.length < 90) R.playSamples.push([Date.now(), tiles().map(tileState)]); }, 1000);
+      try {
+        await waitFor(() => tiles().every((v, i) => !v.paused && v.currentTime > starts[i] + 0.5), B.playbackTimeoutMs ?? 60000, 'playback advancing');
+      } finally { clearInterval(sampler); }
       R.playback = { ms: Date.now() - t3, sinceClick: Date.now() - t2 };
+      if (B.playbackOnly) { report('playback'); return; }
       await sleep(2000);
       const vs = tiles();
       const times = vs.map((v) => v.currentTime);

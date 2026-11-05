@@ -71,6 +71,12 @@ function run(args, { timeoutMs }) {
       return;
     }
     running.add(child);
+    // One line per run (start time and how long it took) so a slow share
+    // can be told from a slow or stuck helper in a user's log.
+    const startedAt = Date.now();
+    const what = `${args[0]} ${path.basename(String(args[1] || ''))}`;
+    const logEnd = (outcome) => console.log(
+      `[HELPER] ${what}: started ${new Date(startedAt).toISOString()}, ${outcome} after ${Date.now() - startedAt} ms`);
     const out = [];
     let err = '';
     let killedReason = null;
@@ -83,11 +89,13 @@ function run(args, { timeoutMs }) {
     child.once('error', (e) => {
       clearTimeout(timer);
       running.delete(child);
+      logEnd(`failed to start (${e.code || e.message})`);
       reject(e);
     });
     child.once('close', (code, signal) => {
       clearTimeout(timer);
       running.delete(child);
+      logEnd(killedReason || (code === 0 ? 'finished' : `exited with ${signal || code}`));
       if (code === 0) resolve(Buffer.concat(out));
       else reject(new Error(killedReason || err.trim() || `helper exited with ${signal || code}`));
     });

@@ -120,11 +120,16 @@ async function oneRun(o, bin, cfgPath, cfg, runIdx) {
       const reports = readPhases(probeFile).filter((r) => r.visibility);
       if (reports.length) result.visibility = reports[reports.length - 1].visibility;
     } else {
-      const want = o.scenario === 'drives' ? ['drivesLoaded', 'error'] : ['export', 'error'];
+      // playbackOnly (stall reproduction): stop once playback advances.
+      const want = o.scenario === 'drives' ? ['drivesLoaded', 'error'] : [cfg.playbackOnly ? 'playback' : 'export', 'error'];
       const done = await waitPhase(probeFile, want, 30 * 60000, child);
       if (done.phase === 'error') result.error = done.error;
       Object.assign(result, Object.fromEntries(Object.entries(done).filter(([k]) =>
-        ['folderOpen', 'dateBig', 'dateEvent', 'eventLoaded', 'playback', 'telemetry', 'export', 'driveLoad', 'driveDetail'].includes(k))));
+        ['folderOpen', 'dateBig', 'dateEvent', 'eventLoaded', 'playback', 'telemetry', 'export', 'driveLoad', 'driveDetail',
+          'playStarts', 'playSamples', 'mediaTrace', 'visibility'].includes(k))));
+      // A hidden or fully covered window pauses video-only playback
+      // (Chromium's background media suspend), so such runs are flagged.
+      if (done.visibility?.atReady === 'hidden' || done.visibility?.changes?.some(([, v]) => v === 'hidden')) result.windowHidden = true;
       await sleep(5000);
       const s = procstat(child.pid);
       result.memoryAfterMB = +(s.footprint / 1048576).toFixed(1);

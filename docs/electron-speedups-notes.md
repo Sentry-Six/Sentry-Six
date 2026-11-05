@@ -196,6 +196,26 @@ pillar/right repeater clips, and a SavedClips event):
 Scope: the export paths (`exportVideo.js`, `exportBridge.js`) still parse
 SEI in JavaScript for dashboard overlays. Moving them is a follow-up.
 
+## 5. The after-build's playback stall
+
+The benchmark doc's "Playback stall" section has the evidence. Decisions:
+
+- **Reproduce instead of waiting for a slow share.** The bench hook got a
+  slow-share shim (`SENTRY_STUDIO_BENCH_SLOW`): it intercepts `file://`
+  under the footage folder with ranged, throttled responses on one shared
+  link, and holds each `sei` helper run until its clip has gone through
+  that link. Without root there is no way to slow smbfs itself.
+- **It was the hidden window.** It reproduced only by hiding the window,
+  and then identically on `main`. Nothing in the helper changes.
+- **Studio's behaviour is left alone.** Keeping playback running in a
+  covered window works with `backgroundThrottling: false`. Chromium's
+  `disable-background-media-suspend` switch does not. Either way, it would
+  change what users see, and it keeps timers and decoding running while
+  hidden. That is Scott's call, so it is a follow-up; the new log lines
+  make it visible.
+- **The start-position reset stays separate.** It is a different cause
+  (overlapping segment loads) and is on its own card.
+
 ## Process notes
 
 - `/Volumes/USB` was only read: directory listings, opening clips and

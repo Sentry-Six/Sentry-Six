@@ -76,31 +76,11 @@ benchmark's scratch folder as the record of the stall below.
 
 ## Caveats
 
-- **Playback stall: needs looking at before this ships.**
-  - **What failed.** Twice, the after-build's workflow never reached "all 6
-    tiles advancing" within the probe's 60 s limit: once in a smoke run and
-    once in the first round 1. Both times the share was slow (the 5 s day
-    switches above), and there were 7 after-build runs in all. Logs show
-    `playNative` called three times at `currentTime` 0.00 and "Master video
-    now playing", then no progress.
-  - **The before-build does a milder version.** Its rerun of round 1 took
-    29.5 s to reach that state.
-  - **What was found.**
-    - The SavedClips event opens at 29 s, 15 s before the event. Studio
-      then runs the segment load twice, overlapping, in both builds. The
-      second load resets the playhead to ~0. The probe had recorded the
-      start position at 29 s, so it waited ~29.5 s.
-    - That reset is an existing bug on `main`: opening an event can lose
-      its 15-s-before start position.
-    - It does not explain the after-build's two runs that never advanced
-      in 60 s.
-  - **What differs in the after-build at that moment.** The helper reads
-    the event's front clip (the master tile's file) in a separate process
-    over SMB. The JS path read it with `fetch` in the renderer.
-  - **Next step.** The probe now records each tile's paused, currentTime,
-    readyState, networkState and error state on timeout. The stall did not
-    recur in the 5 later after-build runs, so that data is still missing.
-    Reproduce on a slow share before shipping.
+- **Playback stall: found, and not caused by the helper.** Details in
+  "Playback stall" below. In short: Chromium pauses video-only playback
+  while the window is hidden or fully covered, Tesla clips have no audio,
+  and both stalled runs happened while Scott was using the laptop. `main`
+  does exactly the same.
 - **Share and file caches.** The share's directory cache and the macOS file
   cache make day-switch, folder-open and event-load times depend on what
   was read in the last minute. The runs alternate which build goes first
@@ -121,6 +101,87 @@ benchmark's scratch folder as the record of the stall below.
   real clips, so it is gitignored. `scripts/bench/config.example.json`
   shows its shape.
 
+## Playback stall
+
+Twice, the after-build's workflow never reached "all 6 tiles advancing"
+within the probe's 60 s limit (one smoke run, and the first attempt at
+round 1). Both runs logged `playNative` and "Master video now playing",
+then nothing.
+
+**It is not the helper.** In both stalled runs every `sei:extract` call
+had returned within 1.7 s of opening the event, before the six videos had
+even finished loading (IPC log). No helper process was running during the
+60 s the probe waited.
+
+**Slow share, reproduced with a throttle: no stall.** The bench hook can
+now serve every file under the footage folder through one throttled link
+(`SENTRY_STUDIO_BENCH_SLOW`). The helper has to pull its clip through the
+same link before it runs, so playback and telemetry compete for it.
+- 3.5 MB/s with 1.5 s per request, below the six cameras' ~4.7 MB/s, 3 runs
+  per build: playback started 1.6–2.8 s after the videos loaded in every
+  run, for both builds.
+- Further single runs on the branch build: 6 MB/s round-robin, 6 MB/s with
+  the helper's reads served first, 3 MB/s, and 2.5 s per request. Starting
+  playback took at most 1 s once the videos had loaded. With the helper
+  first, loading took 37.8 s.
+
+**Hidden window, reproduced: stalls in both builds.** With the window
+hidden just before the event is opened (`SENTRY_STUDIO_BENCH_HIDE_AT=dates`):
+- `main` 3 of 3 and the branch 3 of 3 never advanced;
+- all six tiles play for about 1 s, then each gets a `pause` event that
+  Studio did not send;
+- they stay paused with the whole clip buffered (0–60.1 s), `readyState` 4
+  and `networkState` 1 (idle): no data is missing.
+
+The page is hidden (`document.visibilityState` 'hidden'), and Chromium
+pauses video-only players on hidden pages. A window counts as hidden when
+other windows cover it completely. Both stalled runs were in the period
+when Scott was using the laptop (rounds 1–3), and the probe did not record
+window visibility for workflow runs then.
+
+Which setting controls it (branch build, window hidden the same way):
+- Chromium's `disable-background-media-suspend` switch: still paused at
+  0.77 s and 1.02 s, so that is not the mechanism.
+- Electron's background throttling off (`webContents.setBackgroundThrottling(false)`,
+  the same as `webPreferences.backgroundThrottling: false`): played normally,
+  advancing 0.5 s after the click. The page then stays 'visible' when hidden.
+
+What a user sees: cover Studio's window during playback and it pauses.
+The six tiles pause at slightly different moments (0.78 s and 1.01 s in
+the trace), so they can be out of sync by a few hundred ms afterwards.
+Whether Studio should keep playing while covered is a product decision,
+so it is left as a follow-up. Turning background throttling off would do
+it, but it also keeps timers and animations running at full rate in a
+hidden window, which costs idle CPU.
+
+**Now recorded:**
+- In the app, `[PLAYBACK] Paused by the browser while the window is hidden`
+  when that happens.
+- In the app, `[PLAYBACK] <tile> has waited 10 s for data`, with every
+  tile's position, readyState, networkState and buffered range, if a tile
+  stays in `waiting`/`stalled` for 10 s while playing. A slow share keeps
+  resuming and logs nothing.
+- In the app, `[HELPER] sei <clip>: started <time>, finished after <n> ms`
+  for every helper run.
+- In the bench: a per-tile media-event trace and a per-second snapshot of
+  every tile while waiting for playback. Workflow runs record window
+  visibility and are flagged `windowHidden`.
+
+All three in-app lines were checked in a packaged build with this branch's
+`src/` overlaid (`make-electron-bench-app.cjs … <checkout>`). It played
+normally on the slow link (1.5 s after loading). With the window hidden it
+logged `[PLAYBACK] Paused by the browser while the window is hidden, at
+0.77 s` and the run was flagged `windowHidden`.
+
+**Separate: the start-position reset.** Opening an event at 15 s before
+the event (29 s here) is often undone in both builds. Picking the event's
+day starts loading that day's first RecentClips segment, and its wait for
+the front tile is still pending when the event is opened. Both loads use
+the same video elements, so both waits finish together, and the stale
+load resets every tile to 0. The traces show it in most runs. It explains
+the before-build's 29.5 s run (the probe had recorded 29 s as the start),
+not the stalls. It is on its own card.
+
 ## Reproducing
 
 ```bash
@@ -133,6 +194,20 @@ ELECTRON_RUN_AS_NODE=1 node_modules/electron/dist/Electron.app/Contents/MacOS/El
 
 ```bash
 scripts/bench/run-electron-ab.sh "<before>/Sentry Studio Bench.app" "<after>/Sentry Studio Bench.app" scripts/bench/config.usb.json <work dir> 5 3 90
+```
+
+Playback-stall checks: set `"playbackOnly": true` in a copy of the bench
+config (stops after playback, skips the big day), then run one workflow
+run with any of these set:
+- `SENTRY_STUDIO_BENCH_SLOW='{"bps":3500000,"latencyMs":1500,"helper":"fair"}'`
+  for a slow share (`"helper":"hog"` serves the helper's reads first);
+- `SENTRY_STUDIO_BENCH_HIDE_AT=dates` to hide the window before the event
+  opens;
+- `SENTRY_STUDIO_BENCH_NO_BG_THROTTLE=1` or
+  `SENTRY_STUDIO_BENCH_SWITCHES=<switch,…>` for experiments.
+
+```bash
+SENTRY_STUDIO_BENCH_HIDE_AT=dates node scripts/bench/bench.mjs --app electron --bundle "<app>" --scenario workflow --config <playbackOnly config> --work <dir> --runs 1 --out <result.json>
 ```
 
 Bench copies of packaged apps come from

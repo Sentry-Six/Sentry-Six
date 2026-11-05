@@ -57,6 +57,7 @@ import {
     resolveSegmentDurations
 } from '../shared/playbackTiming.mjs';
 import { createDirtyValueTracker } from '../shared/telemetryDirtyState.mjs';
+import { createMediaStallWatch, describeVideoTile } from '../shared/mediaStallWatch.mjs';
 import {
     createAbortError,
     createAsyncLimiter,
@@ -4448,8 +4449,27 @@ function initNativeVideoPlayback() {
     const allVideos = [videoMain, ...Object.values(videoBySlot)].filter(Boolean);
     console.log('All videos:', allVideos.length, 'elements');
     
+    // A tile that stays in waiting/stalled for 10 s while playing gets one
+    // log line with every tile's state. A slow share keeps resuming and
+    // logs nothing; a stuck tile shows here.
+    const stallWatch = createMediaStallWatch({
+        stallMs: 10000,
+        onStall: (id, ms) => {
+            const tiles = [videoMain, ...Object.values(videoBySlot)].filter(v => v && (v.currentSrc || v.src));
+            console.warn(`[PLAYBACK] ${id} has waited ${ms / 1000} s for data;`, tiles.map(describeVideoTile).join(' | '));
+        }
+    });
     allVideos.forEach(vid => {
+        const key = vid.id || 'video';
+        for (const type of ['waiting', 'stalled']) {
+            vid.addEventListener(type, () => { if (nativeVideo.playing && !vid.paused) stallWatch.waiting(key); });
+        }
+        for (const type of ['playing', 'pause', 'emptied', 'ended', 'error']) {
+            vid.addEventListener(type, () => stallWatch.resumed(key));
+        }
+        let lastTime = -1;
         vid.addEventListener('timeupdate', () => {
+            if (vid.currentTime !== lastTime) { lastTime = vid.currentTime; stallWatch.resumed(key); }
             if (vid === nativeVideo.master) onMasterTimeUpdate();
         });
         vid.addEventListener('ended', () => {
@@ -4471,6 +4491,13 @@ function initNativeVideoPlayback() {
         });
         vid.addEventListener('pause', () => {
             if (vid === nativeVideo.master) {
+                // pauseNative() clears `playing` before pausing, so a pause
+                // that arrives while it is still set came from elsewhere.
+                // Chromium pauses video-only playback when the window is
+                // hidden or fully covered (background media suspend).
+                if (nativeVideo.playing && !vid.ended && document.visibilityState === 'hidden') {
+                    console.warn('[PLAYBACK] Paused by the browser while the window is hidden, at', vid.currentTime.toFixed(2), 's');
+                }
                 nativeVideo.playing = false;
                 updatePlayButton();
                 stopTelemetryLoop();
