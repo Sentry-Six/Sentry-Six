@@ -1,6 +1,6 @@
 {
   "name": "sentry-six-revamped",
-  "version": "2026.45.38",
+  "version": "2026.45.39",
   "description": "Sentry Studio - Tesla Dashcam Viewer",
   "main": "src/main.js",
   "desktopName": "sentry-six-revamped.desktop",
@@ -13,7 +13,8 @@
     "build:win": "electron-builder --win --publish never",
     "build:mac": "electron-builder --mac --publish never",
     "build:linux": "electron-builder --linux --publish never",
-    "build:all": "electron-builder --win --mac --publish never"
+    "build:all": "electron-builder --win --mac --publish never",
+    "build:helper": "node scripts/prepare-helper.js"
   },
   "keywords": [
     "tesla",
@@ -72,6 +73,10 @@
         {
           "from": "ffmpeg_bin/COPYING.GPLv3.txt",
           "to": "ffmpeg_bin/COPYING.GPLv3.txt"
+        },
+        {
+          "from": "helper_bin/win/x64/sentry-studio-helper.exe",
+          "to": "helper_bin/sentry-studio-helper.exe"
         }
       ]
     },
@@ -121,6 +126,10 @@
         {
           "from": "ffmpeg_bin/COPYING.GPLv3.txt",
           "to": "ffmpeg_bin/COPYING.GPLv3.txt"
+        },
+        {
+          "from": "helper_bin/macos/${arch}/sentry-studio-helper",
+          "to": "helper_bin/sentry-studio-helper"
         }
       ]
     },
@@ -173,6 +182,10 @@
         {
           "from": "ffmpeg_bin/COPYING.GPLv3.txt",
           "to": "ffmpeg_bin/COPYING.GPLv3.txt"
+        },
+        {
+          "from": "helper_bin/linux/${arch}/sentry-studio-helper",
+          "to": "helper_bin/sentry-studio-helper"
         }
       ]
     },
@@ -212,7 +225,7 @@
       "repo": "Sentry-Six",
       "releaseType": "release"
     },
-    "beforePack": "scripts/prepare-ffmpeg.js"
+    "beforePack": "scripts/before-pack.js"
   },
   "allowScripts": {
     "electron-winstaller": true,

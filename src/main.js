@@ -59,6 +59,7 @@ const { registerConverterIpc } = require('./main/converter/ipc');
 const { createConverterLifecycle, createConverterRuntime, startConverterWithRecoveryPrompt } = require('./main/converter/runtime');
 const { calculateMinimapSize, renderStaticMapBackground, preRenderMinimap, installTileRequestHeaders } = require('./main/minimap');
 const { createSentryUsbCache } = require('./main/sentryUsbCache');
+const studioHelper = require('./main/studioHelper');
 const MapProviders = require('./shared/mapProviders');
 const crypto = require('crypto');
 
@@ -2869,6 +2870,96 @@ function makeLightSentryUsbDrives(drives) {
   });
 }
 
+// The JavaScript loader: routes + grouping in driveLoadWorker.js, drive tags
+// concurrently in driveTagsWorker.js. Used when the native helper is missing
+// or fails.
+async function loadSentryUsbDrivesWithWorkers(filePath, t0) {
+  const { Worker } = require('worker_threads');
+
+  // Parse drive tags concurrently on another core. Tags are cosmetic —
+  // any worker failure resolves to {} instead of failing the load.
+  const tagsPromise = new Promise((resolve) => {
+    try {
+      const worker = new Worker(path.join(__dirname, 'main', 'driveTagsWorker.js'), {
+        workerData: { filePath },
+      });
+      activeSentryUsbWorkers.add(worker);
+      const releaseWorker = () => activeSentryUsbWorkers.delete(worker);
+      worker.once('message', (msg) => {
+        releaseWorker();
+        if (msg?.ok) {
+          console.log(`[SentryUSB] Tags worker: ${Object.keys(msg.driveTags).length} drive tags in ${Date.now() - t0}ms`);
+          resolve(msg.driveTags);
+        } else {
+          console.warn('[SentryUSB] Tags worker failed:', msg?.error);
+          resolve({});
+        }
+      });
+      worker.once('error', (err) => {
+        releaseWorker();
+        console.warn('[SentryUSB] Tags worker error:', err?.message || err);
+        resolve({});
+      });
+      // A worker killed without emitting 'message'/'error' (e.g. OOM) must
+      // still resolve, or the load worker waits on the tags forever.
+      worker.once('exit', () => {
+        releaseWorker();
+        resolve({});
+      });
+    } catch (err) {
+      console.warn('[SentryUSB] Could not start tags worker:', err?.message || err);
+      resolve({});
+    }
+  });
+
+  // Routes parse + grouping in the load worker. The main process only
+  // relays progress logs and forwards the tags result when it arrives.
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    let worker;
+    // Terminate on settle: the worker removes its own listeners on success,
+    // but terminate() guarantees the thread (a whole V8 isolate) is freed
+    // even if it wedges mid-parse.
+    const done = (fn, v) => {
+      if (!settled) {
+        settled = true;
+        fn(v);
+        activeSentryUsbWorkers.delete(worker);
+        try { worker.terminate(); } catch {}
+      }
+    };
+    try {
+      worker = new Worker(path.join(__dirname, 'main', 'driveLoadWorker.js'), {
+        workerData: { filePath },
+      });
+      activeSentryUsbWorkers.add(worker);
+    } catch (err) { reject(err); return; }
+
+    worker.on('message', (msg) => {
+      switch (msg?.type) {
+        case 'progress':
+          console.log(`[SentryUSB]   ...${msg.count} routes parsed (${(msg.elapsedMs / 1000).toFixed(1)}s)`);
+          break;
+        case 'routesDone':
+          console.log(`[SentryUSB] Streamed ${msg.count} routes in ${msg.elapsedMs}ms`);
+          break;
+        case 'done':
+          done(resolve, msg);
+          break;
+        case 'error':
+          done(reject, new Error(msg.error));
+          break;
+      }
+    });
+    worker.on('error', (err) => done(reject, err));
+    worker.on('exit', (code) => done(reject, new Error('Drive load worker exited early (code ' + code + ')')));
+
+    tagsPromise.then((tags) => {
+      try { worker.postMessage({ type: 'driveTags', driveTags: tags }); } catch {}
+    });
+  });
+}
+
 ipcMain.handle('sentryUsb:loadAndGroup', async (_event, filePath) => {
   try {
     if (!filePath) return { success: false, error: 'No file path provided' };
@@ -2891,93 +2982,27 @@ ipcMain.handle('sentryUsb:loadAndGroup', async (_event, filePath) => {
     }
     const cacheGeneration = sentryUsbCache.generation;
 
-    const { Worker } = require('worker_threads');
     const fileSize = stat.size;
     console.log(`[SentryUSB] Stream-parsing ${filePath} (${(fileSize / 1024 / 1024).toFixed(1)} MB)`);
     const t0 = Date.now();
 
-    // Parse drive tags concurrently on another core. Tags are cosmetic —
-    // any worker failure resolves to {} instead of failing the load.
-    const tagsPromise = new Promise((resolve) => {
+    // Native helper first (one Rust pass instead of two JavaScript parses);
+    // any failure falls back to the JavaScript workers, which give the same
+    // result (scripts/parity/drives-helper.cjs checks this).
+    let result = null;
+    if (studioHelper.helperPath()) {
       try {
-        const worker = new Worker(path.join(__dirname, 'main', 'driveTagsWorker.js'), {
-          workerData: { filePath },
-        });
-        activeSentryUsbWorkers.add(worker);
-        const releaseWorker = () => activeSentryUsbWorkers.delete(worker);
-        worker.once('message', (msg) => {
-          releaseWorker();
-          if (msg?.ok) {
-            console.log(`[SentryUSB] Tags worker: ${Object.keys(msg.driveTags).length} drive tags in ${Date.now() - t0}ms`);
-            resolve(msg.driveTags);
-          } else {
-            console.warn('[SentryUSB] Tags worker failed:', msg?.error);
-            resolve({});
-          }
-        });
-        worker.once('error', (err) => {
-          releaseWorker();
-          console.warn('[SentryUSB] Tags worker error:', err?.message || err);
-          resolve({});
-        });
-        // A worker killed without emitting 'message'/'error' (e.g. OOM) must
-        // still resolve, or the load worker waits on the tags forever.
-        worker.once('exit', () => {
-          releaseWorker();
-          resolve({});
-        });
+        result = await studioHelper.loadDrives(filePath);
+        result.groupMs = 0;
+        console.log(`[SentryUSB] Native helper parsed and grouped in ${Date.now() - t0}ms`);
       } catch (err) {
-        console.warn('[SentryUSB] Could not start tags worker:', err?.message || err);
-        resolve({});
+        if (cacheGeneration !== sentryUsbCache.generation) {
+          return { success: false, cancelled: true, error: 'Drive data load was cleared' };
+        }
+        console.warn('[SentryUSB] Native helper failed, using the JavaScript loader:', err?.message || err);
       }
-    });
-
-    // Routes parse + grouping in the load worker. The main process only
-    // relays progress logs and forwards the tags result when it arrives.
-    const result = await new Promise((resolve, reject) => {
-      let settled = false;
-      let worker;
-      // Terminate on settle: the worker removes its own listeners on success,
-      // but terminate() guarantees the thread (a whole V8 isolate) is freed
-      // even if it wedges mid-parse.
-      const done = (fn, v) => {
-        if (!settled) {
-          settled = true;
-          fn(v);
-          activeSentryUsbWorkers.delete(worker);
-          try { worker.terminate(); } catch {}
-        }
-      };
-      try {
-        worker = new Worker(path.join(__dirname, 'main', 'driveLoadWorker.js'), {
-          workerData: { filePath },
-        });
-        activeSentryUsbWorkers.add(worker);
-      } catch (err) { reject(err); return; }
-
-      worker.on('message', (msg) => {
-        switch (msg?.type) {
-          case 'progress':
-            console.log(`[SentryUSB]   ...${msg.count} routes parsed (${(msg.elapsedMs / 1000).toFixed(1)}s)`);
-            break;
-          case 'routesDone':
-            console.log(`[SentryUSB] Streamed ${msg.count} routes in ${msg.elapsedMs}ms`);
-            break;
-          case 'done':
-            done(resolve, msg);
-            break;
-          case 'error':
-            done(reject, new Error(msg.error));
-            break;
-        }
-      });
-      worker.on('error', (err) => done(reject, err));
-      worker.on('exit', (code) => done(reject, new Error('Drive load worker exited early (code ' + code + ')')));
-
-      tagsPromise.then((tags) => {
-        try { worker.postMessage({ type: 'driveTags', driveTags: tags }); } catch {}
-      });
-    });
+    }
+    if (!result) result = await loadSentryUsbDrivesWithWorkers(filePath, t0);
 
     console.log(`[SentryUSB] Grouped into ${result.driveCount} drives in ${result.groupMs}ms (total ${Date.now() - t0}ms)`);
 
@@ -3011,7 +3036,23 @@ ipcMain.handle('sentryUsb:clear', async () => {
     try { worker.terminate(); } catch {}
   }
   activeSentryUsbWorkers.clear();
+  studioHelper.cancelAll();
   return sentryUsbCache.clear();
+});
+
+// SEI telemetry for one clip through the native helper. Returns the JSON text
+// of { seiData, mapPath } (the renderer parses it); { ok: false } tells the
+// renderer to use its JavaScript parser instead.
+ipcMain.handle('sei:extract', async (_event, filePath) => {
+  if (typeof filePath !== 'string' || !filePath || !studioHelper.helperPath()) {
+    return { ok: false };
+  }
+  try {
+    return { ok: true, json: await studioHelper.extractSei(filePath) };
+  } catch (err) {
+    console.warn('[SEI] Native helper failed, using the JavaScript parser:', err?.message || err);
+    return { ok: false };
+  }
 });
 
 // Reverse-geocode a coordinate into a short place label for the drive list's

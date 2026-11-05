@@ -57,6 +57,7 @@ import {
     resolveSegmentDurations
 } from '../shared/playbackTiming.mjs';
 import { createDirtyValueTracker } from '../shared/telemetryDirtyState.mjs';
+import { createMediaStallWatch, describeVideoTile } from '../shared/mediaStallWatch.mjs';
 import {
     createAbortError,
     createAsyncLimiter,
@@ -2564,6 +2565,40 @@ async function scanLooseClipsElectron(dirPath) {
 }
 
 /**
+ * Start readDir for every path with at most `limit` requests in flight.
+ * Returns listDir(path): a promise of that path's entries (or its error);
+ * a path that was not started is read on demand.
+ */
+function startDirListings(paths, limit = 4) {
+    const queue = [...new Set(paths)];
+    const settled = new Map();
+    const starters = new Map();
+    for (const p of queue) {
+        // Settle into {entries} / {error} so a failure nobody has awaited yet
+        // is not reported as an unhandled rejection.
+        settled.set(p, new Promise(resolve => starters.set(p, resolve)));
+    }
+    let next = 0;
+    const worker = async () => {
+        while (next < queue.length) {
+            const p = queue[next++];
+            try {
+                starters.get(p)({ entries: await window.electronAPI.readDir(p) });
+            } catch (error) {
+                starters.get(p)({ error });
+            }
+        }
+    };
+    for (let i = 0; i < Math.min(limit, queue.length); i++) worker();
+    return async p => {
+        if (!settled.has(p)) return window.electronAPI.readDir(p);
+        const r = await settled.get(p);
+        if (r.error) throw r.error;
+        return r.entries;
+    };
+}
+
+/**
  * Gather all Electron file entries for a single date from folderStructure.
  * Returns raw file-like objects without building an index.
  * Used by both loadDateContentElectron and selectDriveCollection (multi-date).
@@ -2573,10 +2608,20 @@ async function gatherFilesForDateElectron(date) {
     const dateData = folderStructure.dateHandles.get(date);
     const files = [];
 
+    // Start the day's folder listings together (RecentClips + every Sentry/
+    // Saved event folder, at most 4 in flight) instead of one after another;
+    // the results are still consumed below in the original order, so the file
+    // list is identical. Each listing is a round trip on a network share.
+    const listDir = startDirListings([
+        ...(dateData.recent ? [dateData.recent.path] : []),
+        ...[...dateData.sentry.values()].map(e => e.path),
+        ...[...dateData.saved.values()].map(e => e.path)
+    ]);
+
     // RecentClips
     if (dateData.recent) {
         try {
-            const entries = await window.electronAPI.readDir(dateData.recent.path);
+            const entries = await listDir(dateData.recent.path);
             for (const entry of entries) {
                 if (!entry.isFile || !entry.name.endsWith('.mp4')) continue;
                 if (dateData.recent.isFlat && !entry.name.startsWith(date)) continue;
@@ -2595,7 +2640,7 @@ async function gatherFilesForDateElectron(date) {
     // SentryClips events
     for (const [eventId, eventEntry] of dateData.sentry.entries()) {
         try {
-            const entries = await window.electronAPI.readDir(eventEntry.path);
+            const entries = await listDir(eventEntry.path);
             for (const entry of entries) {
                 if (!entry.isFile) continue;
                 files.push({
@@ -2613,7 +2658,7 @@ async function gatherFilesForDateElectron(date) {
     // SavedClips events
     for (const [eventId, eventEntry] of dateData.saved.entries()) {
         try {
-            const entries = await window.electronAPI.readDir(eventEntry.path);
+            const entries = await listDir(eventEntry.path);
             for (const entry of entries) {
                 if (!entry.isFile) continue;
                 files.push({
@@ -4404,8 +4449,27 @@ function initNativeVideoPlayback() {
     const allVideos = [videoMain, ...Object.values(videoBySlot)].filter(Boolean);
     console.log('All videos:', allVideos.length, 'elements');
     
+    // A tile that stays in waiting/stalled for 10 s while playing gets one
+    // log line with every tile's state. A slow share keeps resuming and
+    // logs nothing; a stuck tile shows here.
+    const stallWatch = createMediaStallWatch({
+        stallMs: 10000,
+        onStall: (id, ms) => {
+            const tiles = [videoMain, ...Object.values(videoBySlot)].filter(v => v && (v.currentSrc || v.src));
+            console.warn(`[PLAYBACK] ${id} has waited ${ms / 1000} s for data;`, tiles.map(describeVideoTile).join(' | '));
+        }
+    });
     allVideos.forEach(vid => {
+        const key = vid.id || 'video';
+        for (const type of ['waiting', 'stalled']) {
+            vid.addEventListener(type, () => { if (nativeVideo.playing && !vid.paused) stallWatch.waiting(key); });
+        }
+        for (const type of ['playing', 'pause', 'emptied', 'ended', 'error']) {
+            vid.addEventListener(type, () => stallWatch.resumed(key));
+        }
+        let lastTime = -1;
         vid.addEventListener('timeupdate', () => {
+            if (vid.currentTime !== lastTime) { lastTime = vid.currentTime; stallWatch.resumed(key); }
             if (vid === nativeVideo.master) onMasterTimeUpdate();
         });
         vid.addEventListener('ended', () => {
@@ -4427,6 +4491,13 @@ function initNativeVideoPlayback() {
         });
         vid.addEventListener('pause', () => {
             if (vid === nativeVideo.master) {
+                // pauseNative() clears `playing` before pausing, so a pause
+                // that arrives while it is still set came from elsewhere.
+                // Chromium pauses video-only playback when the window is
+                // hidden or fully covered (background media suspend).
+                if (nativeVideo.playing && !vid.ended && document.visibilityState === 'hidden') {
+                    console.warn('[PLAYBACK] Paused by the browser while the window is hidden, at', vid.currentTime.toFixed(2), 's');
+                }
                 nativeVideo.playing = false;
                 updatePlayButton();
                 stopTelemetryLoop();

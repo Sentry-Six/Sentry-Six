@@ -17,6 +17,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   loadSentryUsbDrives: (filePath) => ipcRenderer.invoke('sentryUsb:loadAndGroup', filePath),
   getSentryUsbDriveDetail: (driveId) => ipcRenderer.invoke('sentryUsb:getDriveDetail', driveId),
   clearSentryUsbDrives: () => ipcRenderer.invoke('sentryUsb:clear'),
+  // SEI telemetry through the native helper: { ok: true, json } or
+  // { ok: false } (the renderer then uses its JavaScript parser).
+  extractSeiNative: (filePath) => ipcRenderer.invoke('sei:extract', filePath),
   reverseGeocode: (coords) => ipcRenderer.invoke('geo:reverseGeocode', coords),
   exists: (filePath) => ipcRenderer.invoke('fs:exists', filePath),
   stat: (filePath) => ipcRenderer.invoke('fs:stat', filePath),

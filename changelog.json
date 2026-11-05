@@ -1,6 +1,25 @@
 {
   "versions": [
     {
+      "version": "2026.45.39",
+      "date": "2026-11-04",
+      "title": "Faster Drive History",
+      "changes": [
+        {
+          "type": "improvement",
+          "description": "Large drive histories load much faster: about 10 seconds instead of over a minute, using a fraction of the memory."
+        },
+        {
+          "type": "improvement",
+          "description": "Studio uses far less CPU while it sits idle, which helps battery life on laptops."
+        },
+        {
+          "type": "improvement",
+          "description": "Clip telemetry (speed, steering, GPS) loads a little faster."
+        }
+      ]
+    },
+    {
       "version": "2026.45.38",
       "date": "2026-11-02",
       "title": "Export Minimaps & Fixes",

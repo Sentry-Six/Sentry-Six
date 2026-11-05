@@ -125,23 +125,52 @@ jobs:
         shell: bash
         run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
 
-      # Only files built from this repository are signed: Sentry Studio.exe and the
-      # installer. Electron's DLLs and the bundled FFmpeg stay unsigned, as the
-      # SignPath Foundation terms require for upstream binaries.
+      # The native helper (native/studio-helper) is built by the beforePack
+      # hook; rustup is preinstalled on GitHub-hosted runners.
+      - name: Set up Rust
+        run: rustup target add x86_64-pc-windows-msvc
+
+      # Only files built from this repository are signed: Sentry Studio.exe, the
+      # native helper, the NSIS uninstaller and the installer. Electron's DLLs,
+      # elevate.exe and the bundled FFmpeg stay unsigned, as the SignPath
+      # Foundation terms require for upstream binaries.
       - name: Build unpacked app
         run: npx electron-builder --win --dir --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
+          SENTRY_STUDIO_REQUIRE_HELPER: '1'
 
-      - name: Upload unsigned app executable
-        id: upload-unsigned-exe
+      - name: Verify native helper
+        run: node scripts/verify-helper.js release/win-unpacked/resources
+
+      # First installer build: only to obtain the NSIS uninstaller, which the sign
+      # hook copies out for signing. Its installer is discarded and rebuilt below.
+      - name: Capture the NSIS uninstaller
+        shell: bash
+        run: |
+          npx electron-builder --win nsis --prepackaged release/win-unpacked --publish never \
+            -c.win.signtoolOptions.sign=scripts/windows-sign-hook.js
+          test -f to-sign/uninstaller.exe
+          rm -f release/SentryStudioSetup*.exe release/SentryStudioSetup*.exe.blockmap release/latest.yml
+          mkdir -p to-sign/resources/helper_bin
+          cp "release/win-unpacked/Sentry Studio.exe" to-sign/
+          cp release/win-unpacked/resources/helper_bin/sentry-studio-helper.exe to-sign/resources/helper_bin/
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+          STUDIO_UNINSTALLER_SIGN_MODE: capture
+          STUDIO_UNINSTALLER_PATH: to-sign/uninstaller.exe
+
+      # One signing request (one approval) covers the app, the helper and the
+      # uninstaller. The app-exe artifact configuration lists all three paths.
+      - name: Upload unsigned app files
+        id: upload-unsigned-app-files
         uses: actions/upload-artifact@v7
         with:
-          name: unsigned-app-exe
+          name: unsigned-app-files
           retention-days: 1
-          path: release/win-unpacked/Sentry Studio.exe
+          path: to-sign/
 
-      - name: Sign app executable
+      - name: Sign app files
         uses: signpath/github-action-submit-signing-request@v3
         with:
           api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
@@ -149,20 +178,24 @@ jobs:
           project-slug: Sentry-Six
           signing-policy-slug: ${{ env.SIGNPATH_SIGNING_POLICY }}
           artifact-configuration-slug: app-exe
-          github-artifact-id: ${{ steps.upload-unsigned-exe.outputs.artifact-id }}
+          github-artifact-id: ${{ steps.upload-unsigned-app-files.outputs.artifact-id }}
           wait-for-completion: true
           wait-for-completion-timeout-in-seconds: 2400
-          output-artifact-directory: signed-app-exe
+          output-artifact-directory: signed-app-files
           parameters: |
             version: "${{ steps.version.outputs.version }}"
 
-      - name: Build installer around the signed app
+      - name: Build installer around the signed files
         shell: bash
         run: |
-          cp "signed-app-exe/Sentry Studio.exe" "release/win-unpacked/Sentry Studio.exe"
-          npx electron-builder --win nsis --prepackaged release/win-unpacked --publish never
+          cp "signed-app-files/Sentry Studio.exe" "release/win-unpacked/Sentry Studio.exe"
+          cp signed-app-files/resources/helper_bin/sentry-studio-helper.exe release/win-unpacked/resources/helper_bin/sentry-studio-helper.exe
+          npx electron-builder --win nsis --prepackaged release/win-unpacked --publish never \
+            -c.win.signtoolOptions.sign=scripts/windows-sign-hook.js
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
+          STUDIO_UNINSTALLER_SIGN_MODE: replace
+          STUDIO_UNINSTALLER_PATH: signed-app-files/uninstaller.exe
 
       - name: Upload unsigned installer
         id: upload-unsigned-installer
@@ -196,7 +229,20 @@ jobs:
       - name: Verify signatures
         shell: pwsh
         run: |
-          foreach ($file in @("release/win-unpacked/Sentry Studio.exe", "release/SentryStudioSetup${{ steps.version.outputs.version }}.exe")) {
+          $installer = "release/SentryStudioSetup${{ steps.version.outputs.version }}.exe"
+          # Install silently to check the uninstaller the installer actually writes.
+          $dir = Join-Path $env:RUNNER_TEMP "studio-install"
+          Start-Process -Wait -FilePath $installer -ArgumentList "/S", "/D=$dir"
+          Get-Process -Name "Sentry Studio" -ErrorAction SilentlyContinue | Stop-Process -Force
+          $files = @(
+            "release/win-unpacked/Sentry Studio.exe",
+            "release/win-unpacked/resources/helper_bin/sentry-studio-helper.exe",
+            $installer,
+            (Join-Path $dir "Uninstall Sentry Studio.exe"),
+            (Join-Path $dir "resources/helper_bin/sentry-studio-helper.exe")
+          )
+          foreach ($file in $files) {
+            if (-not (Test-Path $file)) { throw "$file is missing" }
             $sig = Get-AuthenticodeSignature -FilePath $file
             Write-Host "$file : $($sig.Status) : $($sig.SignerCertificate.Subject)"
             # The test certificate is self-signed, so its chain reads UnknownError/NotTrusted;
@@ -249,11 +295,20 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # Static musl build of the native helper, so it runs on any distribution.
+      - name: Set up Rust
+        run: rustup target add ${{ matrix.arch == 'arm64' && 'aarch64' || 'x86_64' }}-unknown-linux-musl
+
       - name: Build Linux .deb
         run: npm run build:linux -- --${{ matrix.arch }}
+        env:
+          SENTRY_STUDIO_REQUIRE_HELPER: '1'
 
       - name: Verify bundled FFmpeg and timestamp export
         run: node scripts/verify-linux-ffmpeg.js release/linux-${{ matrix.arch == 'arm64' && 'arm64-' || '' }}unpacked
+
+      - name: Verify native helper
+        run: node scripts/verify-helper.js release/linux-${{ matrix.arch == 'arm64' && 'arm64-' || '' }}unpacked/resources
 
       - name: Upload Linux artifacts
         uses: actions/upload-artifact@v7
@@ -331,6 +386,11 @@ jobs:
           echo "$APPLE_API_KEY_B64" | base64 --decode > "$HOME/private_keys/AuthKey_${APPLE_API_KEY_ID}.p8"
           echo "APPLE_API_KEY=$HOME/private_keys/AuthKey_${APPLE_API_KEY_ID}.p8" >> "$GITHUB_ENV"
 
+      # Both architectures of the native helper; electron-builder merges them
+      # into one universal executable (as it does for FFmpeg) and signs it.
+      - name: Set up Rust
+        run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
+
       - name: Build macOS DMG
         run: npm run build:mac
         env:
@@ -338,9 +398,13 @@ jobs:
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          SENTRY_STUDIO_REQUIRE_HELPER: '1'
 
       - name: Verify universal FFmpeg and timestamp export
         run: node scripts/verify-macos-ffmpeg.js "release/mac-universal/Sentry Studio.app"
+
+      - name: Verify universal native helper
+        run: node scripts/verify-helper.js "release/mac-universal/Sentry Studio.app/Contents/Resources" --universal
 
       - name: Upload macOS artifacts
         uses: actions/upload-artifact@v7

@@ -395,10 +395,10 @@
                                 <line x1="30" y1="2" x2="30" y2="58" stroke="rgba(255,255,255,0.08)" stroke-width="1" />
                                 <line x1="2" y1="30" x2="58" y2="30" stroke="rgba(255,255,255,0.08)" stroke-width="1" />
                                 <!-- G-force dot with glow -->
-                                <circle id="gforceDot" cx="30" cy="30" r="4" fill="#5ee9a0">
-                                    <animate attributeName="opacity" values="0.8;1;0.8" dur="1s"
-                                        repeatCount="indefinite" />
-                                </circle>
+                                <!-- Pulses via CSS (style.css, #gforceDot), not SMIL: an SVG
+                                     <animate> ticks style recalcs every display frame even
+                                     while the dashboard is hidden (~2-3% idle CPU). -->
+                                <circle id="gforceDot" cx="30" cy="30" r="4" fill="#5ee9a0" />
                                 <!-- Trail dots (will be updated via JS) -->
                                 <circle id="gforceTrail1" cx="30" cy="30" r="2.5" fill="rgba(94,233,160,0.4)" />
                                 <circle id="gforceTrail2" cx="30" cy="30" r="2" fill="rgba(94,233,160,0.2)" />
