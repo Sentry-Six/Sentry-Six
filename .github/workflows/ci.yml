@@ -32,6 +32,18 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # Build the native helper before the tests so its parity tests run
+      # (tests/main/studioHelper.test.js), and add the targets the packaging
+      # hook needs (macOS packs x64 + arm64; Linux uses static musl builds).
+      - name: Build native helper
+        shell: bash
+        run: |
+          case "$RUNNER_OS" in
+            macOS) rustup target add aarch64-apple-darwin x86_64-apple-darwin ;;
+            Linux) rustup target add x86_64-unknown-linux-musl ;;
+          esac
+          SENTRY_STUDIO_REQUIRE_HELPER=1 npm run build:helper
+
       # On Windows the bundled ffmpeg.exe runs, so the real encoder integration
       # suite runs there (about four minutes). Elsewhere it skips itself with a
       # SKIP message because the checkout has no macOS or Linux FFmpeg. Bash on

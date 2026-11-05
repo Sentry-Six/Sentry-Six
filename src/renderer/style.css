@@ -2160,6 +2160,19 @@ body>.dashboard-vis-compact.draggable:not(.fixed-to-camera) {
     color: var(--error-color);
 }
 
+/* G-force dot pulse (was an SVG <animate>, which kept Chromium recalculating
+   styles every frame even while the dashboard was hidden). A CSS animation
+   only runs while the dashboard is displayed. Same curve: 0.8 -> 1 -> 0.8
+   opacity, linear, 1 s. */
+#gforceDot {
+    animation: gforce-dot-pulse 1s linear infinite;
+}
+
+@keyframes gforce-dot-pulse {
+    0%, 100% { opacity: 0.8; }
+    50% { opacity: 1; }
+}
+
 /* G-force dot color states */
 #gforceDot.braking {
     fill: var(--error-color);

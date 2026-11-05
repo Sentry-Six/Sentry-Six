@@ -108,10 +108,19 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # The native helper (native/studio-helper) is built by the beforePack
+      # hook; rustup is preinstalled on GitHub-hosted runners.
+      - name: Set up Rust
+        run: rustup target add x86_64-pc-windows-msvc
+
       - name: Build Windows installer
         run: npm run build:win
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
+          SENTRY_STUDIO_REQUIRE_HELPER: '1'
+
+      - name: Verify native helper
+        run: node scripts/verify-helper.js release/win-unpacked/resources
 
       - name: Upload Windows artifacts
         uses: actions/upload-artifact@v7
@@ -156,11 +165,20 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # Static musl build of the native helper, so it runs on any distribution.
+      - name: Set up Rust
+        run: rustup target add ${{ matrix.arch == 'arm64' && 'aarch64' || 'x86_64' }}-unknown-linux-musl
+
       - name: Build Linux .deb
         run: npm run build:linux -- --${{ matrix.arch }}
+        env:
+          SENTRY_STUDIO_REQUIRE_HELPER: '1'
 
       - name: Verify bundled FFmpeg and timestamp export
         run: node scripts/verify-linux-ffmpeg.js release/linux-${{ matrix.arch == 'arm64' && 'arm64-' || '' }}unpacked
+
+      - name: Verify native helper
+        run: node scripts/verify-helper.js release/linux-${{ matrix.arch == 'arm64' && 'arm64-' || '' }}unpacked/resources
 
       - name: Upload Linux artifacts
         uses: actions/upload-artifact@v7
@@ -238,6 +256,11 @@ jobs:
           echo "$APPLE_API_KEY_B64" | base64 --decode > "$HOME/private_keys/AuthKey_${APPLE_API_KEY_ID}.p8"
           echo "APPLE_API_KEY=$HOME/private_keys/AuthKey_${APPLE_API_KEY_ID}.p8" >> "$GITHUB_ENV"
 
+      # Both architectures of the native helper; electron-builder merges them
+      # into one universal executable (as it does for FFmpeg) and signs it.
+      - name: Set up Rust
+        run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
+
       - name: Build macOS DMG
         run: npm run build:mac
         env:
@@ -245,9 +268,13 @@ jobs:
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          SENTRY_STUDIO_REQUIRE_HELPER: '1'
 
       - name: Verify universal FFmpeg and timestamp export
         run: node scripts/verify-macos-ffmpeg.js "release/mac-universal/Sentry Studio.app"
+
+      - name: Verify universal native helper
+        run: node scripts/verify-helper.js "release/mac-universal/Sentry Studio.app/Contents/Resources" --universal
 
       - name: Upload macOS artifacts
         uses: actions/upload-artifact@v7

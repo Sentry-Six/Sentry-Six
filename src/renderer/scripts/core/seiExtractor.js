@@ -119,7 +119,22 @@ export async function extractSeiFromEntry(entry, seiType, { signal } = {}) {
         let result = { seiData: [], mapPath: [] };
 
         // If it's an Electron file with path, fetch via file:// protocol
-        if (entry.file?.isElectronFile && entry.file?.path) {
+        // Native helper first: it reads and parses the clip outside the
+        // renderer and only the telemetry crosses IPC. { ok: false } (helper
+        // missing or failed) falls through to the JavaScript parser below.
+        let native = null;
+        if (entry.file?.isElectronFile && entry.file?.path && window.electronAPI?.extractSeiNative) {
+          try {
+            const reply = await window.electronAPI.extractSeiNative(entry.file.path);
+            if (reply?.ok) native = JSON.parse(reply.json);
+          } catch (err) {
+            console.warn('Native SEI extraction failed, using the JavaScript parser:', err);
+          }
+        }
+
+        if (native) {
+          result = native;
+        } else if (entry.file?.isElectronFile && entry.file?.path) {
           try {
             const fileUrl = filePathToUrl(entry.file.path);
             const response = await fetch(fileUrl);

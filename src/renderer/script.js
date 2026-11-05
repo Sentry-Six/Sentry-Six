@@ -2564,6 +2564,40 @@ async function scanLooseClipsElectron(dirPath) {
 }
 
 /**
+ * Start readDir for every path with at most `limit` requests in flight.
+ * Returns listDir(path): a promise of that path's entries (or its error);
+ * a path that was not started is read on demand.
+ */
+function startDirListings(paths, limit = 4) {
+    const queue = [...new Set(paths)];
+    const settled = new Map();
+    const starters = new Map();
+    for (const p of queue) {
+        // Settle into {entries} / {error} so a failure nobody has awaited yet
+        // is not reported as an unhandled rejection.
+        settled.set(p, new Promise(resolve => starters.set(p, resolve)));
+    }
+    let next = 0;
+    const worker = async () => {
+        while (next < queue.length) {
+            const p = queue[next++];
+            try {
+                starters.get(p)({ entries: await window.electronAPI.readDir(p) });
+            } catch (error) {
+                starters.get(p)({ error });
+            }
+        }
+    };
+    for (let i = 0; i < Math.min(limit, queue.length); i++) worker();
+    return async p => {
+        if (!settled.has(p)) return window.electronAPI.readDir(p);
+        const r = await settled.get(p);
+        if (r.error) throw r.error;
+        return r.entries;
+    };
+}
+
+/**
  * Gather all Electron file entries for a single date from folderStructure.
  * Returns raw file-like objects without building an index.
  * Used by both loadDateContentElectron and selectDriveCollection (multi-date).
@@ -2573,10 +2607,20 @@ async function gatherFilesForDateElectron(date) {
     const dateData = folderStructure.dateHandles.get(date);
     const files = [];
 
+    // Start the day's folder listings together (RecentClips + every Sentry/
+    // Saved event folder, at most 4 in flight) instead of one after another;
+    // the results are still consumed below in the original order, so the file
+    // list is identical. Each listing is a round trip on a network share.
+    const listDir = startDirListings([
+        ...(dateData.recent ? [dateData.recent.path] : []),
+        ...[...dateData.sentry.values()].map(e => e.path),
+        ...[...dateData.saved.values()].map(e => e.path)
+    ]);
+
     // RecentClips
     if (dateData.recent) {
         try {
-            const entries = await window.electronAPI.readDir(dateData.recent.path);
+            const entries = await listDir(dateData.recent.path);
             for (const entry of entries) {
                 if (!entry.isFile || !entry.name.endsWith('.mp4')) continue;
                 if (dateData.recent.isFlat && !entry.name.startsWith(date)) continue;
@@ -2595,7 +2639,7 @@ async function gatherFilesForDateElectron(date) {
     // SentryClips events
     for (const [eventId, eventEntry] of dateData.sentry.entries()) {
         try {
-            const entries = await window.electronAPI.readDir(eventEntry.path);
+            const entries = await listDir(eventEntry.path);
             for (const entry of entries) {
                 if (!entry.isFile) continue;
                 files.push({
@@ -2613,7 +2657,7 @@ async function gatherFilesForDateElectron(date) {
     // SavedClips events
     for (const [eventId, eventEntry] of dateData.saved.entries()) {
         try {
-            const entries = await window.electronAPI.readDir(eventEntry.path);
+            const entries = await listDir(eventEntry.path);
             for (const entry of entries) {
                 if (!entry.isFile) continue;
                 files.push({
