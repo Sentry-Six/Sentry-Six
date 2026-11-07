@@ -216,7 +216,8 @@
     "ui.settings.openSource": "Open Source",
     "ui.changelog.title": "Changelog",
     "ui.changelog.close": "Close",
-    "app.licences": "Licences"
+    "app.licences": "Licences",
+    "app.updateOlderHint": "To go back to this version, download it from the release page and install it."
   },
   "es": {
     "app.arrived": "Llegada",
@@ -435,7 +436,8 @@
     "ui.settings.openSource": "Código Abierto",
     "ui.changelog.title": "Registro de Cambios",
     "ui.changelog.close": "Cerrar",
-    "app.licences": "Licencias"
+    "app.licences": "Licencias",
+    "app.updateOlderHint": "Para volver a esta versión, descárgala desde la página de la versión e instálala."
   },
   "fr": {
     "app.arrived": "Arrivée",
@@ -654,7 +656,8 @@
     "ui.settings.openSource": "Open Source",
     "ui.changelog.title": "Journal des Modifications",
     "ui.changelog.close": "Fermer",
-    "app.licences": "Licences"
+    "app.licences": "Licences",
+    "app.updateOlderHint": "Pour revenir à cette version, téléchargez-la depuis la page de publication et installez-la."
   },
   "de": {
     "app.arrived": "Ankunft",
@@ -873,7 +876,8 @@
     "ui.settings.openSource": "Open Source",
     "ui.changelog.title": "Änderungsprotokoll",
     "ui.changelog.close": "Schließen",
-    "app.licences": "Lizenzen"
+    "app.licences": "Lizenzen",
+    "app.updateOlderHint": "Um zu dieser Version zurückzukehren, laden Sie sie von der Release-Seite herunter und installieren Sie sie."
   },
   "zh": {
     "app.arrived": "到达",
@@ -1092,7 +1096,8 @@
     "ui.settings.openSource": "开源",
     "ui.changelog.title": "更新日志",
     "ui.changelog.close": "关闭",
-    "app.licences": "许可证"
+    "app.licences": "许可证",
+    "app.updateOlderHint": "要回到此版本，请从发布页面下载并安装。"
   },
   "ja": {
     "app.arrived": "到着",
@@ -1311,7 +1316,8 @@
     "ui.settings.openSource": "オープンソース",
     "ui.changelog.title": "変更履歴",
     "ui.changelog.close": "閉じる",
-    "app.licences": "ライセンス"
+    "app.licences": "ライセンス",
+    "app.updateOlderHint": "このバージョンに戻すには、リリースページからダウンロードしてインストールしてください。"
   },
   "ko": {
     "app.arrived": "도착",
@@ -1530,7 +1536,8 @@
     "ui.settings.openSource": "오픈 소스",
     "ui.changelog.title": "변경 로그",
     "ui.changelog.close": "닫기",
-    "app.licences": "라이선스"
+    "app.licences": "라이선스",
+    "app.updateOlderHint": "이 버전으로 돌아가려면 릴리스 페이지에서 다운로드하여 설치하세요."
   },
   "pt": {
     "app.arrived": "Chegada",
@@ -1749,7 +1756,8 @@
     "ui.settings.openSource": "Código Aberto",
     "ui.changelog.title": "Registro de Alterações",
     "ui.changelog.close": "Fechar",
-    "app.licences": "Licenças"
+    "app.licences": "Licenças",
+    "app.updateOlderHint": "Para voltar a esta versão, baixe-a na página de lançamento e instale-a."
   },
   "ru": {
     "app.arrived": "Прибытие",
@@ -1968,7 +1976,8 @@
     "ui.settings.openSource": "Открытый Исходный Код",
     "ui.changelog.title": "Журнал Изменений",
     "ui.changelog.close": "Закрыть",
-    "app.licences": "Лицензии"
+    "app.licences": "Лицензии",
+    "app.updateOlderHint": "Чтобы вернуться к этой версии, скачайте её со страницы релиза и установите."
   },
   "it": {
     "app.arrived": "Arrivo",
@@ -2187,7 +2196,8 @@
     "ui.settings.openSource": "Open Source",
     "ui.changelog.title": "Registro Modifiche",
     "ui.changelog.close": "Chiudi",
-    "app.licences": "Licenze"
+    "app.licences": "Licenze",
+    "app.updateOlderHint": "Per tornare a questa versione, scaricala dalla pagina della release e installala."
   },
   "nl": {
     "app.arrived": "Aankomst",
@@ -2406,7 +2416,8 @@
     "ui.settings.openSource": "Open Source",
     "ui.changelog.title": "Wijzigingslogboek",
     "ui.changelog.close": "Sluiten",
-    "app.licences": "Licenties"
+    "app.licences": "Licenties",
+    "app.updateOlderHint": "Download deze versie van de releasepagina en installeer hem om ernaar terug te gaan."
   },
   "pl": {
     "app.arrived": "Przyjazd",
@@ -2625,7 +2636,8 @@
     "ui.settings.openSource": "Open Source",
     "ui.changelog.title": "Dziennik Zmian",
     "ui.changelog.close": "Zamknij",
-    "app.licences": "Licencje"
+    "app.licences": "Licencje",
+    "app.updateOlderHint": "Aby wrócić do tej wersji, pobierz ją ze strony wydania i zainstaluj."
   },
   "tr": {
     "app.arrived": "Varış",
@@ -2844,6 +2856,7 @@
     "ui.settings.openSource": "Açık Kaynak",
     "ui.changelog.title": "Değişiklik Günlüğü",
     "ui.changelog.close": "Kapat",
-    "app.licences": "Lisanslar"
+    "app.licences": "Lisanslar",
+    "app.updateOlderHint": "Bu sürüme geri dönmek için yayın sayfasından indirip yükleyin."
   }
 }

@@ -162,8 +162,10 @@ pub fn view(dialog: &Dialog, downloaded: u64) -> Element<'_, Message> {
         notes(&offer.notes),
     ]
     .spacing(14);
-    if offer.how == How::Page {
-        body = body.push(text(t("app.updatePageHint")).size(12).color(theme::TEXT_MUTED));
+    match offer.how {
+        How::Page => body = body.push(text(t("app.updatePageHint")).size(12).color(theme::TEXT_MUTED)),
+        How::OlderPage => body = body.push(text(t("app.updateOlderHint")).size(12).color(theme::TEXT_MUTED)),
+        How::InApp => {}
     }
     match dialog {
         Dialog::Downloading(_) => {
@@ -193,7 +195,7 @@ pub fn view(dialog: &Dialog, downloaded: u64) -> Element<'_, Message> {
         .padding([10, 16])
         .style(theme::primary_button)
         .on_press_maybe((!busy).then_some(Message::UpdateNow)),
-        How::Page => button(text(t("app.updateOpenPage")).size(13).font(theme::semibold(theme::INTER)))
+        How::Page | How::OlderPage => button(text(t("app.updateOpenPage")).size(13).font(theme::semibold(theme::INTER)))
             .padding([10, 16])
             .style(theme::primary_button)
             .on_press(Message::UpdateOpen(offer.page.clone())),

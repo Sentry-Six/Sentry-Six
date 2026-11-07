@@ -84,6 +84,10 @@ pub enum How {
     /// The release page opens (portable copies, a copy run from the disk
     /// image, development builds).
     Page,
+    /// Going back to an older version on Windows: its installer may be
+    /// signed by someone other than this app's publishers (Electron Studio's
+    /// was unsigned), which `install` refuses, so its page opens instead.
+    OlderPage,
 }
 
 #[derive(Debug, Clone)]
@@ -335,7 +339,7 @@ pub fn check_as(channel: Channel, allow_downgrade: bool, current: &str, ask_serv
     Outcome::Offer(Offer {
         notes: notes(&agent, channel, current, &latest),
         asset: Asset { url: release_file(&latest, &file), file, sha512, size },
-        how: how(),
+        how: if cfg!(windows) && order.is_lt() && how() == How::InApp { How::OlderPage } else { how() },
         page: format!("{RELEASES_URL}/tag/v{latest}"),
         version: latest,
     })
