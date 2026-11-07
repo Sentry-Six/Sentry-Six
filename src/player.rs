@@ -96,6 +96,8 @@ struct TileState {
     eof: bool,
     duration: Option<f64>,
     error: Option<String>,
+    /// The open clip's format (codec, size, frame rate), for the log.
+    format: Option<String>,
 }
 
 type SharedTile = Arc<(Mutex<TileState>, Condvar)>;
@@ -189,8 +191,6 @@ fn worker(rx: &Receiver<Cmd>, shared: &SharedTile) {
     let (lock, cvar) = &**shared;
     // The camera, for the log (the thread is named after it).
     let camera = std::thread::current().name().unwrap_or("decode").trim_start_matches("decode-").to_string();
-    // The last clip's format, logged again only when it changes.
-    let mut format: Option<String> = None;
     let mut clip: Option<OpenClip> = None;
     // Why the current clip couldn't be opened, shown again after a seek.
     let mut open_error: Option<String> = None;
@@ -236,12 +236,9 @@ fn worker(rx: &Receiver<Cmd>, shared: &SharedTile) {
                 match opened {
                     Ok(c) => {
                         let t = &c.track;
-                        let now = format!("{:?} {}x{}, {:.1} fps", t.codec, t.width, t.height, t.samples.len() as f64 / t.duration.max(0.001));
-                        if format.as_deref() != Some(now.as_str()) {
-                            log::info!("{camera}: {now}");
-                            format = Some(now);
-                        }
+                        let format = format!("{:?} {}x{}, {:.0} fps", t.codec, t.width, t.height, t.samples.len() as f64 / t.duration.max(0.001));
                         let mut st = lock.lock().unwrap_or_else(|e| e.into_inner());
+                        st.format = Some(format);
                         if st.generation == generation {
                             st.duration = Some(c.track.duration);
                         }
@@ -337,7 +334,7 @@ fn worker(rx: &Receiver<Cmd>, shared: &SharedTile) {
             stats::SLOW_FRAMES.add(total_ms);
             crate::trace::trace!("slow frame {i} ({} B): read {read_ms:.0} ms, decode {:.0} ms", sample.size, total_ms - read_ms);
             if total_ms > 500.0 {
-                log::warn!("{camera}: a frame took {total_ms:.0} ms (reading {read_ms:.0} ms, decoding {:.0} ms, {} bytes)", total_ms - read_ms, sample.size);
+                stats::very_slow_frame(&camera, total_ms, read_ms);
             }
         }
         let mut st = lock.lock().unwrap_or_else(|e| e.into_inner());
@@ -490,6 +487,13 @@ pub struct Player {
     last_tick: Option<Instant>,
     /// When the clock began waiting for a camera (for diagnostics).
     hold_started: Option<Instant>,
+    /// When playback health was last logged.
+    last_summary: Option<Instant>,
+    /// The cameras' formats as last logged, and a new set waiting to hold
+    /// steady before it's logged (cameras open their clips one by one).
+    formats_logged: String,
+    formats_seen: Option<(String, Instant)>,
+    formats_checked: Option<Instant>,
 }
 
 /// Reads the length of every segment's clip (front camera, or the first
@@ -566,6 +570,10 @@ impl Player {
             pending_since: None,
             last_tick: None,
             hold_started: None,
+            last_summary: None,
+            formats_logged: String::new(),
+            formats_seen: None,
+            formats_checked: None,
             busy: Arc::new(std::sync::atomic::AtomicBool::new(true)),
             preloaded: None,
             last_hold: None,
@@ -698,6 +706,15 @@ impl Player {
             return;
         }
         let now = Instant::now();
+        // Playback health in the log every 5 minutes of playing, so a
+        // session that crashes still has it.
+        if self.clock.playing && self.last_summary.is_none_or(|t| now.duration_since(t).as_secs() >= 300) {
+            if self.last_summary.is_some() {
+                log::info!("playback so far: {}", stats::summary());
+            }
+            self.last_summary = Some(now);
+        }
+        self.log_formats(now);
         if let Some(last) = self.last_tick.replace(now) {
             let gap = now.duration_since(last).as_secs_f64() * 1000.0;
             if gap > 40.0 && self.clock.playing {
@@ -886,6 +903,44 @@ impl Player {
     }
 
     /// Seconds from the start of the collection.
+    /// Logs the cameras' formats in one line when they change (grouped:
+    /// "H264 1448x938, 36 fps: Back, LeftPillar, …"), once they have held
+    /// for a second.
+    fn log_formats(&mut self, now: Instant) {
+        // Four times a second is plenty.
+        if self.formats_checked.is_some_and(|t| now.duration_since(t) < Duration::from_millis(250)) {
+            return;
+        }
+        self.formats_checked = Some(now);
+        let mut groups: Vec<(String, Vec<String>)> = Vec::new();
+        for tile in self.tiles.iter().filter(|t| t.active) {
+            let Some(f) = tile.shared.0.lock().unwrap_or_else(|e| e.into_inner()).format.clone() else { continue };
+            match groups.iter_mut().find(|(g, _)| *g == f) {
+                Some((_, cams)) => cams.push(format!("{:?}", tile.camera)),
+                None => groups.push((f, vec![format!("{:?}", tile.camera)])),
+            }
+        }
+        if groups.is_empty() {
+            return;
+        }
+        groups.sort();
+        let line = groups.iter().map(|(f, cams)| format!("{f}: {}", cams.join(", "))).collect::<Vec<_>>().join("; ");
+        if line == self.formats_logged {
+            self.formats_seen = None;
+            return;
+        }
+        match &self.formats_seen {
+            Some((seen, at)) if *seen == line => {
+                if now.duration_since(*at) >= Duration::from_secs(1) {
+                    log::info!("cameras: {line}");
+                    self.formats_logged = line;
+                    self.formats_seen = None;
+                }
+            }
+            _ => self.formats_seen = Some((line, now)),
+        }
+    }
+
     /// For diagnostics: where playback is and how each camera is doing.
     pub fn describe(&self) -> Vec<String> {
         if !self.has_media() {

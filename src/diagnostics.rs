@@ -76,16 +76,10 @@ pub fn report(snap: &Snapshot) -> String {
     if let Some(last) = earlier.last() {
         summary.push(format!("Previous session ({}): {}", last.started, last.ending()));
     }
-    summary.push(format!(
-        "Playback: {} frames decoded, {} decode errors; slow frames (over 25 ms) {}; display pauses (over 40 ms) {}; clock held for a camera {}; seeks {}; clip opens {}",
-        stats::count(&stats::FRAMES),
-        stats::count(&stats::DECODE_ERRORS),
-        stats::SLOW_FRAMES.describe(),
-        stats::DISPLAY_GAPS.describe(),
-        stats::CLOCK_HOLDS.describe(),
-        stats::SEEKS.describe(),
-        stats::CLIP_OPENS.describe(),
-    ));
+    summary.push(format!("Playback this session: {}", stats::summary()));
+    if let Some(last) = earlier.last().and_then(|s| s.lines.iter().rev().find_map(|l| l.split_once("playback this session: ").or_else(|| l.split_once("playback so far: ")))) {
+        summary.push(format!("Playback, previous session: {}", last.1));
+    }
     section(&mut out, "Summary", &summary);
 
     // --- Folder, playback, app ----------------------------------------------

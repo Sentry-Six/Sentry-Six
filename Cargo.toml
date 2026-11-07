@@ -40,6 +40,9 @@ log = "0.4"
 [target.'cfg(unix)'.dependencies]
 # Linux video decoding loads GStreamer at run time (src/decode/gstreamer.rs).
 libloading = "0.8"
+# atexit: the log records a clean quit however the app ends (Cmd+Q on a
+# Mac ends it without a window event).
+libc = "0.2"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"

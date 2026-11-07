@@ -129,7 +129,11 @@ impl log::Log for Logger {
             text.truncate(cut);
             text.push('…');
         }
-        let target = record.target().strip_prefix("sentry_studio::").unwrap_or(record.target()).to_string();
+        let target = match record.target() {
+            "sentry_studio" => "app",
+            t => t.strip_prefix("sentry_studio::").unwrap_or(t),
+        }
+        .to_string();
         let level = record.level();
         match level {
             log::Level::Error => self.counts[0].fetch_add(1, std::sync::atomic::Ordering::Relaxed),
@@ -229,11 +233,27 @@ pub fn start() {
             .or_else(|| info.payload().downcast_ref::<String>().cloned())
             .unwrap_or_else(|| "(no message)".into());
         let place = info.location().map(|l| format!("{}:{}", l.file(), l.line())).unwrap_or_default();
+        CRASHED.store(true, std::sync::atomic::Ordering::Relaxed);
         log::error!(target: "panic", "thread {thread} panicked at {place}: {message}");
         log::logger().flush();
         previous(info);
     }));
+    // However the app ends (main returning, Cmd+Q, exit()), short of a
+    // crash or being killed.
+    #[cfg(unix)]
+    {
+        extern "C" fn at_exit() {
+            end();
+        }
+        unsafe {
+            libc::atexit(at_exit);
+        }
+    }
 }
+
+/// A panic happened: the session didn't end cleanly even if the process
+/// then exits normally.
+static CRASHED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 /// Logging to memory only (the command-line checks and tests).
 pub fn start_in_memory() {
@@ -245,6 +265,14 @@ pub fn start_in_memory() {
 /// Writes the line that marks a clean exit (a session file without it
 /// ended in a crash, a force quit or a power cut).
 pub fn end() {
+    use std::sync::atomic::{AtomicBool, Ordering::Relaxed};
+    static ENDED: AtomicBool = AtomicBool::new(false);
+    if ENDED.swap(true, Relaxed) || CRASHED.load(Relaxed) || LOGGER.get().is_none() {
+        return;
+    }
+    if stats::count(&stats::FRAMES) > 0 {
+        log::info!(target: "app", "playback this session: {}", stats::summary());
+    }
     log::info!(target: "app", "{CLEAN_EXIT}");
     log::logger().flush();
 }
@@ -319,6 +347,65 @@ pub mod stats {
 
     pub fn count(c: &AtomicU64) -> u64 {
         c.load(Relaxed)
+    }
+
+    /// One line of playback health (the report's, and the log's every few
+    /// minutes and at quit).
+    pub fn summary() -> String {
+        format!(
+            "{} frames decoded, {} decode errors; slow frames (over 25 ms) {}; display pauses (over 40 ms) {}; clock held for a camera {}; seeks {}; clip opens {}",
+            count(&FRAMES),
+            count(&DECODE_ERRORS),
+            SLOW_FRAMES.describe(),
+            DISPLAY_GAPS.describe(),
+            CLOCK_HOLDS.describe(),
+            SEEKS.describe(),
+            CLIP_OPENS.describe(),
+        )
+    }
+
+    /// Very slow frames (over 500 ms) since the last line about them.
+    struct Spikes {
+        since: Option<std::time::Instant>,
+        count: u32,
+        worst_ms: f64,
+        worst_read_ms: f64,
+        cameras: Vec<String>,
+    }
+
+    static SPIKES: std::sync::Mutex<Spikes> =
+        std::sync::Mutex::new(Spikes { since: None, count: 0, worst_ms: 0.0, worst_read_ms: 0.0, cameras: Vec::new() });
+
+    /// A frame that took over 500 ms: the first is logged straight away,
+    /// later ones as one line every 30 s (a slow network share can do this
+    /// for every few frames).
+    pub fn very_slow_frame(camera: &str, ms: f64, read_ms: f64) {
+        let mut s = SPIKES.lock().unwrap_or_else(|e| e.into_inner());
+        if s.since.is_none() {
+            s.since = Some(std::time::Instant::now());
+            log::warn!(target: "player", "{camera}: a frame took {ms:.0} ms (reading {read_ms:.0} ms, decoding {:.0} ms)", ms - read_ms);
+            return;
+        }
+        s.count += 1;
+        if ms > s.worst_ms {
+            s.worst_ms = ms;
+            s.worst_read_ms = read_ms;
+        }
+        if !s.cameras.iter().any(|c| c == camera) {
+            s.cameras.push(camera.to_string());
+        }
+        if s.since.is_some_and(|t| t.elapsed().as_secs() >= 30) {
+            log::warn!(
+                target: "player",
+                "{} more frames took over 500 ms in the last {} s ({}; worst {:.0} ms, of which reading {:.0} ms)",
+                s.count,
+                s.since.map_or(0, |t| t.elapsed().as_secs()),
+                s.cameras.join(", "),
+                s.worst_ms,
+                s.worst_read_ms
+            );
+            *s = Spikes { since: Some(std::time::Instant::now()), count: 0, worst_ms: 0.0, worst_read_ms: 0.0, cameras: Vec::new() };
+        }
     }
 }
 

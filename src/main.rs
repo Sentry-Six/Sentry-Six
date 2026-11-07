@@ -290,7 +290,9 @@ fn main() -> iced::Result {
     for font in theme::FONT_FILES {
         app = app.font(font);
     }
-    app.run()
+    let result = app.run();
+    applog::end();
+    result
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

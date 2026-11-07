@@ -3771,6 +3771,7 @@ dependencies = [
  "chrono",
  "iced",
  "image",
+ "libc",
  "libloading",
  "libm",
  "log",
