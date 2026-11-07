@@ -1,0 +1,872 @@
+//! Synced six-camera playback.
+//!
+//! One clock drives every tile. Each camera has a worker thread that reads
+//! and decodes a few frames ahead of the clock into a small queue (so memory
+//! stays bounded no matter how long the clip). On every display frame the UI
+//! asks each tile for the newest frame at or before the clock time, so all
+//! six show the same moment. If any tile falls behind (a slow share), the
+//! clock waits for it instead of letting the cameras drift apart.
+
+use crate::decode::{Decoder, Frame};
+use crate::library::{Camera, LocalSecs, Segment, GRID};
+use crate::mp4::{read_video_track, VideoTrack};
+use crate::reader::WindowReader;
+use crate::telemetry::{sample_telemetry, SeiMetadata};
+use std::collections::VecDeque;
+use std::path::PathBuf;
+use std::sync::mpsc::{channel, Receiver, Sender, TryRecvError};
+use std::sync::{Arc, Condvar, Mutex};
+use std::time::{Duration, Instant};
+
+/// Frames decoded ahead per camera (about 1/6 s at 36 fps).
+const AHEAD: usize = 6;
+/// The next minute's clips are got ready this long before the change.
+const PRELOAD_BEFORE: f64 = 5.0;
+/// A Tesla segment is about a minute; used until the real length is known.
+const DEFAULT_SEGMENT: f64 = 60.0;
+
+// ---------------------------------------------------------------------------
+// Clock
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Copy)]
+struct Clock {
+    anchor: f64,
+    since: Instant,
+    playing: bool,
+    rate: f64,
+}
+
+impl Clock {
+    fn new() -> Self {
+        Self { anchor: 0.0, since: Instant::now(), playing: false, rate: 1.0 }
+    }
+    fn now(&self) -> f64 {
+        if self.playing {
+            self.anchor + self.since.elapsed().as_secs_f64() * self.rate
+        } else {
+            self.anchor
+        }
+    }
+    fn set(&mut self, t: f64) {
+        self.anchor = t;
+        self.since = Instant::now();
+    }
+    fn set_playing(&mut self, playing: bool) {
+        let t = self.now();
+        self.playing = playing;
+        self.set(t);
+    }
+    fn set_rate(&mut self, rate: f64) {
+        let t = self.now();
+        self.rate = rate;
+        self.set(t);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Worker per camera
+// ---------------------------------------------------------------------------
+
+enum Cmd {
+    Open { path: PathBuf, at: f64, generation: u64 },
+    /// Get the next minute's clip ready (index and first data read on a
+    /// helper thread), so the change of minute doesn't wait on the share.
+    Preload { path: PathBuf },
+    Seek { at: f64, generation: u64 },
+    Close,
+}
+
+#[derive(Clone)]
+pub struct Shown {
+    /// Changes whenever a different picture is shown.
+    pub id: u64,
+    pub frame: Arc<Frame>,
+    pub pts: f64,
+    /// That frame's telemetry, if the clip carries any there.
+    pub telemetry: Option<Arc<SeiMetadata>>,
+}
+
+#[derive(Default)]
+struct TileState {
+    generation: u64,
+    frames: VecDeque<(f64, Arc<Frame>, Option<Arc<SeiMetadata>>)>,
+    /// The worker has decoded the last frame of the clip.
+    eof: bool,
+    duration: Option<f64>,
+    error: Option<String>,
+}
+
+type SharedTile = Arc<(Mutex<TileState>, Condvar)>;
+
+struct OpenClip {
+    reader: WindowReader,
+    track: VideoTrack,
+    decoder: Decoder,
+    /// Samples given to the decoder whose pictures haven't come back yet,
+    /// with their telemetry.
+    waiting: VecDeque<(f64, Option<Arc<SeiMetadata>>)>,
+    next: usize,
+    /// While seeking: frames before this time are decoded but not shown.
+    skip_before: f64,
+    generation: u64,
+    /// Pictures decoded so far, and damaged frames since the last one.
+    shown: usize,
+    failed: usize,
+    /// Decoded pictures held back until nothing still to decode is shown
+    /// before them (B-frames), in display order; and, per decode position,
+    /// the earliest display time from there on.
+    held: Vec<(f64, Arc<Frame>, Option<Arc<SeiMetadata>>)>,
+    earliest: Vec<i64>,
+    /// Display time of the keyframe decoding last started from: frames
+    /// shown before it (open-GOP leading pictures) may fail harmlessly.
+    gop_start: f64,
+    /// Pictures queued since the last open or seek.
+    queued: usize,
+}
+
+/// A clip's index and its first window of data, read ahead of time.
+struct Preloaded {
+    reader: WindowReader,
+    track: VideoTrack,
+}
+
+fn preload(path: &PathBuf) -> anyhow::Result<Preloaded> {
+    let file = std::fs::File::open(path)?;
+    let track = read_video_track(&file)?;
+    let mut reader = WindowReader::new(file)?;
+    if let Some(first) = track.samples.first() {
+        reader.warm(first.offset)?;
+    }
+    Ok(Preloaded { reader, track })
+}
+
+fn open_clip(path: &PathBuf, at: f64, generation: u64) -> anyhow::Result<OpenClip> {
+    let file = std::fs::File::open(path)?;
+    let track = read_video_track(&file)?;
+    let reader = WindowReader::new(file)?;
+    clip_from(Preloaded { reader, track }, at, generation)
+}
+
+fn clip_from(Preloaded { mut reader, track }: Preloaded, at: f64, generation: u64) -> anyhow::Result<OpenClip> {
+    let bytes: u64 = track.samples.iter().map(|s| s.size as u64).sum();
+    if track.duration > 0.0 {
+        reader.set_rate(bytes as f64 / track.duration);
+    }
+    let decoder = Decoder::new(&track)?;
+    let earliest = track.earliest_from();
+    let mut clip = OpenClip {
+        reader,
+        track,
+        decoder,
+        next: 0,
+        skip_before: 0.0,
+        generation,
+        shown: 0,
+        failed: 0,
+        held: Vec::new(),
+        waiting: VecDeque::new(),
+        earliest,
+        gop_start: 0.0,
+        queued: 0,
+    };
+    seek_clip(&mut clip, at);
+    Ok(clip)
+}
+
+fn seek_clip(clip: &mut OpenClip, at: f64) {
+    let target = clip.track.sample_at(at);
+    clip.next = clip.track.sync_at_or_before(target);
+    clip.skip_before = clip.track.pts_secs(target);
+    clip.decoder.reset();
+    clip.held.clear();
+    clip.waiting.clear();
+    clip.queued = 0;
+}
+
+fn worker(rx: &Receiver<Cmd>, shared: &SharedTile) {
+    let (lock, cvar) = &**shared;
+    let mut clip: Option<OpenClip> = None;
+    // Why the current clip couldn't be opened, shown again after a seek.
+    let mut open_error: Option<String> = None;
+    // The next minute's clip, being read ahead.
+    let mut preloading: Option<(PathBuf, Receiver<anyhow::Result<Preloaded>>)> = None;
+    loop {
+        // Commands: block when there is nothing to decode.
+        let idle = clip.as_ref().is_none_or(|c| c.next >= c.track.samples.len());
+        let cmd = if idle {
+            match rx.recv() {
+                Ok(c) => Some(c),
+                Err(_) => return,
+            }
+        } else {
+            match rx.try_recv() {
+                Ok(c) => Some(c),
+                Err(TryRecvError::Empty) => None,
+                Err(TryRecvError::Disconnected) => return,
+            }
+        };
+        match cmd {
+            Some(Cmd::Open { path, at, generation }) => {
+                clip = None;
+                open_error = None;
+                let began = Instant::now();
+                let ready = match preloading.take() {
+                    // Waits for the read ahead if it isn't done yet (it is
+                    // further along than starting over).
+                    Some((p, rx)) if p == path => rx.recv().ok().and_then(|r| r.ok()),
+                    _ => None,
+                };
+                let opened = match ready {
+                    Some(pre) => clip_from(pre, at, generation),
+                    None => open_clip(&path, at, generation),
+                };
+                crate::trace::trace!(
+                    "opened {} in {:.0} ms",
+                    path.file_name().map(|n| n.to_string_lossy()).unwrap_or_default(),
+                    began.elapsed().as_secs_f64() * 1000.0
+                );
+                match opened {
+                    Ok(c) => {
+                        let mut st = lock.lock().unwrap_or_else(|e| e.into_inner());
+                        if st.generation == generation {
+                            st.duration = Some(c.track.duration);
+                        }
+                        clip = Some(c);
+                    }
+                    Err(e) => {
+                        let mut st = lock.lock().unwrap_or_else(|e| e.into_inner());
+                        open_error = Some(format!("{e:#}"));
+                        if st.generation == generation {
+                            st.error = open_error.clone();
+                            st.eof = true;
+                        }
+                    }
+                }
+                continue;
+            }
+            Some(Cmd::Preload { path }) => {
+                if preloading.as_ref().is_none_or(|(p, _)| *p != path) {
+                    let (tx, rx) = channel();
+                    let p = path.clone();
+                    let spawned = std::thread::Builder::new().name("preload".into()).spawn(move || {
+                        let _ = tx.send(preload(&p));
+                    });
+                    if spawned.is_ok() {
+                        preloading = Some((path, rx));
+                    }
+                }
+                continue;
+            }
+            Some(Cmd::Seek { at, generation }) => {
+                match clip.as_mut() {
+                    Some(c) => {
+                        c.generation = generation;
+                        seek_clip(c, at);
+                    }
+                    // No clip (it couldn't be opened): nothing to show, so
+                    // the camera is done and doesn't hold the others back.
+                    None => {
+                        let mut st = lock.lock().unwrap_or_else(|e| e.into_inner());
+                        if st.generation == generation {
+                            st.eof = true;
+                            st.error = open_error.clone();
+                        }
+                        cvar.notify_all();
+                    }
+                }
+                continue;
+            }
+            Some(Cmd::Close) => {
+                clip = None;
+                open_error = None;
+                continue;
+            }
+            None => {}
+        }
+        let Some(c) = clip.as_mut() else { continue };
+
+        // Wait for room in the queue (or a new command).
+        {
+            let st = lock.lock().unwrap_or_else(|e| e.into_inner());
+            if st.generation != c.generation {
+                drop(st);
+                std::thread::sleep(Duration::from_millis(2));
+                continue;
+            }
+            if st.frames.len() >= AHEAD {
+                let _ = cvar.wait_timeout(st, Duration::from_millis(15)).unwrap_or_else(|e| e.into_inner());
+                continue;
+            }
+        }
+
+        let i = c.next;
+        c.next += 1;
+        let sample = c.track.samples[i];
+        let pts = c.track.pts_secs(i);
+        if sample.sync {
+            c.gop_start = pts;
+        }
+        let nal_length = c.track.nal_length_size as usize;
+        let codec = c.track.codec;
+        let began = Instant::now();
+        let mut read_ms = 0.0;
+        let mut telemetry = None;
+        let result = c.reader.read(sample.offset, sample.size as usize).and_then(|data| {
+            read_ms = began.elapsed().as_secs_f64() * 1000.0;
+            telemetry = sample_telemetry(data, nal_length, codec).map(Arc::new);
+            c.decoder.decode_at(data, pts)
+        });
+        let total_ms = began.elapsed().as_secs_f64() * 1000.0;
+        if total_ms > 25.0 {
+            crate::trace::trace!("slow frame {i} ({} B): read {read_ms:.0} ms, decode {:.0} ms", sample.size, total_ms - read_ms);
+        }
+        let mut st = lock.lock().unwrap_or_else(|e| e.into_inner());
+        if st.generation != c.generation {
+            continue;
+        }
+        // A decoder may hand back an earlier sample's picture (GStreamer's
+        // can lag a frame or two): each picture is filed under its own
+        // sample, with that sample's telemetry.
+        c.waiting.push_back((pts, telemetry));
+        let mut pictures = Vec::new();
+        match result {
+            Ok(Some(frame)) => {
+                if c.failed > 0 {
+                    // Pictures again after a damaged frame: clear its message.
+                    c.failed = 0;
+                    st.error = None;
+                }
+                pictures.push(frame);
+            }
+            Ok(None) => {}
+            // A leading picture of an open GOP after a seek (it needs frames
+            // from before the keyframe): not damage, just not shown.
+            Err(_) if pts + 1e-6 < c.gop_start => {}
+            Err(e) => {
+                // A damaged frame (often the last, half-written one of a
+                // clip): skip to the next keyframe. Only a clip that shows
+                // nothing at all is reported.
+                eprintln!("frame {i} of a clip could not be decoded: {e:#}");
+                c.failed = c.failed.max(1);
+                if c.shown == 0 {
+                    st.error = Some(format!("{e:#}"));
+                }
+                if let Some(k) = (c.next..c.track.samples.len()).find(|&k| c.track.samples[k].sync) {
+                    c.next = k;
+                } else {
+                    c.next = c.track.samples.len();
+                }
+                // Start the decoder afresh from that keyframe: a decoder that
+                // hit an error may produce nothing more until it is reset.
+                c.decoder.reset();
+                c.waiting.clear();
+            }
+        }
+        if c.next >= c.track.samples.len() {
+            // The end of the clip: what the decoder still holds.
+            pictures.extend(c.decoder.drain());
+        }
+        for frame in pictures {
+            let at_pts = frame.pts().unwrap_or(pts);
+            let telemetry = match c.waiting.iter().position(|w| (w.0 - at_pts).abs() < 1e-4) {
+                Some(k) => c.waiting.remove(k).and_then(|w| w.1),
+                None => None,
+            };
+            c.shown += 1;
+            let at = c.held.partition_point(|h| h.0 < at_pts);
+            c.held.insert(at, (at_pts, Arc::new(frame), telemetry));
+        }
+        // Samples whose pictures will never come (dropped by the decoder)
+        // shouldn't pile up.
+        while c.waiting.len() > 32 {
+            c.waiting.pop_front();
+        }
+        // Show held pictures that nothing left to decode comes before. Pre-roll
+        // after a seek: show the target frame, not the keyframe it is decoded
+        // from (but at the very end, at least the last picture).
+        let end = c.next >= c.track.samples.len();
+        let horizon = c.earliest.get(c.next).copied().unwrap_or(i64::MAX) as f64 / c.track.timescale as f64;
+        while c.held.first().is_some_and(|h| end || h.0 < horizon - 1e-9) {
+            let h = c.held.remove(0);
+            let only_one_left = end && c.held.is_empty() && c.queued == 0;
+            if h.0 + 1e-6 >= c.skip_before || only_one_left {
+                st.frames.push_back(h);
+                c.queued += 1;
+            }
+        }
+        if c.next >= c.track.samples.len() {
+            st.eof = true;
+        }
+    }
+}
+
+struct Tile {
+    camera: Camera,
+    tx: Sender<Cmd>,
+    shared: SharedTile,
+    active: bool,
+    shown: Option<Shown>,
+    /// After a seek or a new clip: no picture for the new position yet
+    /// (the old picture stays on screen meanwhile).
+    awaiting: bool,
+    /// Its clip has ended with nothing left to show.
+    finished: bool,
+}
+
+impl Tile {
+    /// Starts a new generation (dropping queued frames) and sends `make`'s
+    /// command for it. A seek keeps the clip's known length; opening or
+    /// closing a clip forgets it.
+    fn send(&mut self, keep_duration: bool, make: impl FnOnce(u64) -> Cmd) {
+        self.awaiting = true;
+        let generation = {
+            let (lock, cvar) = &*self.shared;
+            let mut st = lock.lock().unwrap_or_else(|e| e.into_inner());
+            st.generation += 1;
+            st.frames.clear();
+            st.eof = false;
+            st.error = None;
+            if !keep_duration {
+                st.duration = None;
+            }
+            cvar.notify_all();
+            st.generation
+        };
+        let _ = self.tx.send(make(generation));
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Player
+// ---------------------------------------------------------------------------
+
+pub struct Player {
+    clock: Clock,
+    tiles: Vec<Tile>,
+    segments: Vec<Segment>,
+    durations: Vec<f64>,
+    segment: usize,
+    next_id: u64,
+    /// Waiting for the first frames after a load or seek.
+    pending: bool,
+    /// A seek asked for while the last one is still arriving: the newest
+    /// target wins, and it runs once every camera has caught up.
+    queued_seek: Option<f64>,
+    /// Real segment lengths, read from each minute's front clip in the
+    /// background after a load (until then a minute counts as 60 s).
+    lengths: Option<Receiver<(usize, f64)>>,
+    /// Stops the running length reader when another collection loads.
+    lengths_cancel: Arc<std::sync::atomic::AtomicBool>,
+    /// Tells the length reader to hold off (see `read_lengths`).
+    busy: Arc<std::sync::atomic::AtomicBool>,
+    /// When a camera last held the clock back.
+    last_hold: Option<Instant>,
+    /// The segment whose clips were last sent for preloading.
+    preloaded: Option<usize>,
+    /// When the pending seek started (for the trace).
+    pending_since: Option<Instant>,
+    /// When tick last ran (for the trace's display gaps).
+    last_tick: Option<Instant>,
+}
+
+/// Reads the length of every segment's clip (front camera, or the first
+/// one there is), one at a time, and sends `(segment, seconds)`. Stops
+/// early when the receiver is dropped (another collection was loaded).
+///
+/// It runs alongside playback on the same share, so it stays out of the
+/// way: one file at a time, and none at all while `busy` is set (a clip
+/// opening, a seek, or a camera waiting for data). On a network share a
+/// burst of index reads made playback stutter for the first 15-30 s.
+fn read_lengths(segments: &[Segment], tx: Sender<(usize, f64)>, busy: Arc<std::sync::atomic::AtomicBool>, cancel: Arc<std::sync::atomic::AtomicBool>) {
+    let paths: Vec<(usize, PathBuf)> = segments
+        .iter()
+        .enumerate()
+        .filter_map(|(i, s)| s.files.get(&Camera::Front).or_else(|| s.files.values().next()).map(|p| (i, p.clone())))
+        .collect();
+    let cancelled = || cancel.load(std::sync::atomic::Ordering::Relaxed);
+    for (i, path) in &paths {
+        while busy.load(std::sync::atomic::Ordering::Relaxed) && !cancelled() {
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        if cancelled() {
+            return;
+        }
+        let began = Instant::now();
+        let length = std::fs::File::open(path).ok().and_then(|f| read_video_track(&f).ok()).map(|t| t.duration);
+        crate::trace::trace!("length of segment {i}: {:.0} ms", began.elapsed().as_secs_f64() * 1000.0);
+        if let Some(d) = length.filter(|d| *d > 0.0) {
+            if tx.send((*i, d)).is_err() {
+                return;
+            }
+        }
+    }
+}
+
+impl Player {
+    pub fn new() -> Self {
+        let tiles = GRID
+            .iter()
+            .map(|&camera| {
+                let (tx, rx) = channel();
+                let shared: SharedTile = Arc::new((Mutex::new(TileState::default()), Condvar::new()));
+                let s = shared.clone();
+                std::thread::Builder::new()
+                    .name(format!("decode-{camera:?}"))
+                    .spawn(move || {
+                        // A panic (a malformed file the parser didn't expect)
+                        // ends that clip, not the camera: its error shows and
+                        // the worker carries on with the next command.
+                        while std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| worker(&rx, &s))).is_err() {
+                            let mut st = s.0.lock().unwrap_or_else(|e| e.into_inner());
+                            st.frames.clear();
+                            st.eof = true;
+                            st.error = Some("This clip couldn't be played.".into());
+                            s.1.notify_all();
+                        }
+                    })
+                    .expect("start decoder thread");
+                Tile { camera, tx, shared, active: false, shown: None, awaiting: false, finished: false }
+            })
+            .collect();
+        Self {
+            clock: Clock::new(),
+            tiles,
+            segments: Vec::new(),
+            durations: Vec::new(),
+            segment: 0,
+            next_id: 1,
+            pending: false,
+            queued_seek: None,
+            lengths: None,
+            lengths_cancel: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            pending_since: None,
+            last_tick: None,
+            busy: Arc::new(std::sync::atomic::AtomicBool::new(true)),
+            preloaded: None,
+            last_hold: None,
+        }
+    }
+
+    pub fn load(&mut self, segments: Vec<Segment>, start: f64) {
+        self.queued_seek = None;
+        self.pending = false;
+        self.durations = vec![DEFAULT_SEGMENT; segments.len()];
+        let (tx, rx) = channel();
+        let list = segments.clone();
+        std::thread::Builder::new()
+            .name("segment-lengths".into())
+            .spawn({
+                let busy = self.busy.clone();
+                // Stop the previous collection's reader, which may be
+                // waiting for playback to settle.
+                self.lengths_cancel.store(true, std::sync::atomic::Ordering::Relaxed);
+                self.lengths_cancel = Arc::new(std::sync::atomic::AtomicBool::new(false));
+                let cancel = self.lengths_cancel.clone();
+                move || read_lengths(&list, tx, busy, cancel)
+            })
+            .expect("start length reader");
+        self.lengths = Some(rx);
+        self.segments = segments;
+        self.clock.set_playing(false);
+        let (seg, local) = self.locate(start);
+        self.open_segment(seg, local);
+    }
+
+    /// The file one camera is playing from now.
+    pub fn current_file(&self, camera: Camera) -> Option<&PathBuf> {
+        self.segments.get(self.segment)?.files.get(&camera)
+    }
+
+    pub fn has_media(&self) -> bool {
+        !self.segments.is_empty()
+    }
+
+    fn locate(&self, t: f64) -> (usize, f64) {
+        let mut acc = 0.0;
+        for (i, d) in self.durations.iter().enumerate() {
+            if t < acc + d || i + 1 == self.durations.len() {
+                return (i, (t - acc).clamp(0.0, *d));
+            }
+            acc += d;
+        }
+        (0, 0.0)
+    }
+
+    fn open_segment(&mut self, seg: usize, at: f64) {
+        self.segment = seg;
+        self.clock.set(at);
+        self.pending = true;
+        self.pending_since = Some(Instant::now());
+        let files = self.segments.get(seg).map(|s| s.files.clone()).unwrap_or_default();
+        for tile in &mut self.tiles {
+            // The last picture stays up until the new clip's first one.
+            match files.get(&tile.camera) {
+                Some(path) => {
+                    tile.active = true;
+                    let path = path.clone();
+                    tile.send(false, |generation| Cmd::Open { path, at, generation });
+                }
+                None => {
+                    tile.active = false;
+                    tile.shown = None;
+                    tile.send(false, |_| Cmd::Close);
+                }
+            }
+        }
+    }
+
+    pub fn is_playing(&self) -> bool {
+        self.clock.playing
+    }
+
+    pub fn set_playing(&mut self, playing: bool) {
+        if self.has_media() {
+            self.clock.set_playing(playing);
+        }
+        if !playing && !self.pending {
+            // Paused: ticks stop, so free the length reader here.
+            self.last_hold = None;
+            self.busy.store(false, std::sync::atomic::Ordering::Relaxed);
+        }
+    }
+
+    pub fn rate(&self) -> f64 {
+        self.clock.rate
+    }
+
+    pub fn set_rate(&mut self, rate: f64) {
+        self.clock.set_rate(rate);
+    }
+
+    /// Seeks to `t` seconds from the start of the collection.
+    pub fn seek(&mut self, t: f64) {
+        if !self.has_media() {
+            return;
+        }
+        if self.pending {
+            // Still showing the last jump: run this one after it, instead of
+            // restarting every camera on each key repeat.
+            self.queued_seek = Some(t);
+            return;
+        }
+        let (seg, local) = self.locate(t);
+        if seg != self.segment {
+            self.open_segment(seg, local);
+            return;
+        }
+        self.clock.set(local);
+        self.pending = true;
+        self.pending_since = Some(Instant::now());
+        for tile in self.tiles.iter_mut().filter(|t| t.active) {
+            tile.send(true, |generation| Cmd::Seek { at: local, generation });
+        }
+    }
+
+    /// Needs a redraw every display frame (playing, or frames on the way).
+    pub fn wants_frames(&self) -> bool {
+        self.has_media() && (self.clock.playing || self.pending)
+    }
+
+    /// Picks each tile's frame for the clock time. Call once per display frame.
+    pub fn tick(&mut self) {
+        if !self.has_media() {
+            return;
+        }
+        if crate::trace::on() {
+            let now = Instant::now();
+            if let Some(last) = self.last_tick.replace(now) {
+                let gap = now.duration_since(last).as_secs_f64() * 1000.0;
+                if gap > 40.0 && self.clock.playing {
+                    crate::trace::trace!("display gap {gap:.0} ms");
+                }
+            }
+        }
+        // Real lengths of the other minutes as they come in.
+        if let Some(rx) = &self.lengths {
+            while let Ok((i, d)) = rx.try_recv() {
+                if i != self.segment {
+                    if let Some(slot) = self.durations.get_mut(i) {
+                        *slot = d;
+                    }
+                }
+            }
+        }
+        let t = self.clock.now();
+        // After a jump, no camera changes picture until every camera has its
+        // picture for the new spot, so they always move together.
+        if self.pending {
+            let ready = self.tiles.iter().filter(|t| t.active).all(|tile| {
+                let st = tile.shared.0.lock().unwrap_or_else(|e| e.into_inner());
+                !st.frames.is_empty() || st.eof
+            });
+            if !ready {
+                if self.clock.playing {
+                    self.clock.set(t);
+                }
+                return;
+            }
+        }
+        // The moment every camera can show: a camera that has nothing
+        // decoded past its current picture holds everyone back, so no
+        // camera ever shows a later moment than the slowest one.
+        const FRAME: f64 = 1.0 / 36.0;
+        let mut t_show = t;
+        for tile in self.tiles.iter().filter(|t| t.active) {
+            let st = tile.shared.0.lock().unwrap_or_else(|e| e.into_inner());
+            if st.eof && st.frames.len() <= 1 {
+                continue; // finished: shows its last picture
+            }
+            let reach = match st.frames.iter().take_while(|f| f.0 <= t + 1e-4).last() {
+                // Has a picture for t, and the next one is on its way or here.
+                Some(_) if st.frames.iter().any(|f| f.0 > t + 1e-4) => t,
+                // Its newest picture is before t and nothing after it yet.
+                Some(f) => f.0 + FRAME,
+                None if !st.frames.is_empty() => t,
+                None => tile.shown.as_ref().map_or(t, |s| s.pts + FRAME),
+            };
+            t_show = t_show.min(reach);
+        }
+
+        let mut all_done = true;
+        let mut seg_len: f64 = 0.0;
+        let mut any_active = false;
+        for tile in self.tiles.iter_mut().filter(|t| t.active) {
+            any_active = true;
+            let (lock, cvar) = &*tile.shared;
+            let mut st = lock.lock().unwrap_or_else(|e| e.into_inner());
+            if let Some(d) = st.duration {
+                seg_len = seg_len.max(d);
+            }
+            while st.frames.len() >= 2 && st.frames[1].0 <= t_show + 1e-4 {
+                st.frames.pop_front();
+            }
+            if let Some((pts, frame, telemetry)) = st.frames.front() {
+                let new_pic = tile.shown.as_ref().is_none_or(|s| !Arc::ptr_eq(&s.frame, frame));
+                if new_pic {
+                    tile.shown = Some(Shown { id: self.next_id, frame: frame.clone(), pts: *pts, telemetry: telemetry.clone() });
+                    self.next_id += 1;
+                }
+                // The queue only ever holds frames for the latest seek.
+                tile.awaiting = false;
+            }
+            // Finished with nothing to show (its clip couldn't be opened or
+            // decoded): it has caught up as far as it ever will.
+            tile.finished = st.eof && st.frames.is_empty();
+            if tile.finished {
+                tile.awaiting = false;
+            }
+            cvar.notify_all();
+            if !st.eof || st.frames.len() >= 2 {
+                all_done = false;
+            }
+        }
+        if !any_active {
+            self.pending = false;
+            return;
+        }
+        let waiting = self.tiles.iter().any(|t| t.active && (t.awaiting || (t.shown.is_none() && !t.finished)));
+        if t_show < t - 1e-3 && self.clock.playing {
+            self.last_hold = Some(Instant::now());
+            if crate::trace::on() {
+                let behind: Vec<String> = self
+                    .tiles
+                    .iter()
+                    .filter(|tile| tile.active)
+                    .map(|tile| format!("{:?} {}", tile.camera, tile.shared.0.lock().unwrap_or_else(|e| e.into_inner()).frames.len()))
+                    .collect();
+                crate::trace::trace!("clock held {:.0} ms (queues: {})", (t - t_show) * 1000.0, behind.join(", "));
+            }
+            // Hold the clock at what every camera can show (never later than
+            // a picture already on screen, so it never jumps back past one).
+            self.clock.set(t_show);
+        }
+        // Busy: starting up, seeking, or a camera short of data within the
+        // last second.
+        let busy = self.pending || waiting || self.last_hold.is_some_and(|h| h.elapsed() < Duration::from_secs(1));
+        self.busy.store(busy, std::sync::atomic::Ordering::Relaxed);
+        if !waiting {
+            if self.pending {
+                if let Some(since) = self.pending_since.take() {
+                    crate::trace::trace!("seek ready in {:.0} ms", since.elapsed().as_secs_f64() * 1000.0);
+                }
+            }
+            self.pending = false;
+        }
+        // Every camera is on the last jump: now run the newest one asked for.
+        if !self.pending {
+            if let Some(q) = self.queued_seek.take() {
+                self.seek(q);
+                return;
+            }
+        }
+        if seg_len > 0.0 {
+            if let Some(d) = self.durations.get_mut(self.segment) {
+                *d = seg_len;
+            }
+        }
+        // Nearly the end of this minute: get the next one's clips ready.
+        if self.clock.playing && seg_len > 0.0 && t >= seg_len - PRELOAD_BEFORE && self.preloaded != Some(self.segment + 1) {
+            if let Some(next) = self.segments.get(self.segment + 1) {
+                for tile in &self.tiles {
+                    if let Some(path) = next.files.get(&tile.camera) {
+                        let _ = tile.tx.send(Cmd::Preload { path: path.clone() });
+                    }
+                }
+                self.preloaded = Some(self.segment + 1);
+                crate::trace::trace!("preloading segment {}", self.segment + 1);
+            }
+        }
+        // End of this minute: go on to the next one.
+        if all_done && self.clock.playing && t >= seg_len - 0.05 {
+            if self.segment + 1 < self.segments.len() {
+                let next = self.segment + 1;
+                self.open_segment(next, 0.0);
+            } else {
+                self.clock.set_playing(false);
+                self.clock.set(seg_len);
+            }
+        }
+    }
+
+    pub fn shown(&self, slot: usize) -> Option<&Shown> {
+        self.tiles.get(slot).and_then(|t| t.shown.as_ref())
+    }
+
+    pub fn slot_active(&self, slot: usize) -> bool {
+        self.tiles.get(slot).is_some_and(|t| t.active)
+    }
+
+    pub fn slot_error(&self, slot: usize) -> Option<String> {
+        self.tiles.get(slot).and_then(|t| t.shared.0.lock().unwrap_or_else(|e| e.into_inner()).error.clone())
+    }
+
+    /// Seconds from the start of the collection.
+    pub fn position(&self) -> f64 {
+        if let Some(t) = self.queued_seek {
+            return t;
+        }
+        let before: f64 = self.durations.iter().take(self.segment).sum();
+        before + self.clock.now()
+    }
+
+    /// Seconds into the clip that is playing.
+    pub fn local_time(&self) -> f64 {
+        self.clock.now()
+    }
+
+    pub fn total(&self) -> f64 {
+        self.durations.iter().sum()
+    }
+
+    /// Local wall-clock time of what is on screen.
+    pub fn wall_clock(&self) -> Option<LocalSecs> {
+        self.segments.get(self.segment).map(|s| s.start + self.clock.now().floor() as i64)
+    }
+
+    /// Collection seconds where `wall` falls, for jumping to an event time.
+    pub fn offset_of(segments: &[Segment], wall: LocalSecs) -> f64 {
+        let Some(first) = segments.first() else { return 0.0 };
+        (wall - first.start).max(0) as f64
+    }
+}

@@ -1,0 +1,75 @@
+[package]
+name = "sentry-studio"
+# The release version, kept in step with version.json.
+version = "2026.45.40"
+description = "Sentry Studio: synced six-camera Tesla dashcam playback"
+authors = ["Sentry-Six"]
+license = "MIT"
+edition = "2021"
+rust-version = "1.88"
+publish = false
+
+[[bin]]
+name = "sentry-studio"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1"
+iced = { version = "0.14", features = ["wgpu", "advanced", "image", "svg", "canvas"] }
+serde = { version = "1", features = ["derive"] }
+# Drive data (src/drive_data.rs): serde_json parses numbers exactly as
+# JavaScript does, so drives measure the same as in earlier versions.
+serde_json = { version = "1", features = ["preserve_order", "float_roundtrip"] }
+chrono = { version = "0.4", features = ["unstable-locales"] }
+base64 = "0.22"
+libm = "0.2"
+ureq = "3"
+regex = "1"
+url = "2"
+image = { version = "0.25", default-features = false, features = ["png", "webp"] }
+bytemuck = { version = "1", features = ["derive"] }
+rfd = "0.17"
+# Deleting a clip moves it to the Trash / Recycle Bin first.
+trash = "5"
+# Update downloads (SHA-512) and the install ID (SHA-256).
+sha2 = "0.10"
+
+[target.'cfg(unix)'.dependencies]
+# Linux video decoding loads GStreamer at run time (src/decode/gstreamer.rs).
+libloading = "0.8"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-core-foundation = "0.3"
+objc2-core-media = "0.3"
+objc2-core-video = { version = "0.3", features = ["CVMetalTexture", "CVMetalTextureCache", "objc2-metal"] }
+# Zero-copy video: decoded pictures become Metal textures (CVMetalTextureCache)
+# handed to wgpu through its Metal backend, which uses these two crates.
+objc2-metal = "0.3"
+metal = "0.32"
+objc2-video-toolbox = "0.3"
+objc2-app-kit = "0.3"
+objc2-foundation = "0.3"
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Direct3D",
+    "Win32_Graphics_Direct3D11",
+    "Win32_Graphics_Dxgi",
+    "Win32_Graphics_Dxgi_Common",
+    "Win32_Media_MediaFoundation",
+    "Win32_Security",
+    "Win32_Storage_FileSystem",
+    "Win32_System_Com",
+    "Win32_System_Console",
+    "Win32_System_Registry",
+    "Win32_System_LibraryLoader",
+    "Win32_System_Threading",
+    "Win32_UI_HiDpi",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
+[profile.release]
+codegen-units = 4
+strip = true

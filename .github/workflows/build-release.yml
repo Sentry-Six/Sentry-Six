@@ -1,9 +1,28 @@
 name: Build Release
 
+# Builds Sentry Studio for macOS, Windows and Linux when a GitHub release is
+# published (attaching the builds to it), or by hand from the Actions tab.
+# Signing (none of it needed for a build to succeed):
+#   macOS:   MAC_CERTIFICATE_P12, MAC_CERTIFICATE_PASSWORD (Developer ID) and
+#            APPLE_API_KEY, APPLE_API_KEY_ID, APPLE_API_ISSUER (notarization)
+#   Windows: Azure Artifact Signing, signed in with OIDC (no secret) in the
+#            windows-signing environment: the repository variables
+#            AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID,
+#            ARTIFACT_SIGNING_ENDPOINT, ARTIFACT_SIGNING_ACCOUNT and
+#            ARTIFACT_SIGNING_PROFILE
+# Updates: installed copies, including Electron Studio's electron-updater,
+# update from the release's latest.yml, latest-mac.yml and latest-linux.yml
+# (electron-builder's format). Each is attached after the files it lists, so
+# an updater never sees a manifest before its file.
 on:
   release:
     types: [published]
   workflow_dispatch:
+    inputs:
+      bundle-id:
+        description: macOS bundle identifier (releases use com.sentry-six.revamped)
+        required: false
+        default: com.sentry-six.revamped.dev
 
 permissions:
   contents: write
@@ -86,167 +105,44 @@ jobs:
             exit 0
           fi
 
-          # SignPath Foundation asks for a "Code signing policy" link on the download page.
+          # The code signing policy: who signs the Windows builds, and how.
           BODY="$BODY"$'\n\n'"[Code signing policy](https://sentry-six.com/code-signing)"
           printf '%s\n' "$BODY" | gh release edit "$TAG" --notes-file -
           echo "Release notes populated for $TAG (current: $BASE_VERSION, since last stable: ${LAST_VERSION:-none})."
 
-  build-windows:
-    runs-on: windows-latest
-    timeout-minutes: 30
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v7
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v7
-        with:
-          node-version: 22
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
-
-      # The native helper (native/studio-helper) is built by the beforePack
-      # hook; rustup is preinstalled on GitHub-hosted runners.
-      - name: Set up Rust
-        run: rustup target add x86_64-pc-windows-msvc
-
-      - name: Build Windows installer
-        run: npm run build:win
-        env:
-          CSC_IDENTITY_AUTO_DISCOVERY: false
-          SENTRY_STUDIO_REQUIRE_HELPER: '1'
-
-      - name: Verify native helper
-        run: node scripts/verify-helper.js release/win-unpacked/resources
-
-      - name: Upload Windows artifacts
-        uses: actions/upload-artifact@v7
-        with:
-          name: windows-build
-          retention-days: 30
-          path: |
-            release/SentryStudioSetup*.exe
-            release/SentryStudioSetup*.exe.blockmap
-            release/latest.yml
-
-      - name: Attach to GitHub Release
-        if: github.event_name == 'release'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh release upload "${{ github.event.release.tag_name }}" release/SentryStudioSetup*.exe release/SentryStudioSetup*.exe.blockmap release/latest.yml --clobber
-
-  build-linux:
-    strategy:
-      # One architecture's failure must not cancel the other's packages.
-      fail-fast: false
-      matrix:
-        include:
-          - arch: x64
-            runner: ubuntu-latest
-          - arch: arm64
-            runner: ubuntu-24.04-arm
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 30
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v7
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v7
-        with:
-          node-version: 22
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
-
-      # Static musl build of the native helper, so it runs on any distribution.
-      - name: Set up Rust
-        run: rustup target add ${{ matrix.arch == 'arm64' && 'aarch64' || 'x86_64' }}-unknown-linux-musl
-
-      - name: Build Linux .deb
-        run: npm run build:linux -- --${{ matrix.arch }}
-        env:
-          SENTRY_STUDIO_REQUIRE_HELPER: '1'
-
-      - name: Verify bundled FFmpeg and timestamp export
-        run: node scripts/verify-linux-ffmpeg.js release/linux-${{ matrix.arch == 'arm64' && 'arm64-' || '' }}unpacked
-
-      - name: Verify native helper
-        run: node scripts/verify-helper.js release/linux-${{ matrix.arch == 'arm64' && 'arm64-' || '' }}unpacked/resources
-
-      - name: Upload Linux artifacts
-        uses: actions/upload-artifact@v7
-        with:
-          name: linux-build-${{ matrix.arch }}
-          retention-days: 30
-          path: |
-            release/SentryStudio-*-linux-*.deb
-            release/latest-linux*.yml
-
-      - name: Attach to GitHub Release
-        if: github.event_name == 'release'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh release upload "${{ github.event.release.tag_name }}" \
-            release/SentryStudio-*-linux-*.deb \
-            release/latest-linux*.yml --clobber
-
-  build-mac:
+  mac:
     runs-on: macos-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
     env:
       HAS_MAC_CERTIFICATE: ${{ secrets.MAC_CERTIFICATE_P12 != '' }}
       HAS_APPLE_API_KEY: ${{ secrets.APPLE_API_KEY != '' }}
-
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v7
+      - uses: actions/checkout@v7
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v7
-        with:
-          node-version: 22
-          cache: 'npm'
+      - name: Set up Rust
+        run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
 
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Setup macOS code signing
+      - name: Set up the Developer ID certificate
         if: env.HAS_MAC_CERTIFICATE == 'true'
         env:
           MAC_CERTIFICATE_P12: ${{ secrets.MAC_CERTIFICATE_P12 }}
           MAC_CERTIFICATE_PASSWORD: ${{ secrets.MAC_CERTIFICATE_PASSWORD }}
         run: |
-          # Create a temporary keychain
           KEYCHAIN_PATH=$RUNNER_TEMP/build.keychain-db
           KEYCHAIN_PASSWORD=$(openssl rand -base64 32)
-
           security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-
-          # Decode and import the certificate
-          echo "$MAC_CERTIFICATE_P12" | base64 --decode > $RUNNER_TEMP/certificate.p12
-          security import $RUNNER_TEMP/certificate.p12 \
-            -k "$KEYCHAIN_PATH" \
-            -P "$MAC_CERTIFICATE_PASSWORD" \
-            -T /usr/bin/codesign \
-            -T /usr/bin/productsign
-
+          echo "$MAC_CERTIFICATE_P12" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
+          security import "$RUNNER_TEMP/certificate.p12" -k "$KEYCHAIN_PATH" -P "$MAC_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
           security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           security list-keychains -d user -s "$KEYCHAIN_PATH" login.keychain-db
+          rm -f "$RUNNER_TEMP/certificate.p12"
+          IDENTITY=$(security find-identity -v -p codesigning "$KEYCHAIN_PATH" | sed -n 's/.*"\(Developer ID Application: .*\)"/\1/p' | head -1)
+          test -n "$IDENTITY"
+          echo "SIGN_IDENTITY=$IDENTITY" >> "$GITHUB_ENV"
 
-          # Clean up the decoded certificate file
-          rm -f $RUNNER_TEMP/certificate.p12
-
-      - name: Setup notarization credentials
+      - name: Set up notarization
         if: env.HAS_APPLE_API_KEY == 'true'
         env:
           APPLE_API_KEY_B64: ${{ secrets.APPLE_API_KEY }}
@@ -256,46 +152,311 @@ jobs:
           echo "$APPLE_API_KEY_B64" | base64 --decode > "$HOME/private_keys/AuthKey_${APPLE_API_KEY_ID}.p8"
           echo "APPLE_API_KEY=$HOME/private_keys/AuthKey_${APPLE_API_KEY_ID}.p8" >> "$GITHUB_ENV"
 
-      # Both architectures of the native helper; electron-builder merges them
-      # into one universal executable (as it does for FFmpeg) and signs it.
-      - name: Set up Rust
-        run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
-
-      - name: Build macOS DMG
-        run: npm run build:mac
+      - name: Build, sign and notarize
         env:
-          CSC_IDENTITY_AUTO_DISCOVERY: false
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          SENTRY_STUDIO_REQUIRE_HELPER: '1'
+          BUNDLE_ID: ${{ inputs.bundle-id || 'com.sentry-six.revamped' }}
+        run: tools/package-macos.sh
 
-      - name: Verify universal FFmpeg and timestamp export
-        run: node scripts/verify-macos-ffmpeg.js "release/mac-universal/Sentry Studio.app"
+      # Squirrel.Mac installs the app from the .zip only if it is validly
+      # signed by the installed app's team, under its bundle identifier.
+      - name: Check the update zip
+        if: env.HAS_MAC_CERTIFICATE == 'true'
+        run: |
+          CHECK="$RUNNER_TEMP/zip-check"
+          rm -rf "$CHECK" && mkdir -p "$CHECK"
+          ditto -x -k target/macos/SentryStudio-*-macOS.zip "$CHECK"
+          codesign --verify --deep --strict --verbose=2 "$CHECK/Sentry Studio.app"
+          codesign -dv --verbose=2 "$CHECK/Sentry Studio.app" 2>&1 | grep -E "^(Identifier|TeamIdentifier|Authority)="
+          if [ "$GITHUB_EVENT_NAME" = release ]; then
+            codesign -dv "$CHECK/Sentry Studio.app" 2>&1 | grep -qx "Identifier=com.sentry-six.revamped"
+          fi
+          if [ "$HAS_APPLE_API_KEY" = true ]; then
+            xcrun stapler validate "$CHECK/Sentry Studio.app"
+          fi
 
-      - name: Verify universal native helper
-        run: node scripts/verify-helper.js "release/mac-universal/Sentry Studio.app/Contents/Resources" --universal
-
-      - name: Upload macOS artifacts
-        uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@v7
         with:
-          name: mac-build
+          name: macos
           retention-days: 30
           path: |
-            release/SentryStudio-*-macOS.dmg
-            release/SentryStudio-*-macOS.dmg.blockmap
-            release/SentryStudio-*-macOS.zip
-            release/SentryStudio-*-macOS.zip.blockmap
-            release/latest-mac.yml
+            target/macos/*.dmg
+            target/macos/*.zip
+            target/macos/latest-mac.yml
 
-      - name: Attach to GitHub Release
+      # latest-mac.yml only for a Developer ID build: an installed copy would
+      # download an ad hoc signed one and fail to install it.
+      - name: Attach to the GitHub release
         if: github.event_name == 'release'
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
         run: |
-          gh release upload "${{ github.event.release.tag_name }}" \
-            release/SentryStudio-*-macOS.dmg \
-            release/SentryStudio-*-macOS.dmg.blockmap \
-            release/SentryStudio-*-macOS.zip \
-            release/SentryStudio-*-macOS.zip.blockmap \
-            release/latest-mac.yml --clobber
+          gh release upload "$TAG" target/macos/*.dmg target/macos/*.zip --clobber
+          if [ "$HAS_MAC_CERTIFICATE" = true ]; then
+            gh release upload "$TAG" target/macos/latest-mac.yml --clobber
+          else
+            echo "::warning::No Developer ID certificate: latest-mac.yml is not attached, so installed copies won't update to this build."
+          fi
+
+  windows:
+    # Cross-compiled with mingw-w64, the same build that's tested locally, the
+    # installer built with Ubuntu's NSIS, and both signed with Azure Artifact
+    # Signing through jsign. Attached to the release by windows-installer
+    # once it has installed on Windows.
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    # The Azure app's federated credential trusts this environment's OIDC
+    # token (repo:Sentry-Six/Sentry-Six:environment:windows-signing), and the
+    # job waits for one of its required reviewers to approve it.
+    environment: windows-signing
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      # Without the Azure variables (a fork, say) the build is unsigned.
+      HAS_SIGNING: ${{ vars.AZURE_CLIENT_ID != '' && vars.ARTIFACT_SIGNING_ACCOUNT != '' }}
+      ARTIFACT_SIGNING_ENDPOINT: ${{ vars.ARTIFACT_SIGNING_ENDPOINT }}
+      ARTIFACT_SIGNING_ACCOUNT: ${{ vars.ARTIFACT_SIGNING_ACCOUNT }}
+      ARTIFACT_SIGNING_PROFILE: ${{ vars.ARTIFACT_SIGNING_PROFILE }}
+      JSIGN_VERSION: '7.6'
+      JSIGN_SHA256: 6cf58aa080e7ff82656f320cff8d4a3bff30408df8766806dcba3740dd839fa5
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up the toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y mingw-w64 nsis
+          makensis -VERSION
+          rustup target add x86_64-pc-windows-gnu
+
+      - name: Read version
+        id: version
+        run: echo "version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)" >> "$GITHUB_OUTPUT"
+
+      - name: Build
+        run: |
+          cargo build --release --target x86_64-pc-windows-gnu
+          mkdir -p to-sign
+          cp target/x86_64-pc-windows-gnu/release/sentry-studio.exe to-sign/
+
+      - name: Sign in to Azure
+        if: env.HAS_SIGNING == 'true'
+        uses: azure/login@v3
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      # jsign signs Windows files on Linux (tools/sign-windows.sh).
+      - name: Set up the signer
+        if: env.HAS_SIGNING == 'true'
+        run: |
+          curl -sSfL -o "$RUNNER_TEMP/jsign.jar" "https://github.com/ebourg/jsign/releases/download/$JSIGN_VERSION/jsign-$JSIGN_VERSION.jar"
+          echo "$JSIGN_SHA256  $RUNNER_TEMP/jsign.jar" | sha256sum -c -
+          echo "JSIGN_JAR=$RUNNER_TEMP/jsign.jar" >> "$GITHUB_ENV"
+          java -version
+
+      # NSIS writes the uninstaller into the installer, so a first installer
+      # build only copies it out, to be signed with the app.
+      - name: Sign the app and its uninstaller
+        if: env.HAS_SIGNING == 'true'
+        run: |
+          SIGNED_EXE="$PWD/to-sign/sentry-studio.exe" CAPTURE_UNINSTALLER="$PWD/to-sign/uninstaller.exe" \
+            REQUIRE_INSTALLER=1 tools/package-windows.sh
+          test -f to-sign/uninstaller.exe
+          tools/sign-windows.sh to-sign/sentry-studio.exe to-sign/uninstaller.exe
+
+      - name: Package
+        run: |
+          if [ "$HAS_SIGNING" = true ]; then
+            SIGNED_EXE="$PWD/to-sign/sentry-studio.exe" SIGNED_UNINSTALLER="$PWD/to-sign/uninstaller.exe" \
+              REQUIRE_INSTALLER=1 tools/package-windows.sh
+          else
+            SIGNED_EXE="$PWD/to-sign/sentry-studio.exe" REQUIRE_INSTALLER=1 tools/package-windows.sh
+          fi
+
+      # Signing changes the installer, so latest.yml is written again for
+      # the signed file.
+      - name: Sign the installer
+        if: env.HAS_SIGNING == 'true'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          tools/sign-windows.sh "target/windows/SentryStudioSetup$VERSION.exe"
+          python3 -I tools/update-manifest.py target/windows/latest.yml "$VERSION" "target/windows/SentryStudioSetup$VERSION.exe"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: windows
+          retention-days: 30
+          path: |
+            target/windows/*.zip
+            target/windows/SentryStudioSetup*.exe
+            target/windows/latest.yml
+
+  windows-installer:
+    # Installs the installer on Windows the way electron-updater runs it, over
+    # a stand-in for Electron Studio's install, uninstalls it, and only then
+    # attaches it and latest.yml to the release.
+    needs: windows
+    runs-on: windows-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: windows
+          path: dist
+
+      - name: Install over Electron Studio, then uninstall
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          function Check($ok, $what) { if (-not $ok) { throw "FAILED: $what" } else { Write-Host "ok: $what" } }
+          $setup = (Get-ChildItem dist\SentryStudioSetup*.exe | Select-Object -First 1).FullName
+          $version = (Get-Content dist\latest.yml | Where-Object { $_ -match '^version: ' }) -replace '^version: ', ''
+          $guid = 'cf7c37f6-3080-5f6d-a7fd-79b75b0fa971'
+          $uninstallKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\$guid"
+          $installKey = "HKCU:\Software\$guid"
+          $dir = Join-Path $env:LOCALAPPDATA 'Programs\Sentry Studio'
+          $programs = [Environment]::GetFolderPath('Programs')
+          $startLink = Join-Path $programs 'Sentry Studio.lnk'
+
+          # latest.yml describes this installer, as electron-updater checks it.
+          $sha = [Convert]::ToBase64String([Security.Cryptography.SHA512]::Create().ComputeHash([IO.File]::ReadAllBytes($setup)))
+          $yml = Get-Content -Raw dist\latest.yml
+          Check ($yml.Contains("sha512: $sha")) 'latest.yml sha512'
+          Check ($yml.Contains("size: $((Get-Item $setup).Length)")) 'latest.yml size'
+
+          # A stand-in for Electron Studio as electron-builder installs it, and its settings.
+          New-Item -ItemType Directory -Force "$dir\resources\app.asar.unpacked", "$dir\locales" | Out-Null
+          foreach ($f in 'Sentry Studio.exe', 'Uninstall Sentry Studio.exe', 'chrome_100_percent.pak', 'resources.pak', 'ffmpeg.dll', 'icudtl.dat', 'v8_context_snapshot.bin', 'locales\en-US.pak', 'resources\app.asar', 'resources\app-update.yml') {
+            Set-Content -Path (Join-Path $dir $f) -Value 'electron'
+          }
+          Set-Content -Path (Join-Path $dir 'notes.txt') -Value 'the user''s own file'
+          $appData = Join-Path $env:APPDATA 'Sentry Studio'
+          New-Item -ItemType Directory -Force $appData | Out-Null
+          Set-Content -Path "$appData\settings.json" -Value '{}'
+          New-Item -Force $installKey | Out-Null
+          Set-ItemProperty $installKey InstallLocation $dir
+          New-Item -Force $uninstallKey | Out-Null
+          Set-ItemProperty $uninstallKey UninstallString "`"$dir\Uninstall Sentry Studio.exe`" /currentuser"
+          Set-ItemProperty $uninstallKey DisplayVersion '2026.45.39'
+          $shell = New-Object -ComObject WScript.Shell
+          $old = $shell.CreateShortcut($startLink); $old.TargetPath = "$dir\Sentry Studio.exe"; $old.Save()
+
+          # As electron-updater runs it when the app quits.
+          $p = Start-Process -Wait -PassThru -FilePath $setup -ArgumentList '--updated /S'
+          Check ($p.ExitCode -eq 0) "installer exit code ($($p.ExitCode))"
+          Check (Test-Path "$dir\sentry-studio.exe") 'sentry-studio.exe installed'
+          Check (Test-Path "$dir\Uninstall Sentry Studio.exe") 'uninstaller installed'
+          foreach ($f in 'Sentry Studio.exe', 'chrome_100_percent.pak', 'resources.pak', 'ffmpeg.dll', 'icudtl.dat', 'v8_context_snapshot.bin', 'locales', 'resources') {
+            Check (-not (Test-Path (Join-Path $dir $f))) "Electron's $f removed"
+          }
+          Check (Test-Path (Join-Path $dir 'notes.txt')) 'other files kept'
+          Check (Test-Path "$appData\settings.json") 'settings kept'
+          $u = Get-ItemProperty $uninstallKey
+          Check ($u.DisplayVersion -eq $version) "DisplayVersion $($u.DisplayVersion)"
+          Check ($u.DisplayName -eq 'Sentry Studio') 'DisplayName'
+          Check ($u.UninstallString -eq "`"$dir\Uninstall Sentry Studio.exe`" /currentuser") 'UninstallString'
+          Check ((Get-ItemProperty $installKey).InstallLocation -eq $dir) 'InstallLocation'
+          Check ($shell.CreateShortcut($startLink).TargetPath -eq "$dir\sentry-studio.exe") 'Start menu shortcut points at the new app'
+          Check (-not (Test-Path (Join-Path ([Environment]::GetFolderPath('Desktop')) 'Sentry Studio.lnk'))) 'no desktop shortcut added on an update'
+
+          # The uninstaller, in place (_?=) so the step can wait for it.
+          $p = Start-Process -Wait -PassThru -FilePath "$dir\Uninstall Sentry Studio.exe" -ArgumentList "/S _?=$dir"
+          Check ($p.ExitCode -eq 0) "uninstaller exit code ($($p.ExitCode))"
+          Check (-not (Test-Path "$dir\sentry-studio.exe")) 'app removed'
+          Check (-not (Test-Path $uninstallKey)) 'uninstall key removed'
+          Check (-not (Test-Path $installKey)) 'install key removed'
+          Check (-not (Test-Path $startLink)) 'Start menu shortcut removed'
+          Check (Test-Path "$appData\settings.json") 'settings kept after uninstalling'
+
+          # A first install with the defaults.
+          Remove-Item -Recurse -Force $dir
+          $p = Start-Process -Wait -PassThru -FilePath $setup -ArgumentList '/S'
+          Check ($p.ExitCode -eq 0) "fresh install exit code ($($p.ExitCode))"
+          Check (Test-Path "$dir\sentry-studio.exe") 'fresh install in %LOCALAPPDATA%\Programs\Sentry Studio'
+          Check (Test-Path (Join-Path ([Environment]::GetFolderPath('Desktop')) 'Sentry Studio.lnk')) 'desktop shortcut on a first install'
+
+      # Every program in the download (the installer, and each .exe or .dll
+      # in the zip and in the installed copy) must have a valid, timestamped
+      # signature from Scott Vandereems: sentry-six.com/code-signing says so.
+      # A release fails without; a run by hand only reports.
+      - name: Check the signatures
+        shell: pwsh
+        env:
+          ENFORCE: ${{ github.event_name == 'release' }}
+        run: |
+          $zip = Join-Path $env:RUNNER_TEMP 'zip'
+          Expand-Archive -Force (Get-ChildItem dist\*.zip | Select-Object -First 1).FullName $zip
+          $installed = Join-Path $env:LOCALAPPDATA 'Programs\Sentry Studio'
+          $files = @(Get-ChildItem dist\SentryStudioSetup*.exe) +
+            @(Get-ChildItem -Recurse -File $zip, $installed -Include *.exe, *.dll)
+          $names = $files | ForEach-Object Name
+          $bad = 0
+          foreach ($expected in 'sentry-studio.exe', 'Uninstall Sentry Studio.exe') {
+            if ($names -notcontains $expected) { Write-Host "MISSING: $expected"; $bad++ }
+          }
+          foreach ($f in $files) {
+            $s = Get-AuthenticodeSignature -LiteralPath $f.FullName
+            $ok = $s.Status -eq 'Valid' -and $s.SignerCertificate.Subject -match '(^|, )CN=Scott Vandereems(,|$)' -and $null -ne $s.TimeStamperCertificate
+            Write-Host ("{0} {1}: {2}, {3}, timestamp {4}" -f ($(if ($ok) { 'ok' } else { 'NOT SIGNED' })), $f.FullName, $s.Status, $s.SignerCertificate.Subject, ($null -ne $s.TimeStamperCertificate))
+            if (-not $ok) { $bad++ }
+          }
+          if ($bad -gt 0) {
+            if ($env:ENFORCE -eq 'true') { throw "$bad file(s) not signed as the code signing policy says" }
+            Write-Host "::warning::$bad file(s) not signed (a run by hand, so not failing)"
+          }
+
+      - name: Attach to the GitHub release
+        if: github.event_name == 'release'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          gh release upload "$TAG" -R "$GITHUB_REPOSITORY" dist/*.zip dist/SentryStudioSetup*.exe --clobber
+          gh release upload "$TAG" -R "$GITHUB_REPOSITORY" dist/latest.yml --clobber
+
+  linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+
+      # zig links against glibc 2.28, so the binary runs on older distributions
+      # than the runner's.
+      - uses: mlugg/setup-zig@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-zigbuild
+      - name: Set up Rust
+        run: rustup target add x86_64-unknown-linux-gnu
+
+      - name: Build and package
+        run: tools/package-linux.sh
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: linux
+          retention-days: 30
+          path: |
+            target/linux/*.deb
+            target/linux/*.tar.gz
+            target/linux/latest-linux.yml
+
+      # No latest-linux-arm64.yml: Electron Studio's arm64 .deb reads that one,
+      # and this build is x86_64 only.
+      - name: Attach to the GitHub release
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          gh release upload "$TAG" target/linux/*.deb target/linux/*.tar.gz --clobber
+          gh release upload "$TAG" target/linux/latest-linux.yml --clobber

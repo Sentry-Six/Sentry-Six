@@ -1,0 +1,28 @@
+// Windows resources for sentry-studio.exe: Studio's icon (Explorer, the
+// taskbar, shortcuts) and version details. build.rs fills in @VERSION@ and
+// @VERSION_COMMAS@ from Cargo.toml, then compiles it.
+1 ICON "@ICON@"
+
+1 VERSIONINFO
+FILEVERSION @VERSION_COMMAS@
+PRODUCTVERSION @VERSION_COMMAS@
+FILEOS 0x40004
+FILETYPE 0x1
+BEGIN
+  BLOCK "StringFileInfo"
+  BEGIN
+    BLOCK "040904B0"
+    BEGIN
+      VALUE "CompanyName", "Sentry-Six"
+      VALUE "FileDescription", "Sentry Studio"
+      VALUE "ProductName", "Sentry Studio"
+      VALUE "OriginalFilename", "sentry-studio.exe"
+      VALUE "FileVersion", "@VERSION@"
+      VALUE "ProductVersion", "@VERSION@"
+    END
+  END
+  BLOCK "VarFileInfo"
+  BEGIN
+    VALUE "Translation", 0x409, 1200
+  END
+END

@@ -1,10 +1,10 @@
-# Group routine updates weekly. Keep major updates separate, and review Electron
-# minor updates as runtime changes because they may include a new Chromium.
+# Group routine updates weekly; keep major updates separate. Review iced and
+# wgpu minor updates as runtime changes: they can change rendering.
 
 version: 2
 
 updates:
-  - package-ecosystem: "npm"
+  - package-ecosystem: "cargo"
     directory: "/"
     schedule:
       interval: "weekly"
@@ -14,12 +14,12 @@ updates:
     open-pull-requests-limit: 5
     labels:
       - "dependencies"
-      - "npm"
+      - "rust"
     commit-message:
-      prefix: "deps(npm)"
+      prefix: "deps(cargo)"
       include: "scope"
     groups:
-      npm-minor-and-patch:
+      cargo-minor-and-patch:
         update-types:
           - "minor"
           - "patch"

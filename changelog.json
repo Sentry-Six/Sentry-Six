@@ -1,6 +1,53 @@
 {
   "versions": [
     {
+      "version": "2026.45.40",
+      "date": "2026-11-07",
+      "title": "Native Studio",
+      "changes": [
+        {
+          "type": "feature",
+          "description": "Sentry Studio is now a native app, rebuilt from the ground up, and the download is much smaller."
+        },
+        {
+          "type": "improvement",
+          "description": "Windows downloads are now code-signed, so Windows no longer warns that the app is from an unknown publisher."
+        },
+        {
+          "type": "improvement",
+          "description": "All six cameras stay in sync, during playback and after every seek, instead of drifting apart."
+        },
+        {
+          "type": "improvement",
+          "description": "Seeking is faster: jumping to a new spot, skipping and crossing into the next minute load the video much sooner."
+        },
+        {
+          "type": "improvement",
+          "description": "Studio uses far less memory and CPU while playing and while it sits idle."
+        },
+        {
+          "type": "improvement",
+          "description": "Videos play at full resolution and decode on your graphics card on Mac, Windows and Linux."
+        },
+        {
+          "type": "improvement",
+          "description": "Footage on a network share plays more smoothly: Studio reads ahead and loads the next minute before it starts."
+        },
+        {
+          "type": "feature",
+          "description": "Place names for your drives are looked up by default. You can turn this off in Settings."
+        },
+        {
+          "type": "improvement",
+          "description": "Your settings, shortcuts and folders carry over from the previous version."
+        },
+        {
+          "type": "note",
+          "description": "Not in this version yet: the advanced editor and export, the Footage Converter, AI support chat and clip sharing, and Linux on ARM. They will return in later releases."
+        }
+      ]
+    },
+    {
       "version": "2026.45.39",
       "date": "2026-11-04",
       "title": "Faster Drive History",

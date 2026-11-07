@@ -1,43 +1,22 @@
-# Dependencies
-node_modules/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-release/
-dev-tool/
-OLD/Sentry-Six-DEV-SEI/
-.DS_Store
-.env
-dev-tool/.env
-dev-tool/config.json
-.cursorignore
+# Build output
+/target/
 
-DevTool
-
-dev-tools/
-/Sentry-Six-DevTool
-
-.windsurf/workflows/config.md
-sign-mac.sh
-
-# Pinned macOS FFmpeg downloads, prepared by the packaging hook.
-ffmpeg_bin/macos/
-
-.claude/worktrees/
-.worktrees/
-
-# Test coverage output (contains local absolute paths)
-coverage/
-
-# Release docs / skills / plans (should not be committed)
+# Release docs, skills and plans (kept locally, not committed)
 docs/
 CLAUDE.md
-# Pinned Linux FFmpeg downloads, prepared by the packaging hook.
-ffmpeg_bin/linux/
 
-# Native helper builds (scripts/prepare-helper.js).
-helper_bin/
-native/studio-helper/target/
-# Local benchmark inputs name real clips; scripts/bench/config.example.json
-# shows the shape.
-scripts/bench/config.usb.json
+# Local tools and settings
+.DS_Store
+.env
+.cursorignore
+.windsurf/workflows/config.md
+DevTool
+dev-tool/
+dev-tools/
+/Sentry-Six-DevTool
+sign-mac.sh
+OLD/
+
+# Worktrees
+.claude/worktrees/
+.worktrees/

@@ -1,8 +1,8 @@
 name: CI
 
-# Fast validation for every push and PR: proves the repo installs cleanly, the
-# Jest and renderer tests pass, and electron-builder can produce a packaged app
-# on all three supported platforms.
+# Every push and pull request: the tests on macOS, and release builds for
+# Windows (cross-compiled with mingw-w64, and its NSIS installer) and Linux
+# (zig, glibc 2.28), the same way they're packaged.
 
 on:
   push:
@@ -10,54 +10,51 @@ on:
   pull_request:
     branches: [main, Dev-SEI]
 
+permissions:
+  contents: read
+
 jobs:
-  build:
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 20
-
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-
+  macos:
+    runs-on: macos-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
+      - name: Test
+        run: cargo test --release
+      - name: Build without warnings
+        run: RUSTFLAGS="-D warnings" cargo build --release
+      # The licences shipped with the app must match its dependencies: after
+      # a dependency change, run python3 -I tools/third-party-notices.py.
+      - name: Check THIRD-PARTY-NOTICES.txt
+        run: |
+          cargo fetch --locked
+          python3 -I tools/third-party-notices.py --check
 
-      - name: Use Node.js 22
-        uses: actions/setup-node@v7
+  windows:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - name: Set up the toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y mingw-w64 nsis
+          rustup target add x86_64-pc-windows-gnu
+      - name: Build
+        run: RUSTFLAGS="-D warnings" cargo build --release --target x86_64-pc-windows-gnu
+      - name: Build the installer
+        run: SIGNED_EXE="$PWD/target/x86_64-pc-windows-gnu/release/sentry-studio.exe" REQUIRE_INSTALLER=1 tools/package-windows.sh
+
+  linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: mlugg/setup-zig@v2
+      - uses: taiki-e/install-action@v2
         with:
-          node-version: 22
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
-
-      # Build the native helper before the tests so its parity tests run
-      # (tests/main/studioHelper.test.js), and add the targets the packaging
-      # hook needs (macOS packs x64 + arm64; Linux uses static musl builds).
-      - name: Build native helper
-        shell: bash
+          tool: cargo-zigbuild
+      - name: Build
         run: |
-          case "$RUNNER_OS" in
-            macOS) rustup target add aarch64-apple-darwin x86_64-apple-darwin ;;
-            Linux) rustup target add x86_64-unknown-linux-musl ;;
-          esac
-          SENTRY_STUDIO_REQUIRE_HELPER=1 npm run build:helper
-
-      # On Windows the bundled ffmpeg.exe runs, so the real encoder integration
-      # suite runs there (about four minutes). Elsewhere it skips itself with a
-      # SKIP message because the checkout has no macOS or Linux FFmpeg. Bash on
-      # every OS: PowerShell would only fail the step if the last command did.
-      - name: Run tests
-        shell: bash
-        run: |
-          npm test
-          npm run test:dashcam
-
-      - name: Verify build setup
-        # --dir produces an unpacked app without building the installer (much faster
-        # than a full build) — enough to catch packaging config breaks, missing
-        # files, and native-module issues.
-        run: npx electron-builder --dir --publish never
-        env:
-          CSC_IDENTITY_AUTO_DISCOVERY: false
+          rustup target add x86_64-unknown-linux-gnu
+          RUSTFLAGS="-D warnings" cargo zigbuild --release --target x86_64-unknown-linux-gnu.2.28

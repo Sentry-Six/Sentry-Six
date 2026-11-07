@@ -1,8 +1,0 @@
-# Link the Windows helper against the static C runtime, so it runs on machines
-# without the Visual C++ redistributable. (cargo reads this file when it runs
-# from this directory; scripts/prepare-helper.js does.)
-[target.x86_64-pc-windows-msvc]
-rustflags = ["-C", "target-feature=+crt-static"]
-
-[target.aarch64-pc-windows-msvc]
-rustflags = ["-C", "target-feature=+crt-static"]

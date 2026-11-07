@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Sentry Studio
+GenericName=Dashcam Viewer
+Comment=Synced six-camera Tesla dashcam playback
+Exec=sentry-studio %f
+Icon=sentry-studio
+Terminal=false
+Categories=AudioVideo;Video;Player;
+StartupWMClass=sentry-studio
