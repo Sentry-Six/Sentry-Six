@@ -1588,6 +1588,12 @@ Copyright (c) 2018-2025 The rust-random Project Developers
 Copyright (c) 2014 The Rust Project Developers
 MIT: the standard text in "Standard licence texts: MIT", above.
 
+getrandom 0.4.3 (MIT OR Apache-2.0)
+https://github.com/rust-random/getrandom
+Copyright (c) 2018-2026 The rust-random Project Developers
+Copyright (c) 2014 The Rust Project Developers
+MIT: the standard text in "Standard licence texts: MIT", above.
+
 gif 0.13.3 (MIT OR Apache-2.0)
 https://github.com/image-rs/image-gif
 Copyright (c) 2015 nwin
