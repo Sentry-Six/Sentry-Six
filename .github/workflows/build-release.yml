@@ -334,7 +334,7 @@ jobs:
 
           # A stand-in for Electron Studio as electron-builder installs it, and its settings.
           New-Item -ItemType Directory -Force "$dir\resources\app.asar.unpacked", "$dir\locales" | Out-Null
-          foreach ($f in 'Sentry Studio.exe', 'Uninstall Sentry Studio.exe', 'chrome_100_percent.pak', 'resources.pak', 'ffmpeg.dll', 'icudtl.dat', 'v8_context_snapshot.bin', 'locales\en-US.pak', 'resources\app.asar', 'resources\app-update.yml') {
+          foreach ($f in 'Sentry Studio.exe', 'Uninstall Sentry Studio.exe', 'chrome_100_percent.pak', 'resources.pak', 'ffmpeg.dll', 'electron_wer.dll', 'icudtl.dat', 'v8_context_snapshot.bin', 'locales\en-US.pak', 'resources\app.asar', 'resources\app-update.yml') {
             Set-Content -Path (Join-Path $dir $f) -Value 'electron'
           }
           Set-Content -Path (Join-Path $dir 'notes.txt') -Value 'the user''s own file'
@@ -354,7 +354,7 @@ jobs:
           Check ($p.ExitCode -eq 0) "installer exit code ($($p.ExitCode))"
           Check (Test-Path "$dir\sentry-studio.exe") 'sentry-studio.exe installed'
           Check (Test-Path "$dir\Uninstall Sentry Studio.exe") 'uninstaller installed'
-          foreach ($f in 'Sentry Studio.exe', 'chrome_100_percent.pak', 'resources.pak', 'ffmpeg.dll', 'icudtl.dat', 'v8_context_snapshot.bin', 'locales', 'resources') {
+          foreach ($f in 'Sentry Studio.exe', 'chrome_100_percent.pak', 'resources.pak', 'ffmpeg.dll', 'electron_wer.dll', 'icudtl.dat', 'v8_context_snapshot.bin', 'locales', 'resources') {
             Check (-not (Test-Path (Join-Path $dir $f))) "Electron's $f removed"
           }
           Check (Test-Path (Join-Path $dir 'notes.txt')) 'other files kept'

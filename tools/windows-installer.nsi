@@ -277,6 +277,7 @@ Function removeElectronFiles
     Delete "$INSTDIR\d3dcompiler_47.dll"
     Delete "$INSTDIR\dxcompiler.dll"
     Delete "$INSTDIR\dxil.dll"
+    Delete "$INSTDIR\electron_wer.dll"
     Delete "$INSTDIR\ffmpeg.dll"
     Delete "$INSTDIR\libEGL.dll"
     Delete "$INSTDIR\libGLESv2.dll"
