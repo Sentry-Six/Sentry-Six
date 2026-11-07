@@ -36,6 +36,8 @@ sha2 = "0.10"
 # The app log behind diagnostics (src/applog.rs); also carries wgpu's and
 # winit's warnings.
 log = "0.4"
+# AI support chat: message IDs (src/support.rs).
+uuid = { version = "1", features = ["v4"] }
 
 [target.'cfg(unix)'.dependencies]
 # Linux video decoding loads GStreamer at run time (src/decode/gstreamer.rs).

@@ -217,7 +217,8 @@
     "ui.changelog.title": "Changelog",
     "ui.changelog.close": "Close",
     "app.licences": "Licences",
-    "app.updateOlderHint": "To go back to this version, download it from the release page and install it."
+    "app.updateOlderHint": "To go back to this version, download it from the release page and install it.",
+    "ui.settings.openSupportChat": "Open Support Chat"
   },
   "es": {
     "app.arrived": "Llegada",
@@ -437,7 +438,8 @@
     "ui.changelog.title": "Registro de Cambios",
     "ui.changelog.close": "Cerrar",
     "app.licences": "Licencias",
-    "app.updateOlderHint": "Para volver a esta versión, descárgala desde la página de la versión e instálala."
+    "app.updateOlderHint": "Para volver a esta versión, descárgala desde la página de la versión e instálala.",
+    "ui.settings.openSupportChat": "Abrir Chat de Soporte"
   },
   "fr": {
     "app.arrived": "Arrivée",
@@ -657,7 +659,8 @@
     "ui.changelog.title": "Journal des Modifications",
     "ui.changelog.close": "Fermer",
     "app.licences": "Licences",
-    "app.updateOlderHint": "Pour revenir à cette version, téléchargez-la depuis la page de publication et installez-la."
+    "app.updateOlderHint": "Pour revenir à cette version, téléchargez-la depuis la page de publication et installez-la.",
+    "ui.settings.openSupportChat": "Ouvrir le Chat de Support"
   },
   "de": {
     "app.arrived": "Ankunft",
@@ -877,7 +880,8 @@
     "ui.changelog.title": "Änderungsprotokoll",
     "ui.changelog.close": "Schließen",
     "app.licences": "Lizenzen",
-    "app.updateOlderHint": "Um zu dieser Version zurückzukehren, laden Sie sie von der Release-Seite herunter und installieren Sie sie."
+    "app.updateOlderHint": "Um zu dieser Version zurückzukehren, laden Sie sie von der Release-Seite herunter und installieren Sie sie.",
+    "ui.settings.openSupportChat": "Support-Chat öffnen"
   },
   "zh": {
     "app.arrived": "到达",
@@ -1097,7 +1101,8 @@
     "ui.changelog.title": "更新日志",
     "ui.changelog.close": "关闭",
     "app.licences": "许可证",
-    "app.updateOlderHint": "要回到此版本，请从发布页面下载并安装。"
+    "app.updateOlderHint": "要回到此版本，请从发布页面下载并安装。",
+    "ui.settings.openSupportChat": "打开支持聊天"
   },
   "ja": {
     "app.arrived": "到着",
@@ -1317,7 +1322,8 @@
     "ui.changelog.title": "変更履歴",
     "ui.changelog.close": "閉じる",
     "app.licences": "ライセンス",
-    "app.updateOlderHint": "このバージョンに戻すには、リリースページからダウンロードしてインストールしてください。"
+    "app.updateOlderHint": "このバージョンに戻すには、リリースページからダウンロードしてインストールしてください。",
+    "ui.settings.openSupportChat": "サポートチャットを開く"
   },
   "ko": {
     "app.arrived": "도착",
@@ -1537,7 +1543,8 @@
     "ui.changelog.title": "변경 로그",
     "ui.changelog.close": "닫기",
     "app.licences": "라이선스",
-    "app.updateOlderHint": "이 버전으로 돌아가려면 릴리스 페이지에서 다운로드하여 설치하세요."
+    "app.updateOlderHint": "이 버전으로 돌아가려면 릴리스 페이지에서 다운로드하여 설치하세요.",
+    "ui.settings.openSupportChat": "지원 채팅 열기"
   },
   "pt": {
     "app.arrived": "Chegada",
@@ -1757,7 +1764,8 @@
     "ui.changelog.title": "Registro de Alterações",
     "ui.changelog.close": "Fechar",
     "app.licences": "Licenças",
-    "app.updateOlderHint": "Para voltar a esta versão, baixe-a na página de lançamento e instale-a."
+    "app.updateOlderHint": "Para voltar a esta versão, baixe-a na página de lançamento e instale-a.",
+    "ui.settings.openSupportChat": "Abrir Chat de Suporte"
   },
   "ru": {
     "app.arrived": "Прибытие",
@@ -1977,7 +1985,8 @@
     "ui.changelog.title": "Журнал Изменений",
     "ui.changelog.close": "Закрыть",
     "app.licences": "Лицензии",
-    "app.updateOlderHint": "Чтобы вернуться к этой версии, скачайте её со страницы релиза и установите."
+    "app.updateOlderHint": "Чтобы вернуться к этой версии, скачайте её со страницы релиза и установите.",
+    "ui.settings.openSupportChat": "Открыть Чат Поддержки"
   },
   "it": {
     "app.arrived": "Arrivo",
@@ -2197,7 +2206,8 @@
     "ui.changelog.title": "Registro Modifiche",
     "ui.changelog.close": "Chiudi",
     "app.licences": "Licenze",
-    "app.updateOlderHint": "Per tornare a questa versione, scaricala dalla pagina della release e installala."
+    "app.updateOlderHint": "Per tornare a questa versione, scaricala dalla pagina della release e installala.",
+    "ui.settings.openSupportChat": "Apri Chat di Supporto"
   },
   "nl": {
     "app.arrived": "Aankomst",
@@ -2417,7 +2427,8 @@
     "ui.changelog.title": "Wijzigingslogboek",
     "ui.changelog.close": "Sluiten",
     "app.licences": "Licenties",
-    "app.updateOlderHint": "Download deze versie van de releasepagina en installeer hem om ernaar terug te gaan."
+    "app.updateOlderHint": "Download deze versie van de releasepagina en installeer hem om ernaar terug te gaan.",
+    "ui.settings.openSupportChat": "Ondersteuningschat Openen"
   },
   "pl": {
     "app.arrived": "Przyjazd",
@@ -2637,7 +2648,8 @@
     "ui.changelog.title": "Dziennik Zmian",
     "ui.changelog.close": "Zamknij",
     "app.licences": "Licencje",
-    "app.updateOlderHint": "Aby wrócić do tej wersji, pobierz ją ze strony wydania i zainstaluj."
+    "app.updateOlderHint": "Aby wrócić do tej wersji, pobierz ją ze strony wydania i zainstaluj.",
+    "ui.settings.openSupportChat": "Otwórz Czat Wsparcia"
   },
   "tr": {
     "app.arrived": "Varış",
@@ -2857,6 +2869,7 @@
     "ui.changelog.title": "Değişiklik Günlüğü",
     "ui.changelog.close": "Kapat",
     "app.licences": "Lisanslar",
-    "app.updateOlderHint": "Bu sürüme geri dönmek için yayın sayfasından indirip yükleyin."
+    "app.updateOlderHint": "Bu sürüme geri dönmek için yayın sayfasından indirip yükleyin.",
+    "ui.settings.openSupportChat": "Destek Sohbetini Aç"
   }
 }

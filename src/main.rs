@@ -31,6 +31,8 @@ mod settings;
 mod settings_view;
 mod shortcuts;
 mod spinner;
+mod support;
+mod support_view;
 mod specular;
 mod telemetry;
 mod theme;
@@ -111,6 +113,13 @@ fn folder_summary(collections: &[Collection], days: usize) -> String {
         count(Kind::Folder)
     )
 }
+
+/// The support chat panel's distance from the window's top and right.
+const CHAT_TOP: f32 = 80.0;
+const CHAT_RIGHT: f32 = 20.0;
+
+/// The support chat button's speech bubble.
+const CHAT_SVG: &str = r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="white"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>"#;
 
 /// A day in the day picker: its folder's date, shown in the date format.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -360,6 +369,8 @@ pub(crate) enum Message {
     /// The answer to "Switch to pre-release builds?".
     PrereleaseAnswer(bool),
     ChangelogClose,
+    /// The AI support chat.
+    Chat(support_view::ChatMsg),
     /// Dragging a floating dashboard.
     DashDrag(f32, f32),
     /// The map: panned, zoomed, re-centred, turned, its panel dragged or
@@ -541,6 +552,8 @@ struct App {
     prerelease_question: bool,
     /// Settings › View Changelog is open.
     changelog: Option<Vec<update::Note>>,
+    /// The AI support chat panel.
+    chat: support_view::Chat,
     /// Which Check Now answer a reset is for.
     update_check_id: u64,
     /// The folder being scanned (a newer pick replaces it).
@@ -623,6 +636,7 @@ impl App {
             update_downgrade: false,
             prerelease_question: false,
             changelog: None,
+            chat: Default::default(),
             update_check_id: 0,
             scanning_path: None,
             drives_path: None,
@@ -1055,6 +1069,13 @@ impl App {
                     }
                     Change::Choose(menu, i) => self.choose(menu, i),
                     Change::ResetCameraOrder => self.settings.camera_order = settings::Settings::default().camera_order,
+                    Change::OpenSupportChat => {
+                        self.settings_open = false;
+                        if self.chat.open {
+                            return Task::none();
+                        }
+                        return self.chat_update(support_view::ChatMsg::Toggle);
+                    }
                     Change::ViewChangelog => {
                         self.changelog = Some(update::changelog());
                         return Task::none();
@@ -1226,6 +1247,7 @@ impl App {
                 }
             }
             Message::ChangelogClose => self.changelog = None,
+            Message::Chat(m) => return self.chat_update(m),
             Message::PrereleaseAnswer(yes) => {
                 self.prerelease_question = false;
                 if yes {
@@ -1362,6 +1384,17 @@ impl App {
     }
 
     /// Where the Settings dialog is (centred in the window), while open.
+    /// Where the open support chat panel is (window coordinates).
+    fn chat_rect(&self) -> Option<Rectangle> {
+        if !self.chat.open {
+            return None;
+        }
+        let w = self.window_size?;
+        // Below the top bar and above the controls.
+        let height = (w.height - CHAT_TOP - 76.0).clamp(240.0, support_view::MAX_HEIGHT);
+        Some(Rectangle { x: w.width - CHAT_RIGHT - support_view::WIDTH, y: CHAT_TOP, width: support_view::WIDTH, height })
+    }
+
     fn dialog_rect(&self) -> Option<Rectangle> {
         if !self.settings_open {
             return None;
@@ -1456,7 +1489,6 @@ impl App {
     }
 
     /// What the diagnostics report says about the app as it is now.
-    #[allow(dead_code)] // Support chat (next) asks for the report.
     fn diagnostics_snapshot(&self) -> diagnostics::Snapshot {
         let mut folder_lines = Vec::new();
         if self.root.is_some() {
@@ -2085,6 +2117,17 @@ impl App {
         if self.delete_confirm.is_some() {
             return stack![app, self.delete_dialog()].into();
         }
+        // The support chat floats at the top right, as in earlier versions.
+        if let Some(rect) = self.chat_rect() {
+            app = app.push(
+                container(support_view::view(&self.chat, self.settings.time_24h, rect.height))
+                    .padding(Padding { top: rect.y, right: CHAT_RIGHT, bottom: 0.0, left: 0.0 })
+                    .width(Length::Fill)
+                    .height(Length::Fill)
+                    .align_x(Horizontal::Right)
+                    .align_y(Vertical::Top),
+            );
+        }
         if self.settings_open {
             let overlay = sensor(settings_view::view(&self.settings, &self.settings_ui, &self.shortcuts, Message::DialogSized))
                 .on_show(Message::OverlaySized)
@@ -2429,6 +2472,10 @@ impl App {
             if let Some(rect) = self.floating_dash_rect() {
                 glass2 = Some(video::Glass { rect, radius: DASH_RADIUS, blur: self.settings.glass_blur, saturate: GLASS_SATURATE });
             }
+            // The support chat is glass where it covers this tile.
+            if let Some(rect) = self.chat_rect().filter(|r| self.tile_rect(slot).is_some_and(|t| t.intersects(r))) {
+                glass2 = Some(video::Glass { rect, radius: 16.0, blur: self.settings.glass_blur, saturate: GLASS_SATURATE });
+            }
             // The Settings dialog is glass too: it takes the
             // dashboard's slot (the dialog covers the middle of the screen,
             // the side panel stays frosted beside it).
@@ -2631,10 +2678,11 @@ impl App {
             .markers(self.event_offset.filter(|_| has_media).into_iter().collect())
             .into();
 
-        // The settings button at the right end.
+        // Support chat and settings at the right end.
+        let chat = glass(container(svg_icon(CHAT_SVG, 18.0, theme::TEXT)).center(24), 6, 10.0).on_press(Message::Chat(support_view::ChatMsg::Toggle));
         let gear = glass(container(icon(theme::icon::SETTINGS, 20.0)).center(24), 6, 10.0).on_press(Message::OpenSettings);
         let bar = container(
-            row![time, speed, playback, timeline, gear]
+            row![time, speed, playback, timeline, chat, gear]
                 .spacing(14)
                 .align_y(Alignment::Center),
         )

@@ -78,6 +78,7 @@ pub enum Change {
     Choose(Menu, usize),
     ResetCameraOrder,
     ViewChangelog,
+    OpenSupportChat,
     /// Opens the licences (this app's and the third-party notices).
     OpenLicences,
     /// Waits for the next key or mouse button for an action (again: stop).
@@ -390,7 +391,10 @@ fn system_section<'a>(s: &'a Settings, ui: &'a Ui) -> Element<'a, Message> {
     col = col
         .push(update_row(t("ui.settings.prereleaseUpdates"), t("ui.settings.prereleaseUpdatesDesc"), toggle(s.prerelease, Change::Prerelease)))
         .push(update_row(t("ui.settings.checkForUpdates"), t("ui.settings.checkForUpdatesDesc"), check.into()))
-        .push(container(small_button(t("ui.settings.viewChangelog"), Change::ViewChangelog)).padding([8, 0]));
+        .push(
+            container(row![small_button(t("ui.settings.openSupportChat"), Change::OpenSupportChat), small_button(t("ui.settings.viewChangelog"), Change::ViewChangelog)].spacing(8))
+                .padding([8, 0]),
+        );
     col = col.push(
         container(
             row![
@@ -535,13 +539,14 @@ fn rows<'a>(s: &'a Settings, ui: &'a Ui, keys: &'a Shortcuts) -> Vec<Row<'a>> {
         toggle(s.show_fsd_events, Change::ShowFsdEvents),
     ));
     list.push(Row { section: System, subtab: None, words: format!(
-            "{} {} {} {} {} {}",
+            "{} {} {} {} {} {} {}",
             t("ui.settings.appVersion"),
             t("ui.settings.architecture"),
             t("ui.settings.prereleaseUpdates"),
             t("ui.settings.checkForUpdates"),
             t("ui.settings.viewChangelog"),
-            t("ui.settings.openSource")
+            t("ui.settings.openSource"),
+            t("ui.settings.openSupportChat")
         ),
         view: system_section(s, ui),
     });

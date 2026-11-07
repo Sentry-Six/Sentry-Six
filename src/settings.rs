@@ -53,6 +53,9 @@ pub struct Settings {
     pub privacy_accepted: u32,
     /// Pre-release updates (`updateChannel`: "prerelease" or "stable").
     pub prerelease: bool,
+    /// The AI support conversation to continue (`aiSupportConversation`;
+    /// its token opens it, so diagnostics never include it).
+    pub support_chat: Option<SavedChat>,
     /// `devDisableApiRequests`: no update check at startup.
     pub no_startup_check: bool,
     /// Glow on the camera that triggered a Sentry / Saved event
@@ -89,6 +92,7 @@ impl Default for Settings {
             saved_glow: true,
             privacy_accepted: 0,
             prerelease: false,
+            support_chat: None,
             no_startup_check: false,
             map_enabled: true,
             map_dark: false,
@@ -99,6 +103,17 @@ impl Default for Settings {
             accel_mode: crate::dashboard::AccelMode::IconBar,
         }
     }
+}
+
+/// The AI support conversation kept between launches (as earlier versions
+/// kept it, so theirs continues here).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SavedChat {
+    pub id: String,
+    pub auth_token: String,
+    /// Milliseconds since 1970 (forgotten after 90 days).
+    pub stored_at: i64,
+    pub disclosure_version: String,
 }
 
 /// Settings › Display › Date Format: 2026-11-07, 11/07/2026 or 07/11/2026.
@@ -253,6 +268,9 @@ pub fn to_json(s: &Settings) -> Value {
         "showDriveStats": s.show_drive_stats,
         "acceptedPrivacyVersion": s.privacy_accepted,
         "updateChannel": if s.prerelease { "prerelease" } else { "stable" },
+        "aiSupportConversation": s.support_chat.as_ref().map(|c| serde_json::json!({
+            "id": c.id, "authToken": c.auth_token, "storedAt": c.stored_at, "disclosureVersion": c.disclosure_version,
+        })),
         "mapEnabled": s.map_enabled,
         "mapDarkMode": s.map_dark,
         "showFsdEvents": s.show_fsd_events,
@@ -318,6 +336,19 @@ fn apply(s: &mut Settings, v: &Value) {
                 s.prerelease = b != "main";
             }
         }
+    }
+    // A key that is there but null was cleared (a deleted chat).
+    if let Some(c) = v.get("aiSupportConversation") {
+        let f = |k: &str| c.get(k).and_then(Value::as_str).map(str::to_string);
+        s.support_chat = match (f("id"), f("authToken")) {
+            (Some(id), Some(auth_token)) => Some(SavedChat {
+                id,
+                auth_token,
+                stored_at: c.get("storedAt").and_then(Value::as_i64).unwrap_or(0),
+                disclosure_version: f("disclosureVersion").unwrap_or_default(),
+            }),
+            _ => None,
+        };
     }
     if let Some(b) = v.get("devDisableApiRequests").and_then(Value::as_bool) {
         s.no_startup_check = b;

@@ -17,9 +17,10 @@ use crate::applog::{self, stats};
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
-/// Under the AI's 200,000-character view, with room for the request that
-/// wraps it.
-pub const MAX_CHARS: usize = 180_000;
+/// Well under the AI's 200,000-character view: diagnostics analyses are
+/// the costly part of AI support, and the summary and recent logs are what
+/// matter.
+pub const MAX_CHARS: usize = 100_000;
 
 /// What the app knows at the moment the report is asked for (gathered on
 /// the UI thread; the rest is read when the report is made).
@@ -148,6 +149,8 @@ fn settings_lines(s: &crate::settings::Settings) -> Vec<String> {
                     Some(p) => format!("set, on {}", system::volume(Path::new(p))),
                     None => "not set".into(),
                 },
+                // Its token opens the chat: never in a report.
+                "aiSupportConversation" => if value.is_null() { "none".into() } else { "a chat is saved".into() },
                 "keybinds" => {
                     let changed: Vec<&String> = value.as_object().map(|m| m.keys().collect()).unwrap_or_default();
                     if changed.is_empty() { "defaults".into() } else { format!("changed: {}", changed.iter().map(|k| k.as_str()).collect::<Vec<_>>().join(", ")) }

@@ -159,6 +159,20 @@ pub fn backdrop(_: &Theme) -> container::Style {
 }
 
 /// A dialog: glass, 24 px corners, deep shadow.
+/// The support chat panel, as earlier versions styled it: glass (the video
+/// under it is frosted, see video::Glass) with a faint accent border.
+pub fn chat_panel(_: &Theme) -> container::Style {
+    container::Style {
+        background: Some(Background::Gradient(
+            iced::gradient::Linear::new(iced::Degrees(165.0)).add_stop(0.0, rgba(16, 20, 27, 0.88)).add_stop(1.0, rgba(7, 9, 12, 0.92)).into(),
+        )),
+        border: Border { color: Color { a: 0.15, ..ACCENT }, width: 1.0, radius: 16.0.into() },
+        shadow: Shadow { color: black(0.5), offset: Vector::new(0.0, 10.0), blur_radius: 40.0 },
+        text_color: Some(TEXT),
+        ..Default::default()
+    }
+}
+
 pub fn modal(_: &Theme) -> container::Style {
     container::Style {
         background: Some(Background::Gradient(
