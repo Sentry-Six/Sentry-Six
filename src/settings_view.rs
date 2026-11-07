@@ -432,7 +432,7 @@ fn rows<'a>(s: &'a Settings, ui: &'a Ui, keys: &'a Shortcuts) -> Vec<Row<'a>> {
             t("ui.settings.glassBlur"),
             None,
             row![
-                slider(0.0..=30.0, s.glass_blur, |v| Message::Setting(Change::Blur(v))).step(1.0).width(100).style(theme::settings_slider),
+                slider(0.0..=30.0, s.glass_blur, |v| Message::Setting(Change::Blur(v))).step(1.0_f32).width(100).style(theme::settings_slider),
                 text(format!("{}px", s.glass_blur.round() as i32))
                     .size(11)
                     .font(theme::semibold(theme::MONO))

@@ -227,7 +227,7 @@ pub fn compact<'a, M: 'a>(d: Dash<'_>) -> Element<'a, M> {
     // iced tints SVGs with the colour's RGB only, so transparency goes
     // through the widget's opacity.
     let blinker = |handle: &svg::Handle, on: bool| {
-        let (color, opacity) = if on { (GREEN, if blink_on { 1.0 } else { 0.15 }) } else { (Color::WHITE, 0.15) };
+        let (color, opacity): (Color, f32) = if on { (GREEN, if blink_on { 1.0 } else { 0.15 }) } else { (Color::WHITE, 0.15) };
         svg(handle.clone())
             .width(icon_px)
             .height(icon_px)
@@ -522,7 +522,7 @@ pub fn full<'a, M: Clone + 'a>(d: Dash<'_>, f: Full<'_, M>) -> Element<'a, M> {
     let speed = if d.metric { (mps * 3.6).round() } else { (mps * 2.236_936_292_054_402).round() };
     let blink_on = !d.playing || d.blink_ms < 400;
     let blinker = |handle: &svg::Handle, on: bool| {
-        let (color, opacity) = if on { (GREEN, if blink_on { 1.0 } else { 0.15 }) } else { (Color::WHITE, 0.15) };
+        let (color, opacity): (Color, f32) = if on { (GREEN, if blink_on { 1.0 } else { 0.15 }) } else { (Color::WHITE, 0.15) };
         svg(handle.clone()).width(28).height(28).opacity(opacity).style(move |_, _| svg::Style { color: Some(color) })
     };
 
