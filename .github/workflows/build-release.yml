@@ -431,7 +431,17 @@ jobs:
 
       # zig links against glibc 2.28, so the binary runs on older distributions
       # than the runner's.
-      - uses: mlugg/setup-zig@v2
+      # Zig (for cargo-zigbuild) from ziglang.org, checked against its
+      # published SHA-256.
+      - name: Set up Zig
+        env:
+          ZIG_VERSION: '0.17.0'
+          ZIG_SHA256: 1cbe9df9f27e6b78d14ccbca43b6703a404ef79ef1c463de901d7f088d4e2026
+        run: |
+          curl -sSfL -o "$RUNNER_TEMP/zig.tar.xz" "https://ziglang.org/download/$ZIG_VERSION/zig-x86_64-linux-$ZIG_VERSION.tar.xz"
+          echo "$ZIG_SHA256  $RUNNER_TEMP/zig.tar.xz" | sha256sum -c -
+          tar -xJf "$RUNNER_TEMP/zig.tar.xz" -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/zig-x86_64-linux-$ZIG_VERSION" >> "$GITHUB_PATH"
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-zigbuild

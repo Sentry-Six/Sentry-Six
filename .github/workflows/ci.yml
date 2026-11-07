@@ -2,7 +2,8 @@ name: CI
 
 # Every push and pull request: the tests on macOS, and release builds for
 # Windows (cross-compiled with mingw-w64, and its NSIS installer) and Linux
-# (zig, glibc 2.28), the same way they're packaged.
+# (zig, glibc 2.28), the same way they're packaged. Compiled dependencies
+# are cached between runs (Build Release always builds from scratch).
 
 on:
   push:
@@ -17,12 +18,16 @@ jobs:
   macos:
     runs-on: macos-latest
     timeout-minutes: 30
+    # One set of flags for the build and the tests, so they share one compile.
+    env:
+      RUSTFLAGS: -D warnings
     steps:
       - uses: actions/checkout@v7
+      - uses: Swatinem/rust-cache@v2
+      - name: Build without warnings
+        run: cargo build --release
       - name: Test
         run: cargo test --release
-      - name: Build without warnings
-        run: RUSTFLAGS="-D warnings" cargo build --release
       # The licences shipped with the app must match its dependencies: after
       # a dependency change, run python3 -I tools/third-party-notices.py.
       - name: Check THIRD-PARTY-NOTICES.txt
@@ -35,6 +40,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
+      - uses: Swatinem/rust-cache@v2
       - name: Set up the toolchain
         run: |
           sudo apt-get update
@@ -50,7 +56,18 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
-      - uses: mlugg/setup-zig@v2
+      - uses: Swatinem/rust-cache@v2
+      # Zig (for cargo-zigbuild) from ziglang.org, checked against its
+      # published SHA-256.
+      - name: Set up Zig
+        env:
+          ZIG_VERSION: '0.17.0'
+          ZIG_SHA256: 1cbe9df9f27e6b78d14ccbca43b6703a404ef79ef1c463de901d7f088d4e2026
+        run: |
+          curl -sSfL -o "$RUNNER_TEMP/zig.tar.xz" "https://ziglang.org/download/$ZIG_VERSION/zig-x86_64-linux-$ZIG_VERSION.tar.xz"
+          echo "$ZIG_SHA256  $RUNNER_TEMP/zig.tar.xz" | sha256sum -c -
+          tar -xJf "$RUNNER_TEMP/zig.tar.xz" -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/zig-x86_64-linux-$ZIG_VERSION" >> "$GITHUB_PATH"
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-zigbuild
