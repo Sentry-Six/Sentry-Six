@@ -7,6 +7,7 @@
 //! six show the same moment. If any tile falls behind (a slow share), the
 //! clock waits for it instead of letting the cameras drift apart.
 
+use crate::applog::stats;
 use crate::decode::{Decoder, Frame};
 use crate::library::{Camera, LocalSecs, Segment, GRID};
 use crate::mp4::{read_video_track, VideoTrack};
@@ -186,6 +187,10 @@ fn seek_clip(clip: &mut OpenClip, at: f64) {
 
 fn worker(rx: &Receiver<Cmd>, shared: &SharedTile) {
     let (lock, cvar) = &**shared;
+    // The camera, for the log (the thread is named after it).
+    let camera = std::thread::current().name().unwrap_or("decode").trim_start_matches("decode-").to_string();
+    // The last clip's format, logged again only when it changes.
+    let mut format: Option<String> = None;
     let mut clip: Option<OpenClip> = None;
     // Why the current clip couldn't be opened, shown again after a seek.
     let mut open_error: Option<String> = None;
@@ -221,13 +226,21 @@ fn worker(rx: &Receiver<Cmd>, shared: &SharedTile) {
                     Some(pre) => clip_from(pre, at, generation),
                     None => open_clip(&path, at, generation),
                 };
-                crate::trace::trace!(
-                    "opened {} in {:.0} ms",
-                    path.file_name().map(|n| n.to_string_lossy()).unwrap_or_default(),
-                    began.elapsed().as_secs_f64() * 1000.0
-                );
+                let open_ms = began.elapsed().as_secs_f64() * 1000.0;
+                let file = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+                crate::trace::trace!("opened {file} in {open_ms:.0} ms");
+                stats::CLIP_OPENS.add(open_ms);
+                if open_ms > 3000.0 {
+                    log::warn!("{camera}: opening {file} took {open_ms:.0} ms");
+                }
                 match opened {
                     Ok(c) => {
+                        let t = &c.track;
+                        let now = format!("{:?} {}x{}, {:.1} fps", t.codec, t.width, t.height, t.samples.len() as f64 / t.duration.max(0.001));
+                        if format.as_deref() != Some(now.as_str()) {
+                            log::info!("{camera}: {now}");
+                            format = Some(now);
+                        }
                         let mut st = lock.lock().unwrap_or_else(|e| e.into_inner());
                         if st.generation == generation {
                             st.duration = Some(c.track.duration);
@@ -235,6 +248,7 @@ fn worker(rx: &Receiver<Cmd>, shared: &SharedTile) {
                         clip = Some(c);
                     }
                     Err(e) => {
+                        log::warn!("{camera}: {file} could not be opened: {e:#}");
                         let mut st = lock.lock().unwrap_or_else(|e| e.into_inner());
                         open_error = Some(format!("{e:#}"));
                         if st.generation == generation {
@@ -318,8 +332,13 @@ fn worker(rx: &Receiver<Cmd>, shared: &SharedTile) {
             c.decoder.decode_at(data, pts)
         });
         let total_ms = began.elapsed().as_secs_f64() * 1000.0;
+        stats::FRAMES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         if total_ms > 25.0 {
+            stats::SLOW_FRAMES.add(total_ms);
             crate::trace::trace!("slow frame {i} ({} B): read {read_ms:.0} ms, decode {:.0} ms", sample.size, total_ms - read_ms);
+            if total_ms > 500.0 {
+                log::warn!("{camera}: a frame took {total_ms:.0} ms (reading {read_ms:.0} ms, decoding {:.0} ms, {} bytes)", total_ms - read_ms, sample.size);
+            }
         }
         let mut st = lock.lock().unwrap_or_else(|e| e.into_inner());
         if st.generation != c.generation {
@@ -347,7 +366,8 @@ fn worker(rx: &Receiver<Cmd>, shared: &SharedTile) {
                 // A damaged frame (often the last, half-written one of a
                 // clip): skip to the next keyframe. Only a clip that shows
                 // nothing at all is reported.
-                eprintln!("frame {i} of a clip could not be decoded: {e:#}");
+                stats::DECODE_ERRORS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                log::warn!("{camera}: frame {i} could not be decoded: {e:#}");
                 c.failed = c.failed.max(1);
                 if c.shown == 0 {
                     st.error = Some(format!("{e:#}"));
@@ -466,8 +486,10 @@ pub struct Player {
     preloaded: Option<usize>,
     /// When the pending seek started (for the trace).
     pending_since: Option<Instant>,
-    /// When tick last ran (for the trace's display gaps).
+    /// When tick last ran (for display pauses).
     last_tick: Option<Instant>,
+    /// When the clock began waiting for a camera (for diagnostics).
+    hold_started: Option<Instant>,
 }
 
 /// Reads the length of every segment's clip (front camera, or the first
@@ -518,6 +540,7 @@ impl Player {
                         // ends that clip, not the camera: its error shows and
                         // the worker carries on with the next command.
                         while std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| worker(&rx, &s))).is_err() {
+                            log::error!("{camera:?}: its clip stopped after a crash (logged above); the camera carries on");
                             let mut st = s.0.lock().unwrap_or_else(|e| e.into_inner());
                             st.frames.clear();
                             st.eof = true;
@@ -542,6 +565,7 @@ impl Player {
             lengths_cancel: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             pending_since: None,
             last_tick: None,
+            hold_started: None,
             busy: Arc::new(std::sync::atomic::AtomicBool::new(true)),
             preloaded: None,
             last_hold: None,
@@ -673,12 +697,14 @@ impl Player {
         if !self.has_media() {
             return;
         }
-        if crate::trace::on() {
-            let now = Instant::now();
-            if let Some(last) = self.last_tick.replace(now) {
-                let gap = now.duration_since(last).as_secs_f64() * 1000.0;
-                if gap > 40.0 && self.clock.playing {
-                    crate::trace::trace!("display gap {gap:.0} ms");
+        let now = Instant::now();
+        if let Some(last) = self.last_tick.replace(now) {
+            let gap = now.duration_since(last).as_secs_f64() * 1000.0;
+            if gap > 40.0 && self.clock.playing {
+                stats::DISPLAY_GAPS.add(gap);
+                crate::trace::trace!("display gap {gap:.0} ms");
+                if gap > 1000.0 {
+                    log::warn!("the picture paused {gap:.0} ms while playing");
                 }
             }
         }
@@ -766,7 +792,20 @@ impl Player {
             return;
         }
         let waiting = self.tiles.iter().any(|t| t.active && (t.awaiting || (t.shown.is_none() && !t.finished)));
-        if t_show < t - 1e-3 && self.clock.playing {
+        let holding = t_show < t - 1e-3 && self.clock.playing;
+        match (holding, self.hold_started) {
+            (true, None) => self.hold_started = Some(Instant::now()),
+            (false, Some(began)) => {
+                self.hold_started = None;
+                let ms = began.elapsed().as_secs_f64() * 1000.0;
+                stats::CLOCK_HOLDS.add(ms);
+                if ms > 1500.0 {
+                    log::warn!("playback waited {ms:.0} ms for a camera to catch up");
+                }
+            }
+            _ => {}
+        }
+        if holding {
             self.last_hold = Some(Instant::now());
             if crate::trace::on() {
                 let behind: Vec<String> = self
@@ -788,7 +827,12 @@ impl Player {
         if !waiting {
             if self.pending {
                 if let Some(since) = self.pending_since.take() {
-                    crate::trace::trace!("seek ready in {:.0} ms", since.elapsed().as_secs_f64() * 1000.0);
+                    let ms = since.elapsed().as_secs_f64() * 1000.0;
+                    crate::trace::trace!("seek ready in {ms:.0} ms");
+                    stats::SEEKS.add(ms);
+                    if ms > 3000.0 {
+                        log::warn!("a seek took {ms:.0} ms to show every camera");
+                    }
                 }
             }
             self.pending = false;
@@ -842,6 +886,38 @@ impl Player {
     }
 
     /// Seconds from the start of the collection.
+    /// For diagnostics: where playback is and how each camera is doing.
+    pub fn describe(&self) -> Vec<String> {
+        if !self.has_media() {
+            return vec!["Nothing loaded".into()];
+        }
+        let mut out = vec![format!(
+            "Minute {} of {}, at {:.1} s of {:.1} s, {}, speed {}x{}",
+            self.segment + 1,
+            self.segments.len(),
+            self.position(),
+            self.total(),
+            if self.clock.playing { "playing" } else { "paused" },
+            self.clock.rate,
+            if self.pending { ", waiting for cameras after a seek or load" } else { "" },
+        )];
+        for tile in &self.tiles {
+            let st = tile.shared.0.lock().unwrap_or_else(|e| e.into_inner());
+            let state = if !tile.active {
+                "no clip this minute".to_string()
+            } else if let Some(e) = &st.error {
+                format!("error: {e}")
+            } else if tile.finished {
+                "clip ended".into()
+            } else {
+                let shown = tile.shown.as_ref().map_or("nothing shown yet".to_string(), |s| format!("showing {}x{} at {:.2} s", s.frame.width(), s.frame.height(), s.pts));
+                format!("{shown}, {} pictures queued{}", st.frames.len(), if tile.awaiting { ", waiting for the new spot" } else { "" })
+            };
+            out.push(format!("{:?}: {state}", tile.camera));
+        }
+        out
+    }
+
     pub fn position(&self) -> f64 {
         if let Some(t) = self.queued_seek {
             return t;

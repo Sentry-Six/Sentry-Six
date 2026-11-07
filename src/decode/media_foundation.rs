@@ -53,13 +53,13 @@ static GPU: OnceLock<Option<Gpu>> = OnceLock::new();
 fn gpu() -> Option<&'static Gpu> {
     GPU.get_or_init(|| {
         if std::env::var_os("SENTRY_STUDIO_SOFTWARE_DECODE").is_some() {
-            eprintln!("video decoding: CPU (SENTRY_STUDIO_SOFTWARE_DECODE is set)");
+            log::info!("video decoding on the CPU: SENTRY_STUDIO_SOFTWARE_DECODE is set");
             return None;
         }
         match unsafe { create_gpu() } {
             Ok(gpu) => Some(gpu),
             Err(e) => {
-                eprintln!("video decoding: CPU (no usable GPU: {e:#})");
+                log::warn!("video decoding falls back to the CPU: no usable GPU ({e:#})");
                 None
             }
         }
@@ -166,12 +166,15 @@ pub struct Decoder {
 // the worker thread that owns the decoder.
 unsafe impl Send for Decoder {}
 
-/// Says once which way video is decoded (stderr): what the first decoder
-/// actually got, since one can fall back to the CPU even with a GPU.
+/// Says once which way video is decoded (the log, and diagnostics): what
+/// the first decoder actually got, since one can fall back to the CPU even
+/// with a GPU.
 fn announce(hardware: bool) {
     static SAID: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
     if !SAID.swap(true, std::sync::atomic::Ordering::Relaxed) {
-        eprintln!("video decoding: {}", if hardware { "GPU (Direct3D 11)" } else { "CPU" });
+        let what = if hardware { "GPU (Media Foundation, Direct3D 11)" } else { "CPU (Media Foundation)" };
+        log::info!("video decoding: {what}");
+        crate::applog::set_decoder(what.to_string());
     }
 }
 

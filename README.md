@@ -99,6 +99,7 @@ Your dashcam footage stays on your computer. Here's what Sentry Studio sends, an
 - **Map tiles:** maps load from our map server at tiles.sentryusb.com (OpenStreetMap data plus ESA WorldCover, GEBCO and Mapzen terrain, built with [VersaTiles](https://versatiles.org)). The server sees roughly where you drive.
 - **Place Names (on by default):** to label your drives, their start and end coordinates and your system language are sent to OpenStreetMap Nominatim. Each spot is looked up once and cached on your computer. Turn this off in Settings → Playback & Overlays → Map.
 - **Update checks:** at startup and when you click Check Now, Sentry Studio sends a pseudonymous install ID (a SHA-256 hash of your machine ID with a salt that is public in the source code), your OS, CPU architecture and app version to api.sentry-six.com. Records are stored in Canada; a private maintainers' Discord channel gets the platform and version. The new version and its files come from GitHub.
+- **Diagnostics:** Sentry Studio keeps a log of its last few sessions on your computer (app events, errors and playback health, never footage or locations), so a support request can show what went wrong. It's only sent if you choose to share it with support.
 - **Privacy Notice:** you'll see a notice about these features when you first launch the app, and again if they change.
 
 📄 **[Privacy Policy](https://sentry-six.com/privacy)** · **[Terms of Service](https://sentry-six.com/terms)** · **[Code signing policy](https://sentry-six.com/code-signing)**
@@ -158,6 +159,7 @@ These run without a window (see `src/main.rs`):
 | `--seek-check`, `--skip-check`, `--hold-check` | exercise the player |
 | `--drives-check` | loads drive data |
 | `--place-check` | tests place-name lookups |
+| `--diagnostics` | prints the diagnostics report support would receive (from the earlier sessions' logs) |
 | `--update-check [stable\|prerelease] [as-version] [download]` | checks GitHub for an update (without the api.sentry-six.com request), optionally as an older version and with the download |
 | `--gst-check <clip>` | runs the Linux (GStreamer) decoder; on macOS with Homebrew's `gstreamer` it compares every picture against VideoToolbox's |
 

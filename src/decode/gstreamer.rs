@@ -450,7 +450,7 @@ impl Decoder {
         self.pipeline.close();
         match Pipeline::new(self.gst, self.codec, &self.element) {
             Ok(p) => self.pipeline = p,
-            Err(e) => eprintln!("video decoder restart failed: {e:#}"),
+            Err(e) => log::warn!("video decoder restart failed: {e:#}"),
         }
     }
 
@@ -635,14 +635,16 @@ impl Decoder {
     }
 }
 
-/// Says once which decoder is in use (stderr), like the Windows build.
+/// Says once per decoder element which is in use (the log, and
+/// diagnostics), like the Windows build.
 fn announce(element: &str) {
     static SEEN: Mutex<Vec<String>> = Mutex::new(Vec::new());
-    let mut seen = SEEN.lock().unwrap();
+    let mut seen = SEEN.lock().unwrap_or_else(|e| e.into_inner());
     if !seen.iter().any(|e| e == element) {
         let kind = if element.starts_with("avdec") || element.starts_with("openh264") { "CPU" } else { "GPU" };
-        eprintln!("video decoding: {kind} (GStreamer {element})");
+        log::info!("video decoding: {kind} (GStreamer {element})");
         seen.push(element.to_string());
+        crate::applog::set_decoder(format!("{kind} (GStreamer {})", seen.join(", ")));
     }
 }
 

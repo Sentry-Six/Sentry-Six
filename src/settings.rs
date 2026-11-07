@@ -224,7 +224,23 @@ pub fn load() -> Settings {
 /// studio-settings.json.
 pub fn save(s: &Settings) {
     let Some(path) = own_settings_path() else { return };
-    let v = serde_json::json!({
+    let v = to_json(s);
+    if let Some(dir) = path.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    // Written aside and renamed over, so a crash mid-write can't leave a
+    // broken file (which would reset every setting).
+    if let Ok(text) = serde_json::to_string_pretty(&v) {
+        let tmp = path.with_extension("json.tmp");
+        if std::fs::write(&tmp, text).is_ok() {
+            let _ = std::fs::rename(&tmp, &path);
+        }
+    }
+}
+
+/// The settings as saved (studio-settings.json's keys).
+pub fn to_json(s: &Settings) -> Value {
+    serde_json::json!({
         "useMetric": s.metric,
         "timeFormat": if s.time_24h { "24h" } else { "12h" },
         "dateFormat": s.date_format.key(),
@@ -252,18 +268,7 @@ pub fn save(s: &Settings) {
         "keybinds": s.keybinds.iter().map(|(action, id)| {
             (action.clone(), serde_json::json!({ "display": crate::shortcuts::display(id), "identifier": id }))
         }).collect::<serde_json::Map<_, _>>(),
-    });
-    if let Some(dir) = path.parent() {
-        let _ = std::fs::create_dir_all(dir);
-    }
-    // Written aside and renamed over, so a crash mid-write can't leave a
-    // broken file (which would reset every setting).
-    if let Ok(text) = serde_json::to_string_pretty(&v) {
-        let tmp = path.with_extension("json.tmp");
-        if std::fs::write(&tmp, text).is_ok() {
-            let _ = std::fs::rename(&tmp, &path);
-        }
-    }
+    })
 }
 
 fn apply(s: &mut Settings, v: &Value) {

@@ -6,8 +6,10 @@
 //! picker, then that day's Recent Clips and events), the six cameras in a
 //! 3×2 grid, and the control bar along the bottom.
 
+mod applog;
 mod checks;
 mod dashboard;
+mod diagnostics;
 mod decode;
 mod drive_list;
 mod drives;
@@ -93,8 +95,21 @@ fn open_url(url: &str) {
         std::process::Command::new("xdg-open").arg(url).spawn()
     };
     if let Err(e) = result {
-        eprintln!("could not open {url}: {e}");
+        log::warn!("could not open a link or file: {e}");
     }
+}
+
+/// A folder's layout for the log: what kinds of clips, how many days.
+fn folder_summary(collections: &[Collection], days: usize) -> String {
+    let count = |k: Kind| collections.iter().filter(|c| c.kind == k).count();
+    format!(
+        "{days} days; {} RecentClips days, {} SavedClips and {} SentryClips events, {} GM days, {} other folders",
+        count(Kind::Recent),
+        count(Kind::Saved),
+        count(Kind::Sentry),
+        count(Kind::Continuous),
+        count(Kind::Folder)
+    )
 }
 
 /// A day in the day picker: its folder's date, shown in the date format.
@@ -160,6 +175,14 @@ fn main() -> iced::Result {
         // version and with the download.
         Some("--update-check") => {
             checks::update_check(arg(2) == Some("prerelease"), arg(3), arg(4) == Some("download"));
+            return Ok(());
+        }
+        // The diagnostics report as this computer would send it (without a
+        // running window's state: the earlier sessions' logs).
+        Some("--diagnostics") => {
+            applog::start_in_memory();
+            let snap = diagnostics::Snapshot { settings: Some(settings::load()), ..Default::default() };
+            print!("{}", diagnostics::report(&snap));
             return Ok(());
         }
         Some("--tiles-check") => {
@@ -239,6 +262,8 @@ fn main() -> iced::Result {
         _ => {}
     }
 
+    applog::start();
+    log::info!(target: "app", "Sentry Studio {} started ({} {})", env!("CARGO_PKG_VERSION"), std::env::consts::OS, std::env::consts::ARCH);
     let mut app = iced::application(App::boot, App::update, App::view)
         .title("Sentry Studio")
         .subscription(App::subscription)
@@ -651,6 +676,7 @@ impl App {
                 self.scanning_path = None;
                 self.root = Some(path);
                 self.days = library::days(&collections);
+                log::info!("folder opened: {}", folder_summary(&collections, self.days.len()));
                 if self.days.is_empty() {
                     // Nothing to show here: the last folder's clips go.
                     self.day = None;
@@ -688,6 +714,7 @@ impl App {
                 return Task::batch(tasks);
             }
             Message::Scanned(_, Err(e)) => {
+                log::warn!("folder could not be opened: {e}");
                 self.scanning = false;
                 self.scanning_path = None;
                 let toast = self.notify(i18n::tf("ui.notifications.failedToOpenFolder", &[("error", &e)]), true);
@@ -716,6 +743,7 @@ impl App {
                 self.loading_day = false;
                 self.items = items;
                 self.hovered_clip = None;
+                log::info!("day loaded: {} clips", self.items.len());
                 if self.items.is_empty() {
                     let date = self.settings.date_format.show(&day);
                     return self.notify(i18n::tf("ui.notifications.noClipsFoundForDate", &[("date", &date)]), false);
@@ -730,6 +758,8 @@ impl App {
             }
             Message::SelectItem(i) => {
                 let Some(item) = self.items.get(i) else { return Task::none() };
+                let cameras: std::collections::BTreeSet<_> = item.segments.iter().flat_map(|s| s.files.keys()).collect();
+                log::info!("playing a {:?} clip: {} minutes, cameras {:?}", item.collection.kind, item.segments.len(), cameras);
                 self.selected = Some(i);
                 // A clip from the list: the map shows its own route, not a drive's.
                 self.selected_drive = None;
@@ -888,11 +918,15 @@ impl App {
                 self.drives_loading = false;
                 match result {
                     Ok(list) => {
+                        log::info!("drive data loaded: {} drives", list.len());
                         self.drives = list;
                         self.drives_error = None;
                         self.relayout_drives();
                     }
-                    Err(e) => self.drives_error = Some(e),
+                    Err(e) => {
+                        log::warn!("drive data could not be loaded: {e}");
+                        self.drives_error = Some(e);
+                    }
                 }
             }
             Message::PickDriveData => {
@@ -938,6 +972,7 @@ impl App {
             Message::SettingsSearch(q) => self.settings_ui.search = q,
             Message::Setting(change) => {
                 use settings_view::Change;
+                log::info!("settings: {change:?}");
                 match change {
                     Change::Metric(b) => {
                         self.settings.metric = b;
@@ -1082,6 +1117,7 @@ impl App {
                 if self.epoch.elapsed() >= welcome::ACCEPT_DELAY {
                     self.settings.privacy_accepted = welcome::PRIVACY_VERSION;
                     settings::save(&self.settings);
+                    log::info!("privacy notice {} accepted", welcome::PRIVACY_VERSION);
                     return self.startup_update_check();
                 }
             }
@@ -1102,18 +1138,23 @@ impl App {
             Message::UpdateChecked(asked, outcome) => {
                 use settings_view::CheckState;
                 let state = match outcome {
-                    update::Outcome::UpToDate => CheckState::UpToDate,
+                    update::Outcome::UpToDate => {
+                        log::info!(target: "update", "up to date ({})", if self.settings.prerelease { "pre-release" } else { "stable" });
+                        CheckState::UpToDate
+                    }
                     update::Outcome::Failed(e) => {
-                        eprintln!("update check: {e}");
+                        log::warn!(target: "update", "check failed: {e}");
                         CheckState::Failed
                     }
                     update::Outcome::Offer(offer) => {
+                        log::info!(target: "update", "{} offered ({:?})", offer.version, offer.how);
                         if !self.update.as_ref().is_some_and(|d| d.busy()) {
                             self.update = Some(update_view::Dialog::Offer(offer));
                         }
                         CheckState::Found
                     }
                     update::Outcome::Critical { version, message, url } => {
+                        log::warn!(target: "update", "the server says this version must be replaced by hand ({version})");
                         self.update = Some(update_view::Dialog::Critical { version, message, url });
                         CheckState::Found
                     }
@@ -1162,14 +1203,24 @@ impl App {
                         // lost when the app quits for the install.
                         return Task::perform(off_thread_or(Err("the install stopped".into()), move || update::install(&file)), Message::UpdateInstalled);
                     }
-                    Err(e) => self.update = Some(update_view::Dialog::Failed(offer, e)),
+                    Err(e) => {
+                        log::warn!(target: "update", "download failed: {e}");
+                        self.update = Some(update_view::Dialog::Failed(offer, e));
+                    }
                 }
             }
             Message::UpdateInstalled(result) => {
                 let Some(update_view::Dialog::Installing(offer)) = self.update.take() else { return Task::none() };
                 match result {
-                    Ok(()) => return iced::exit(),
-                    Err(e) => self.update = Some(update_view::Dialog::Failed(offer, e)),
+                    Ok(()) => {
+                        log::info!(target: "update", "installing {}: quitting", offer.version);
+                        applog::end();
+                        return iced::exit();
+                    }
+                    Err(e) => {
+                        log::warn!(target: "update", "install failed: {e}");
+                        self.update = Some(update_view::Dialog::Failed(offer, e));
+                    }
                 }
             }
             Message::ChangelogClose => self.changelog = None,
@@ -1242,6 +1293,7 @@ impl App {
                         }
                         self.collections.retain(|c| c.dir != dir);
                         self.hovered_clip = None;
+                        log::info!("an event's folder was deleted");
                         return self.notify(i18n::t("ui.clipBrowser.deleteSuccess").to_string(), false);
                     }
                     Err(e) => return self.notify(format!("{}: {e}", i18n::t("ui.clipBrowser.deleteFailed")), true),
@@ -1398,6 +1450,60 @@ impl App {
                     self.settings.skip_seconds = *c;
                 }
             }
+        }
+    }
+
+    /// What the diagnostics report says about the app as it is now.
+    #[allow(dead_code)] // Support chat (next) asks for the report.
+    fn diagnostics_snapshot(&self) -> diagnostics::Snapshot {
+        let mut folder_lines = Vec::new();
+        if self.root.is_some() {
+            folder_lines.push(format!("Contents: {}", folder_summary(&self.collections, self.days.len())));
+            folder_lines.push(format!("Day shown: {}, {} clips", self.day.as_deref().unwrap_or("none"), self.items.len()));
+            if let Some(item) = self.selected.and_then(|i| self.items.get(i)) {
+                folder_lines.push(format!(
+                    "Clip shown: {:?}, {} minutes, up to {} cameras, reason {}",
+                    item.collection.kind,
+                    item.segments.len(),
+                    item.cameras,
+                    item.reason.as_deref().unwrap_or("none")
+                ));
+            }
+        }
+        if let Some(e) = &self.error {
+            folder_lines.push(format!("Error shown: {e}"));
+        }
+        let size = self.window_size.map_or("unknown".to_string(), |s| format!("{:.0}x{:.0}", s.width, s.height));
+        let mut app_lines = vec![
+            format!("Window: {size}, tab {:?}, clip panel {}", self.tab, if self.panel_open { "open" } else { "closed" }),
+            format!(
+                "Open: {}",
+                [
+                    (self.settings_open, "Settings"),
+                    (self.update.is_some(), "update dialog"),
+                    (self.privacy_pending(), "privacy notice"),
+                    (self.delete_confirm.is_some(), "delete dialog")
+                ]
+                .iter()
+                .filter(|(on, _)| *on)
+                .map(|(_, name)| *name)
+                .collect::<Vec<_>>()
+                .join(", ")
+            ),
+        ];
+        app_lines.push(match (&self.drives_error, self.drives_loading, self.drives.len()) {
+            (Some(e), _, _) => format!("Drive data: error: {e}"),
+            (None, true, _) => "Drive data: loading".into(),
+            (None, false, 0) => "Drive data: none loaded".into(),
+            (None, false, n) => format!("Drive data: {n} drives"),
+        });
+        diagnostics::Snapshot {
+            live: true,
+            settings: Some(self.settings.clone()),
+            folder: self.root.clone(),
+            folder_lines,
+            playback_lines: self.player.describe(),
+            app_lines,
         }
     }
 
@@ -1744,6 +1850,9 @@ impl App {
 
     /// Shows a toast: 3.2 s, or 5.5 s for an error.
     fn notify(&mut self, text: String, error: bool) -> Task<Message> {
+        if error {
+            log::warn!("message shown: {text}");
+        }
         self.next_toast += 1;
         let id = self.next_toast;
         self.toasts.push((id, text));
@@ -2546,6 +2655,10 @@ static MODIFIERS: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::n
 /// Keys and the extra mouse buttons, unless a widget already used them.
 fn input_event(event: iced::Event, status: iced::event::Status, _window: iced::window::Id) -> Option<Message> {
     use iced::keyboard::{self, key, Key};
+    // The window closing ends the app: the session ended cleanly.
+    if let iced::Event::Window(iced::window::Event::CloseRequested | iced::window::Event::Closed) = event {
+        applog::end();
+    }
     if status == iced::event::Status::Captured {
         return None;
     }

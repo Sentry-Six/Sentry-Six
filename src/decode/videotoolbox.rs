@@ -205,6 +205,12 @@ impl Decoder {
             bail!("could not start the hardware video decoder (VideoToolbox error {status})");
         }
         let session = unsafe { CFRetained::from_raw(NonNull::new(session).unwrap()) };
+        // Said once, for the log and diagnostics.
+        static SAID: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+        if !SAID.swap(true, std::sync::atomic::Ordering::Relaxed) {
+            log::info!("video decoding: VideoToolbox ({:?})", track.codec);
+            crate::applog::set_decoder(format!("VideoToolbox (Apple's decoder; first clip {:?})", track.codec));
+        }
         Ok(Self { session, format, slot })
     }
 

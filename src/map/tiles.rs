@@ -266,7 +266,12 @@ fn fetch_index(cache_dir: Option<&std::path::Path>) -> Option<Index> {
             return Some(index);
         }
     }
-    cached.and_then(|p| std::fs::read(p).ok()).and_then(|b| parse(&b))
+    let offline = cached.and_then(|p| std::fs::read(p).ok()).and_then(|b| parse(&b));
+    log::warn!(
+        "map index unavailable from {INDEX_URL}: {}",
+        if offline.is_some() { "using the copy saved earlier" } else { "no saved copy, so no map yet" }
+    );
+    offline
 }
 
 /// The disk cache file for a tile URL (a hash of it, keeping revisions
@@ -311,8 +316,12 @@ fn fetcher(inner: Arc<Inner>) {
             match get(&agent, &url) {
                 Ok(b) => bytes = Some(b),
                 Err(404) => retry = Duration::from_secs(300),
-                Err(code) if code >= 500 => retry = Duration::from_secs(3),
-                Err(_) => {}
+                Err(code) if code >= 500 => {
+                    log::warn!("map tile download failed: server error {code}");
+                    retry = Duration::from_secs(3);
+                }
+                Err(0) => log::warn!("map tile download failed: no connection"),
+                Err(code) => log::warn!("map tile download failed: HTTP {code}"),
             }
             if let (Some(b), Some(p)) = (&bytes, &path) {
                 if let Some(dir) = p.parent() {

@@ -3773,6 +3773,7 @@ dependencies = [
  "image",
  "libloading",
  "libm",
+ "log",
  "metal",
  "objc2 0.6.5",
  "objc2-app-kit 0.3.2",

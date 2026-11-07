@@ -277,6 +277,7 @@ fn run(inner: Arc<Inner>) {
             Ok(None) | Err(()) => {
                 if answer.is_err() {
                     backoff = (backoff * 2).clamp(Duration::from_secs(30), Duration::from_secs(30 * 60));
+                    log::warn!("place-name lookup failed (no answer or an HTTP error): waiting {} s", backoff.as_secs());
                 }
                 let (lock, _) = &inner.queue;
                 lock.lock().unwrap().retry_after.insert(k, Instant::now() + backoff.max(Duration::from_secs(60)));
