@@ -70,8 +70,10 @@ pub struct Tile {
 impl Tile {
     /// Where the camera is drawn (x, y, width, height in pixels), in a
     /// frame `width` x `height` whose cameras' grid starts at `video_top`
-    /// with cells `cell`. Whole pixels, inside the frame.
-    pub fn rect(&self, cell: (u32, u32), width: u32, height: u32, video_top: u32) -> (f32, f32, f32, f32) {
+    /// with cells `cell`, `area_h` high (a moved camera's top is a share
+    /// of that, so Tesla Mobile's bars don't move it). Whole pixels,
+    /// inside the frame.
+    pub fn rect(&self, cell: (u32, u32), width: u32, height: u32, video_top: u32, area_h: u32) -> (f32, f32, f32, f32) {
         let (cw, ch) = (cell.0 as f32, cell.1 as f32);
         let Some((x, y, w)) = self.free else {
             return (self.col as f32 * cw, video_top as f32 + self.row as f32 * ch, cw, ch);
@@ -84,7 +86,7 @@ impl Tile {
             tw = (th * cw / ch).round().min(fw);
         }
         let tx = (x * fw).round().clamp(0.0, fw - tw);
-        let ty = (y * fh).round().clamp(0.0, fh - th);
+        let ty = (video_top as f32 + y * area_h as f32).round().clamp(0.0, fh - th);
         (tx, ty, tw, th)
     }
 }
@@ -670,7 +672,7 @@ fn encode_all(
             let privacy = (!zones.is_empty()).then(|| super::blur::mask(&zones, plan.cell.0, plan.cell.1));
             // The glass in the camera's own pixels (it may be drawn bigger
             // or smaller than a cell).
-            let (tx, ty, tw, _) = tile.rect(plan.cell, plan.width, plan.height, plan.video_top);
+            let (tx, ty, tw, _) = tile.rect(plan.cell, plan.width, plan.height, plan.video_top, plan.area_height());
             let k = cw / tw.max(1.0);
             let glass = frost.and_then(|([x, y, w, h, r], sigma)| super::blur::rounded_mask([(x - tx) * k, (y - ty) * k, w * k, h * k, r * k], (0.0, 0.0), plan.cell.0, plan.cell.1).map(|m| (m, sigma * k)));
             if privacy.is_none() && glass.is_none() {
@@ -788,7 +790,7 @@ fn encode_all(
         for (i, ((tile, rx), mask)) in req.tiles.iter().zip(&receivers).zip(&masks).enumerate() {
             let picture = rx.recv().map_err(|_| anyhow!("a camera's decoding stopped"))?;
             if let Some(p) = picture {
-                let (x, y, width, height) = tile.rect(plan.cell, plan.width, plan.height, plan.video_top);
+                let (x, y, width, height) = tile.rect(plan.cell, plan.width, plan.height, plan.video_top, plan.area_height());
                 let place = Placement { x, y, width, height, mirror: req.mirror && tile.camera.mirrored() };
                 if let Some(m) = mask {
                     blurs.push((pictures.len(), m));
@@ -855,10 +857,6 @@ fn encode_all(
         let mut overlays = Vec::new();
         // Which overlays the editor moves (left out of a preview's base).
         let mut kinds: Vec<Option<(PieceKind, f32, f32)>> = Vec::new();
-        if let Some((o, x, y)) = watermark.as_ref() {
-            overlays.push((o, *x, *y));
-            kinds.push(Some((PieceKind::Watermark, *x, *y)));
-        }
         if let (Some(ts), Some((_, o))) = (req.timestamp, stamp.as_ref()) {
             let (x, y) = super::overlay::corner_in(ts.corner, o.width, o.height, plan.width, plan.video_top, plan.area_height());
             overlays.push((o, x, y));
@@ -929,6 +927,11 @@ fn encode_all(
                 }
             }
         }
+        // The watermark over everything (Tesla Mobile's bars included).
+        if let Some((o, x, y)) = watermark.as_ref() {
+            overlays.push((o, *x, *y));
+            kinds.push(Some((PieceKind::Watermark, *x, *y)));
+        }
         let packets = match &mut sink {
             #[cfg(target_os = "macos")]
             Sink::Direct(encoder) => {
@@ -953,7 +956,7 @@ fn encode_all(
                     compositor.draw_to_bytes(plan.width, plan.height, &pictures, base_blurs, &base, &mut c.base)?;
                     // Each camera as a piece of its own (first, so the
                     // overlays sit over them), and the base without them.
-                    let rects: Vec<_> = req.tiles.iter().map(|t| (t.camera, t.rect(plan.cell, plan.width, plan.height, plan.video_top))).collect();
+                    let rects: Vec<_> = req.tiles.iter().map(|t| (t.camera, t.rect(plan.cell, plan.width, plan.height, plan.video_top, plan.area_height()))).collect();
                     for (camera, (x, y, w, h)) in &rects {
                         let picture = crop_bgra(&c.base, plan.width, (*x as u32, *y as u32, *w as u32, *h as u32));
                         c.pieces.push((PieceKind::Camera(*camera), picture, *x, *y));

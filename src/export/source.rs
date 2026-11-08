@@ -28,6 +28,9 @@ struct Clip {
     shown: Option<Arc<Frame>>,
     /// Frames the decoder rejected (each skips to the next keyframe).
     errors: u32,
+    /// Seconds the clip starts after the minute's front clip (see
+    /// crate::sync): its pictures are shown that much later.
+    offset: f64,
 }
 
 pub struct Source {
@@ -51,8 +54,25 @@ impl Source {
     pub fn frame_at(&mut self, segments: &[Segment], segment: usize, t: f64) -> Option<Arc<Frame>> {
         if self.segment != Some(segment) {
             self.segment = Some(segment);
+            let reference = segments.get(segment).and_then(|s| crate::sync::reference(&s.files)).cloned();
             self.clip = segments.get(segment).and_then(|s| s.files.get(&self.camera)).and_then(|path| match open(path) {
-                Ok(c) => Some(c),
+                Ok(mut c) => {
+                    // Lined up with the minute's front clip.
+                    let own = crate::sync::start_of(path, || crate::sync::start_from(&c.track, |o, n| c.reader.read(o, n).ok().map(<[u8]>::to_vec)));
+                    let front = match reference.as_ref() {
+                        Some(r) if r != path => crate::sync::start(r),
+                        _ => own,
+                    };
+                    c.offset = crate::sync::offset(path, own, front, self.camera);
+                    // A camera whose counter can't be compared (an HW3
+                    // car's back camera): by the telemetry's timing.
+                    if let Some(r) = reference.as_ref().filter(|r| *r != path && own.is_some() && front.is_some() && !crate::sync::comparable(own, front)) {
+                        if let Some(o) = crate::sync::time_offset_now(path, r) {
+                            c.offset = o;
+                        }
+                    }
+                    Some(c)
+                }
                 Err(e) => {
                     log::warn!("export: {:?} clip {} skipped (a black tile for that minute): {e:#}", self.camera, path.display());
                     None
@@ -64,7 +84,9 @@ impl Source {
             return None;
         };
         let errors = clip.errors;
-        let shown = match clip.advance(t, &mut self.decoded) {
+        // Its own time (before its first picture is due, the last picture
+        // from before carries on).
+        let shown = match clip.advance(t - clip.offset, &mut self.decoded) {
             Ok(f) => f,
             Err(e) => {
                 log::warn!("export: {:?} stopped decoding at {t:.2} s of minute {segment} (black for the rest of it): {e:#}", self.camera);
@@ -100,7 +122,7 @@ fn open(path: &std::path::Path) -> Result<Clip> {
     let earliest = track.earliest_from();
     // A clip that starts mid-GOP: decoding begins at its first keyframe.
     let next = track.samples.iter().position(|s| s.sync).unwrap_or(0);
-    Ok(Clip { track, decoder, reader, next, earliest, pending: Vec::new(), shown: None, errors: 0 })
+    Ok(Clip { track, decoder, reader, next, earliest, pending: Vec::new(), shown: None, errors: 0, offset: 0.0 })
 }
 
 impl Clip {

@@ -139,7 +139,7 @@ impl Watermark {
     pub fn place_in(&self, frame_w: u32, frame_h: u32, top: u32, area_h: u32) -> (f32, f32) {
         let (w, h) = self.size(frame_w);
         match self.free {
-            Some(free) => free_place(free, w, h, frame_w, frame_h),
+            Some(free) => free_place_in(free, w, h, frame_w, frame_h, top, area_h),
             None => corner_in(self.corner, w, h, frame_w, top, area_h),
         }
     }
@@ -397,6 +397,15 @@ pub fn corner_in(corner: Corner, w: u32, h: u32, frame_w: u32, top: u32, area_h:
     (x, y + top as f32)
 }
 
+/// An overlay dragged to `free`: shares of the frame's width and of the
+/// cameras' part of it (`area_h` from `top`), so Tesla Mobile's bars don't
+/// move it; kept inside the frame.
+pub fn free_place_in(free: (f32, f32), w: u32, h: u32, frame_w: u32, frame_h: u32, top: u32, area_h: u32) -> (f32, f32) {
+    let x = (free.0 * frame_w as f32).clamp(0.0, frame_w.saturating_sub(w) as f32);
+    let y = (top as f32 + free.1 * area_h as f32).clamp(0.0, frame_h.saturating_sub(h) as f32);
+    (x.round(), y.round())
+}
+
 /// An overlay dragged to `free` (shares of the frame), kept inside it.
 pub fn free_place(free: (f32, f32), w: u32, h: u32, frame_w: u32, frame_h: u32) -> (f32, f32) {
     let x = (free.0 * frame_w as f32).clamp(0.0, frame_w.saturating_sub(w) as f32);
@@ -635,7 +644,7 @@ impl Minimap {
     /// As Watermark::place_in.
     pub fn place_in(&self, side: u32, frame_w: u32, frame_h: u32, top: u32, area_h: u32) -> (f32, f32) {
         match self.free {
-            Some(free) => free_place(free, side, side, frame_w, frame_h),
+            Some(free) => free_place_in(free, side, side, frame_w, frame_h, top, area_h),
             None => corner_in(self.corner, side, side, frame_w, top, area_h),
         }
     }

@@ -630,11 +630,14 @@ impl App {
         // With the pieces: dragging needs them, and so does playing (the
         // overlays over the live video).
         let with_pieces = true;
+        // As sharp as the screen shows it (twice the window's width covers
+        // a Retina screen; never more than the export itself).
+        let width = self.window_size.map_or(PREVIEW_WIDTH, |s| (s.width * 2.0) as u32).clamp(PREVIEW_WIDTH, 4096);
         self.export.preview_busy = true;
         self.export.preview_started = Some(Instant::now());
         self.export.preview_again = false;
         Task::perform(
-            off_thread_or(Err("The preview stopped unexpectedly.".to_string()), move || job::preview(&request, at, PREVIEW_WIDTH, with_pieces).map_err(|e| format!("{e:#}"))),
+            off_thread_or(Err("The preview stopped unexpectedly.".to_string()), move || job::preview(&request, at, width, with_pieces).map_err(|e| format!("{e:#}"))),
             |r| wrap(ExportMsg::Preview(Arc::new(r))),
         )
     }
@@ -1316,6 +1319,18 @@ impl App {
         opaque(container(measured(dialog)).center(Length::Fill).style(theme::backdrop))
     }
 
+    /// The cameras' part of an export `w` x `h`: its top and height (less
+    /// Tesla Mobile's bars).
+    fn export_area(&self, w: u32, h: u32) -> (u32, u32) {
+        match self.export_dashboard().filter(|d| d.style == DashStyle::TeslaMobile) {
+            Some(d) => {
+                let (date, data) = crate::export::tesla_mobile::bar_heights(w);
+                (date + if d.bar_on_top() { data } else { 0 }, h.saturating_sub(date + data))
+            }
+            None => (0, h),
+        }
+    }
+
     /// The dashboard (compact) and map in an export `w` x `h`, for dragging.
     fn movables(&self, w: u32, h: u32) -> Vec<Movable> {
         let mut out = Vec::new();
@@ -1325,16 +1340,11 @@ impl App {
         let tiles = self.export_tiles();
         let cols = tiles.iter().map(|t| t.col + 1).max().unwrap_or(1);
         let rows = tiles.iter().map(|t| t.row + 1).max().unwrap_or(1);
-        let (top, bars) = match self.export_dashboard().filter(|d| d.style == DashStyle::TeslaMobile) {
-            Some(d) => {
-                let (date, data) = crate::export::tesla_mobile::bar_heights(w);
-                (date + if d.bar_on_top() { data } else { 0 }, date + data)
-            }
-            None => (0, 0),
-        };
-        let cell = (w / cols, h.saturating_sub(bars) / rows);
+        let (top, area_h) = self.export_area(w, h);
+        let bars = h.saturating_sub(area_h);
+        let cell = (w / cols, area_h / rows);
         for t in &tiles {
-            let (x, y, tw, th) = t.rect(cell, w, h, top);
+            let (x, y, tw, th) = t.rect(cell, w, h, top, area_h);
             out.push(Movable {
                 what: Dragged::Camera(t.camera),
                 rect: iced::Rectangle::new(iced::Point::new(x, y), iced::Size::new(tw, th)),
@@ -1655,7 +1665,8 @@ impl App {
                     None => picture.into(),
                     }
                 };
-                let drag = PreviewDrag { frame: (full.0 as f32, full.1 as f32), items, enabled: !e.running() };
+                let (top, area_h) = self.export_area(full.0, full.1);
+                let drag = PreviewDrag { frame: (full.0 as f32, full.1 as f32), area: (top as f32, area_h as f32), items, enabled: !e.running() };
                 let mut layers = stack![content, iced::widget::canvas(drag).width(w).height(h)];
                 if e.preview_busy && !e.playing {
                     layers = layers.push(container(container(text(t("ui.export.previewUpdating")).size(10).color(theme::TEXT_SECONDARY)).padding([3, 8]).style(|_| container::Style {
@@ -2164,6 +2175,9 @@ const HANDLE_REACH: f32 = 9.0;
 struct PreviewDrag {
     /// The export's size, which the preview shows scaled.
     frame: (f32, f32),
+    /// The cameras' part of it (top, height): dragged places are shares
+    /// of that (see overlay::free_place_in).
+    area: (f32, f32),
     items: Vec<Movable>,
     enabled: bool,
 }
@@ -2293,7 +2307,7 @@ impl PreviewDrag {
         state.guides = (at_edge(guide.0, edge_x).into_iter().collect(), at_edge(guide.1, edge_y).into_iter().collect());
         let to = match keep {
             Some(c) => DragTo::Corner(c),
-            None => DragTo::Free(x / fw, y / fh),
+            None => DragTo::Free(x / fw, (y - self.area.0) / self.area.1.max(1.0)),
         };
         Some(iced::widget::canvas::Action::publish(wrap(ExportMsg::Resize(item.what, share as f64, to))).and_capture())
     }
@@ -2365,7 +2379,7 @@ impl iced::widget::canvas::Program<Message> for PreviewDrag {
                 let corner = item.snaps.iter().find(|(_, s)| (s.x - x).abs() < 0.5 && (s.y - y).abs() < 0.5);
                 let to = match corner {
                     Some((c, _)) => DragTo::Corner(*c),
-                    None => DragTo::Free(x / fw, y / fh),
+                    None => DragTo::Free(x / fw, (y - self.area.0) / self.area.1.max(1.0)),
                 };
                 if let Dragged::Camera(_) = item.what {
                     return Some(Action::publish(wrap(ExportMsg::Resize(item.what, (w / item.unit) as f64, to))).and_capture());
@@ -2768,7 +2782,7 @@ mod tests {
         let (w, h, shown) = (W, H, SHOWN);
         let scale = shown / w as f32;
         fn view(a: &crate::App) -> iced::Element<'_, crate::Message> {
-            iced::widget::canvas(super::PreviewDrag { frame: (W as f32, H as f32), items: a.movables(W, H), enabled: true }).width(SHOWN).height(H as f32 * SHOWN / W as f32).into()
+            iced::widget::canvas(super::PreviewDrag { frame: (W as f32, H as f32), area: (0.0, H as f32), items: a.movables(W, H), enabled: true }).width(SHOWN).height(H as f32 * SHOWN / W as f32).into()
         }
         let update = |a: &mut crate::App, m: crate::Message| {
             if let crate::Message::Export(e) = m {

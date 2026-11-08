@@ -70,10 +70,13 @@ impl Clock {
 // ---------------------------------------------------------------------------
 
 enum Cmd {
-    Open { path: PathBuf, at: f64, generation: u64 },
+    /// `reference`: the minute's front clip, which the cameras are lined
+    /// up with (see crate::sync).
+    Open { path: PathBuf, at: f64, generation: u64, reference: Option<PathBuf>, camera: Camera },
     /// Get the next minute's clip ready (index and first data read on a
-    /// helper thread), so the change of minute doesn't wait on the share.
-    Preload { path: PathBuf },
+    /// helper thread), so the change of minute doesn't wait on the share;
+    /// and where it starts against `reference`.
+    Preload { path: PathBuf, reference: Option<PathBuf> },
     Seek { at: f64, generation: u64 },
     Close,
 }
@@ -126,6 +129,9 @@ struct OpenClip {
     gop_start: f64,
     /// Pictures queued since the last open or seek.
     queued: usize,
+    /// Seconds this clip starts after the minute's front clip: its pictures
+    /// are shown that much later (on the minute's timeline).
+    offset: f64,
 }
 
 /// A clip's index and its first window of data, read ahead of time.
@@ -134,14 +140,29 @@ struct Preloaded {
     track: VideoTrack,
 }
 
-fn preload(path: &PathBuf) -> anyhow::Result<Preloaded> {
+fn preload(path: &PathBuf, reference: Option<&PathBuf>) -> anyhow::Result<Preloaded> {
     let file = std::fs::File::open(path)?;
     let track = read_video_track(&file)?;
     let mut reader = WindowReader::new(file)?;
     if let Some(first) = track.samples.first() {
         reader.warm(first.offset)?;
     }
+    // Where it and the minute's front clip start, ready for the open.
+    crate::sync::start_of(path, || crate::sync::start_from(&track, |o, n| reader.read(o, n).ok().map(<[u8]>::to_vec)));
+    if let Some(r) = reference.filter(|r| *r != path) {
+        crate::sync::start(r);
+    }
     Ok(Preloaded { reader, track })
+}
+
+/// Seconds `clip` (at `path`) starts after the minute's `reference` clip.
+fn clip_offset(clip: &mut OpenClip, path: &PathBuf, reference: Option<&PathBuf>, camera: Camera) -> f64 {
+    let own = crate::sync::start_of(path, || crate::sync::start_from(&clip.track, |o, n| clip.reader.read(o, n).ok().map(<[u8]>::to_vec)));
+    let reference = match reference {
+        Some(r) if r != path => crate::sync::start(r),
+        _ => own,
+    };
+    crate::sync::offset(path, own, reference, camera)
 }
 
 fn open_clip(path: &PathBuf, at: f64, generation: u64) -> anyhow::Result<OpenClip> {
@@ -172,6 +193,7 @@ fn clip_from(Preloaded { mut reader, track }: Preloaded, at: f64, generation: u6
         earliest,
         gop_start: 0.0,
         queued: 0,
+        offset: 0.0,
     };
     seek_clip(&mut clip, at);
     Ok(clip)
@@ -212,7 +234,7 @@ fn worker(rx: &Receiver<Cmd>, shared: &SharedTile) {
             }
         };
         match cmd {
-            Some(Cmd::Open { path, at, generation }) => {
+            Some(Cmd::Open { path, at, generation, reference, camera: cam }) => {
                 clip = None;
                 open_error = None;
                 let began = Instant::now();
@@ -234,13 +256,21 @@ fn worker(rx: &Receiver<Cmd>, shared: &SharedTile) {
                     log::warn!("{camera}: opening {file} took {open_ms:.0} ms");
                 }
                 match opened {
-                    Ok(c) => {
+                    Ok(mut c) => {
+                        // Lined up with the minute's front clip: opened that
+                        // much earlier (or later) in its own time.
+                        c.offset = clip_offset(&mut c, &path, reference.as_ref(), cam);
+                        if c.offset.abs() > 1e-6 {
+                            crate::trace::trace!("{file} starts {:+.0} ms from the front clip", c.offset * 1000.0);
+                            let local = (at - c.offset).max(0.0);
+                            seek_clip(&mut c, local);
+                        }
                         let t = &c.track;
                         let format = format!("{:?} {}x{}, {:.0} fps", t.codec, t.width, t.height, t.samples.len() as f64 / t.duration.max(0.001));
                         let mut st = lock.lock().unwrap_or_else(|e| e.into_inner());
                         st.format = Some(format);
                         if st.generation == generation {
-                            st.duration = Some(c.track.duration);
+                            st.duration = Some(c.track.duration + c.offset);
                         }
                         clip = Some(c);
                     }
@@ -256,12 +286,12 @@ fn worker(rx: &Receiver<Cmd>, shared: &SharedTile) {
                 }
                 continue;
             }
-            Some(Cmd::Preload { path }) => {
+            Some(Cmd::Preload { path, reference }) => {
                 if preloading.as_ref().is_none_or(|(p, _)| *p != path) {
                     let (tx, rx) = channel();
                     let p = path.clone();
                     let spawned = std::thread::Builder::new().name("preload".into()).spawn(move || {
-                        let _ = tx.send(preload(&p));
+                        let _ = tx.send(preload(&p, reference.as_ref()));
                     });
                     if spawned.is_ok() {
                         preloading = Some((path, rx));
@@ -273,7 +303,7 @@ fn worker(rx: &Receiver<Cmd>, shared: &SharedTile) {
                 match clip.as_mut() {
                     Some(c) => {
                         c.generation = generation;
-                        seek_clip(c, at);
+                        seek_clip(c, (at - c.offset).max(0.0));
                     }
                     // No clip (it couldn't be opened): nothing to show, so
                     // the camera is done and doesn't hold the others back.
@@ -408,7 +438,8 @@ fn worker(rx: &Receiver<Cmd>, shared: &SharedTile) {
             let h = c.held.remove(0);
             let only_one_left = end && c.held.is_empty() && c.queued == 0;
             if h.0 + 1e-6 >= c.skip_before || only_one_left {
-                st.frames.push_back(h);
+                // On the minute's timeline.
+                st.frames.push_back((h.0 + c.offset, h.1, h.2));
                 c.queued += 1;
             }
         }
@@ -672,6 +703,8 @@ impl Player {
     }
 
     pub fn load(&mut self, segments: Vec<Segment>, start: f64) {
+        // Other footage, perhaps another car: its cameras' lags are measured again.
+        crate::sync::forget();
         self.queued_seek = None;
         self.pending = false;
         // Lengths remembered from before go in at once, without touching the
@@ -744,13 +777,24 @@ impl Player {
         self.pending = true;
         self.pending_since = Some(Instant::now());
         let files = self.segments.get(seg).map(|s| s.files.clone()).unwrap_or_default();
+        let reference = crate::sync::reference(&files).cloned();
+        // Each camera's lag behind the front, from this car's driving; and
+        // the timing of cameras whose counters can't be compared, for this
+        // minute and the next.
+        crate::sync::measure(files.clone());
+        crate::sync::measure_times(files.clone());
+        if let Some(next) = self.segments.get(seg + 1) {
+            crate::sync::measure_times(next.files.clone());
+        }
         for tile in &mut self.tiles {
             // The last picture stays up until the new clip's first one.
             match files.get(&tile.camera) {
                 Some(path) => {
                     tile.active = true;
                     let path = path.clone();
-                    tile.send(false, |generation| Cmd::Open { path, at, generation });
+                    let reference = reference.clone();
+                    let camera = tile.camera;
+                    tile.send(false, |generation| Cmd::Open { path, at, generation, reference, camera });
                 }
                 None => {
                     tile.active = false;
@@ -906,7 +950,9 @@ impl Player {
             while st.frames.len() >= 2 && st.frames[1].0 <= t_show + 1e-4 {
                 st.frames.pop_front();
             }
-            if let Some((pts, frame, telemetry)) = st.frames.front() {
+            // Not before it's due: a camera whose clip starts later than the
+            // front's keeps its last picture until then.
+            if let Some((pts, frame, telemetry)) = st.frames.front().filter(|f| f.0 <= t_show + 1e-4 || tile.shown.is_none()) {
                 let new_pic = tile.shown.as_ref().is_none_or(|s| !Arc::ptr_eq(&s.frame, frame));
                 if new_pic {
                     tile.shown = Some(Shown { id: self.next_id, frame: frame.clone(), pts: *pts, telemetry: telemetry.clone() });
@@ -991,9 +1037,10 @@ impl Player {
         // Nearly the end of this minute: get the next one's clips ready.
         if self.clock.playing && seg_len > 0.0 && t >= seg_len - PRELOAD_BEFORE && self.preloaded != Some(self.segment + 1) {
             if let Some(next) = self.segments.get(self.segment + 1) {
+                let reference = crate::sync::reference(&next.files).cloned();
                 for tile in &self.tiles {
                     if let Some(path) = next.files.get(&tile.camera) {
-                        let _ = tile.tx.send(Cmd::Preload { path: path.clone() });
+                        let _ = tile.tx.send(Cmd::Preload { path: path.clone(), reference: reference.clone() });
                     }
                 }
                 self.preloaded = Some(self.segment + 1);

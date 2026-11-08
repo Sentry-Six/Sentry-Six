@@ -36,6 +36,7 @@ mod share;
 mod shortcuts;
 mod spinner;
 mod support;
+mod sync;
 mod support_view;
 mod specular;
 mod telemetry;
