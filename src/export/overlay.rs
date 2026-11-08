@@ -101,6 +101,80 @@ impl Painter {
     }
 }
 
+/// The Sentry Six watermark: the logo (the lens and the name) in white,
+/// see-through, in a corner or where it was dragged.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Watermark {
+    pub corner: Corner,
+    pub free: Option<(f32, f32)>,
+    /// Its width as a share of the frame's (`Watermark::SHARE` unless
+    /// resized in the preview).
+    pub share: f32,
+}
+
+impl Watermark {
+    /// Its usual width as a share of the frame's.
+    pub const SHARE: f32 = 0.13;
+    /// How small and big it may be made, as shares, and in pixels.
+    pub const SHARES: (f32, f32) = (0.06, 0.30);
+    pub const PIXELS: (f32, f32) = (100.0, 900.0);
+    const OPACITY: f32 = 0.75;
+    /// The design: the lens 120 px square, 18 px, then "Made with" over
+    /// the name (384 x 56).
+    const DESIGN: (f32, f32) = (522.0, 120.0);
+
+    /// Its size in a frame `frame_w` wide.
+    pub fn size(&self, frame_w: u32) -> (u32, u32) {
+        let w = ((frame_w as f32 * self.share).round() as u32).clamp(Self::PIXELS.0 as u32, Self::PIXELS.1 as u32);
+        (w, (w as f32 * Self::DESIGN.1 / Self::DESIGN.0).round() as u32)
+    }
+
+    pub fn place(&self, frame_w: u32, frame_h: u32) -> (f32, f32) {
+        self.place_in(frame_w, frame_h, 0, frame_h)
+    }
+
+    /// Its place in a frame whose cameras are `area_h` high from `top`
+    /// (Tesla Mobile's bars are above and below them): a corner of the
+    /// cameras, or where it was dragged in the frame.
+    pub fn place_in(&self, frame_w: u32, frame_h: u32, top: u32, area_h: u32) -> (f32, f32) {
+        let (w, h) = self.size(frame_w);
+        match self.free {
+            Some(free) => free_place(free, w, h, frame_w, frame_h),
+            None => corner_in(self.corner, w, h, frame_w, top, area_h),
+        }
+    }
+
+    /// The watermark at its size, faded (colours premultiplied).
+    pub fn paint(&self, painter: &mut Painter, frame_w: u32) -> Picture {
+        use iced::widget::{column, image, row, text};
+        static PARTS: std::sync::OnceLock<(image::Handle, image::Handle)> = std::sync::OnceLock::new();
+        let (lens, name) = PARTS
+            .get_or_init(|| {
+                (
+                    image::Handle::from_bytes(include_bytes!("../../assets/watermark-lens.png").as_slice()),
+                    image::Handle::from_bytes(include_bytes!("../../assets/watermark-name.png").as_slice()),
+                )
+            })
+            .clone();
+        let (w, h) = self.size(frame_w);
+        let mark = row![
+            image(lens).width(120).height(120),
+            column![
+                text(crate::i18n::t("ui.export.madeWith")).size(26).font(crate::theme::semibold(crate::theme::INTER)).color(Color::WHITE),
+                image(name).width(384).height(56),
+            ]
+            .spacing(2),
+        ]
+        .spacing(18)
+        .align_y(iced::Alignment::Center);
+        let mut picture = painter.paint_scaled::<()>(mark.into(), Size::new(w, h), w as f32 / Self::DESIGN.0);
+        for c in picture.rgba.iter_mut() {
+            *c = (*c as f32 * Self::OPACITY).round() as u8;
+        }
+        picture
+    }
+}
+
 /// Cuts a picture's corners round (`radius` pixels), smoothly; its
 /// colours are premultiplied, so all four channels fade.
 pub fn round_corners(picture: &mut Picture, radius: f32) {
@@ -211,14 +285,19 @@ impl Timestamp {
         Size::new(760.min(frame_w.saturating_sub(2 * Corner::PAD as u32)).max(1), (Self::SIZE * 1.6) as u32)
     }
 
-    pub fn paint(&self, painter: &mut Painter, t: crate::library::LocalSecs, frame_w: u32) -> Picture {
+    /// The time on its dark band, `scale` times its size, filling what
+    /// it's given (the export, or the editor while it plays).
+    pub fn label<'a, M: 'a>(&self, t: crate::library::LocalSecs, scale: f32) -> iced::Element<'a, M> {
         use iced::widget::{container, text};
-        let size = self.size(frame_w);
-        let label = container(text(self.text(t)).size(Self::SIZE).font(crate::theme::INTER).color(Color::WHITE))
-            .padding(5)
+        let label = container(text(self.text(t)).size(Self::SIZE * scale).font(crate::theme::INTER).color(Color::WHITE))
+            .padding(5.0 * scale)
             .style(|_| container::Style { background: Some(Color::from_rgba(0.0, 0.0, 0.0, 0.4).into()), ..Default::default() });
-        let element = container(label).width(iced::Length::Fill).height(iced::Length::Fill).align_x(self.corner.horizontal()).center_y(iced::Length::Fill);
-        painter.paint::<()>(element.into(), size)
+        container(label).width(iced::Length::Fill).height(iced::Length::Fill).align_x(self.corner.horizontal()).center_y(iced::Length::Fill).into()
+    }
+
+    pub fn paint(&self, painter: &mut Painter, t: crate::library::LocalSecs, frame_w: u32) -> Picture {
+        let size = self.size(frame_w);
+        painter.paint::<()>(self.label(t, 1.0), size)
     }
 }
 
@@ -250,6 +329,12 @@ impl DashSize {
             DashSize::Large => "large",
             DashSize::XLarge => "xlarge",
         }
+    }
+
+    /// The size whose share is nearest `share` (for the settings key
+    /// Electron reads).
+    pub fn nearest(share: f64) -> Self {
+        DashSize::ALL.into_iter().min_by(|a, b| (a.share() - share).abs().total_cmp(&(b.share() - share).abs())).unwrap_or(DashSize::Medium)
     }
 
     pub fn from_key(k: &str) -> Option<Self> {
@@ -292,7 +377,9 @@ pub struct Dashboard {
     pub style: DashStyle,
     /// Tesla Mobile: a top corner puts the data bar on top.
     pub corner: Corner,
-    pub size: DashSize,
+    /// Its width as a share of 1920 px (Electron's sizes are 0.25 to
+    /// 0.55; resizing in the preview sets any share in `Dashboard::SHARES`).
+    pub share: f64,
     pub metric: bool,
     pub h24: bool,
     pub accel: crate::dashboard::AccelMode,
@@ -302,6 +389,12 @@ pub struct Dashboard {
     /// Dragged somewhere of its own: its top-left corner as a share of the
     /// frame's width and height, instead of `corner`.
     pub free: Option<(f32, f32)>,
+}
+
+/// A corner place in the cameras' part of a frame, `area_h` high from `top`.
+pub fn corner_in(corner: Corner, w: u32, h: u32, frame_w: u32, top: u32, area_h: u32) -> (f32, f32) {
+    let (x, y) = corner.place(w, h, frame_w, area_h);
+    (x, y + top as f32)
 }
 
 /// An overlay dragged to `free` (shares of the frame), kept inside it.
@@ -391,10 +484,14 @@ impl Dashboard {
     const GLASS_RADIUS: f32 = 24.0;
     const MARGIN: f32 = 40.0;
 
+    pub const SHARES: (f64, f64) = (0.15, 0.80);
+    /// Pixels of width per share.
+    pub const UNIT: f64 = 1920.0 * 1.15;
+
     /// Electron's size: 1920 x share x 1.15 wide (at most the frame less
     /// 80 px), 8.57 times as wide as high.
     pub fn size(&self, frame_w: u32) -> Size<u32> {
-        let w = ((1920.0 * self.size.share() * 1.15).round() as u32).min(frame_w.saturating_sub(80)).max(80);
+        let w = ((Self::UNIT * self.share).round() as u32).min(frame_w.saturating_sub(80)).max(80);
         Size::new(w, ((w as f64 / 8.57).round() as u32).max(20))
     }
 
@@ -417,7 +514,6 @@ impl Dashboard {
     }
 
     pub fn paint(&self, painter: &mut Painter, state: &DashState, frame_w: u32) -> Picture {
-        use iced::widget::container;
         let size = self.size(frame_w);
         // Magnified from the design size; a smaller one shrinks inside
         // instead, as on a small playback tile.
@@ -435,21 +531,32 @@ impl Dashboard {
             accel: self.accel,
             steering: state.steering,
         });
-        let glass = self.glass > 0.0;
-        let bar = container(dash).width(iced::Length::Fill).height(iced::Length::Fill).padding([0.0, 6.0]).style(move |theme| {
-            if glass {
-                // Playback's glass, without its drop shadow (it would be
-                // cut off at the picture's edge).
-                container::Style { shadow: iced::Shadow::default(), ..crate::theme::dashboard_glass(theme) }
-            } else {
-                container::Style {
-                    background: Some(Color::from_rgba8(0x28, 0x28, 0x30, 0.75).into()),
-                    border: iced::Border { color: Color::from_rgb8(0x40, 0x40, 0x40), width: 1.0, radius: (height * 0.35).into() },
-                    ..Default::default()
+        painter.paint_scaled::<()>(Self::bar(dash, self.glass > 0.0, height, 6.0), size, scale)
+    }
+
+    /// The compact dashboard on its glass (or Electron's dark bar), `height`
+    /// high, filling what it's given (the export, or the editor while it
+    /// plays).
+    pub fn bar<'a, M: 'a>(dash: Element<'a, M>, glass: bool, height: f32, pad: f32) -> Element<'a, M> {
+        use iced::widget::container;
+        container(dash)
+            .width(iced::Length::Fill)
+            .height(iced::Length::Fill)
+            .padding([0.0, pad])
+            .style(move |theme| {
+                if glass {
+                    // Playback's glass, without its drop shadow (it would be
+                    // cut off at the picture's edge).
+                    container::Style { shadow: iced::Shadow::default(), ..crate::theme::dashboard_glass(theme) }
+                } else {
+                    container::Style {
+                        background: Some(Color::from_rgba8(0x28, 0x28, 0x30, 0.75).into()),
+                        border: iced::Border { color: Color::from_rgb8(0x40, 0x40, 0x40), width: 1.0, radius: (height * 0.35).into() },
+                        ..Default::default()
+                    }
                 }
-            }
-        });
-        painter.paint_scaled::<()>(bar.into(), size, scale)
+            })
+            .into()
     }
 
     /// The glass under the dashboard, in the frame's pixels: its rounded
@@ -484,7 +591,8 @@ impl std::fmt::Debug for MapTiles {
 #[derive(Debug, Clone)]
 pub struct Minimap {
     pub corner: Corner,
-    pub size: DashSize,
+    /// The side as a share of the frame's shorter side.
+    pub share: f64,
     pub dark: bool,
     pub tiles: MapTiles,
     /// Electron's "Live Map": the map follows the car, as the playback
@@ -521,15 +629,22 @@ impl MapFit {
 impl Minimap {
     /// Where the map goes in a frame (its side from `side`).
     pub fn place(&self, side: u32, frame_w: u32, frame_h: u32) -> (f32, f32) {
+        self.place_in(side, frame_w, frame_h, 0, frame_h)
+    }
+
+    /// As Watermark::place_in.
+    pub fn place_in(&self, side: u32, frame_w: u32, frame_h: u32, top: u32, area_h: u32) -> (f32, f32) {
         match self.free {
             Some(free) => free_place(free, side, side, frame_w, frame_h),
-            None => self.corner.place(side, side, frame_w, frame_h),
+            None => corner_in(self.corner, side, side, frame_w, top, area_h),
         }
     }
 
+    pub const SHARES: (f64, f64) = (0.12, 0.60);
+
     /// The square's side: the share of the shorter side, even.
     pub fn side(&self, frame_w: u32, frame_h: u32) -> u32 {
-        ((self.size.share() * frame_w.min(frame_h) as f64) as u32 & !1).max(64)
+        ((self.share * frame_w.min(frame_h) as f64) as u32 & !1).max(64)
     }
 
     fn style(&self) -> crate::map::tiles::Style {
@@ -706,7 +821,7 @@ mod tests {
 
     #[test]
     fn dashboards_size_and_draw() {
-        let d = Dashboard { style: DashStyle::Compact, corner: Corner::BottomCenter, size: DashSize::Medium, metric: false, h24: false, accel: crate::dashboard::AccelMode::IconBar, glass: 0.0, free: None };
+        let d = Dashboard { style: DashStyle::Compact, corner: Corner::BottomCenter, share: DashSize::Medium.share(), metric: false, h24: false, accel: crate::dashboard::AccelMode::IconBar, glass: 0.0, free: None };
         // Electron's sizes: Medium 773 x 90 on a wide frame; never wider
         // than the frame less 80 px.
         assert_eq!(d.size(3258), Size::new(773, 90));

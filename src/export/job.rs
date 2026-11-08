@@ -53,12 +53,40 @@ impl Quality {
     }
 }
 
-/// A camera's place in the output, in whole tiles (all the same size).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// A camera's place in the output: its cell in the grid (all the same
+/// size), or a place and size of its own.
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Tile {
     pub camera: Camera,
     pub col: u32,
     pub row: u32,
+    /// Moved or resized in the editor: its left and top as shares of the
+    /// frame's width and height, and its width as a share of the frame's
+    /// width (its height keeps the camera's shape). The frame keeps the
+    /// grid's size.
+    pub free: Option<(f32, f32, f32)>,
+}
+
+impl Tile {
+    /// Where the camera is drawn (x, y, width, height in pixels), in a
+    /// frame `width` x `height` whose cameras' grid starts at `video_top`
+    /// with cells `cell`. Whole pixels, inside the frame.
+    pub fn rect(&self, cell: (u32, u32), width: u32, height: u32, video_top: u32) -> (f32, f32, f32, f32) {
+        let (cw, ch) = (cell.0 as f32, cell.1 as f32);
+        let Some((x, y, w)) = self.free else {
+            return (self.col as f32 * cw, video_top as f32 + self.row as f32 * ch, cw, ch);
+        };
+        let (fw, fh) = (width as f32, height as f32);
+        let mut tw = (w * fw).round().clamp(16.0, fw);
+        let mut th = (tw * ch / cw).round();
+        if th > fh {
+            th = fh;
+            tw = (th * cw / ch).round().min(fw);
+        }
+        let tx = (x * fw).round().clamp(0.0, fw - tw);
+        let ty = (y * fh).round().clamp(0.0, fh - th);
+        (tx, ty, tw, th)
+    }
 }
 
 /// Electron's plain grid: 1 → 1×1, 2 → 2×1, 3 → 3×1, 4 → 2×2, 5–6 → 3×2,
@@ -69,7 +97,7 @@ pub fn grid(cameras: &[Camera]) -> Vec<Tile> {
         4 => 2,
         _ => 3,
     } as u32;
-    cameras.iter().enumerate().map(|(i, &camera)| Tile { camera, col: i as u32 % cols, row: i as u32 / cols }).collect()
+    cameras.iter().enumerate().map(|(i, &camera)| Tile { camera, col: i as u32 % cols, row: i as u32 / cols, free: None }).collect()
 }
 
 /// A point in the collection: seconds into one of its minutes.
@@ -101,6 +129,8 @@ pub struct Request {
     pub dashboard: Option<super::overlay::Dashboard>,
     /// The GPS minimap.
     pub minimap: Option<super::overlay::Minimap>,
+    /// The Sentry Six watermark.
+    pub watermark: Option<super::overlay::Watermark>,
     /// Blur zones (Privacy); zones on cameras not in the export are ignored.
     pub blur_zones: Vec<super::blur::BlurZone>,
     pub output: PathBuf,
@@ -172,9 +202,14 @@ fn track_of(path: &Path) -> Option<crate::mp4::VideoTrack> {
     std::fs::File::open(path).ok().and_then(|f| crate::mp4::read_video_track(&f).ok())
 }
 
+/// A clip's length: as playback remembers it, or read from its index.
+fn length_of(path: &Path) -> Option<f64> {
+    crate::player::remembered_length(path).or_else(|| track_of(path).map(|t| t.duration)).filter(|d| *d > 0.0)
+}
+
 /// Each minute's length, from its front clip (or its first one), as
-/// playback counts it. The index reads run a few at a time: on a network
-/// share each one waits on the round trip.
+/// playback counts it: remembered, or read a few at a time (on a network
+/// share each read waits on the round trip).
 fn lengths(segments: &[Segment]) -> Vec<f64> {
     let mut out = vec![60.0; segments.len()];
     std::thread::scope(|scope| {
@@ -183,7 +218,7 @@ fn lengths(segments: &[Segment]) -> Vec<f64> {
                 .iter()
                 .map(|s| {
                     let path = s.files.get(&Camera::Front).or_else(|| s.files.values().next()).cloned();
-                    scope.spawn(move || path.and_then(|p| track_of(&p)).map(|t| t.duration).filter(|d| *d > 0.0))
+                    scope.spawn(move || path.and_then(|p| length_of(&p)))
                 })
                 .collect();
             for (h, o) in handles.into_iter().zip(outs.iter_mut()) {
@@ -269,6 +304,13 @@ pub fn plan(req: &Request) -> Result<Plan> {
     Ok(Plan { cell, width, height, codec, bitrate: rate, video_top, date_bar, data_bar, frames })
 }
 
+impl Plan {
+    /// The cameras' part of the frame: its height (less Tesla Mobile's bars).
+    pub fn area_height(&self) -> u32 {
+        self.height - self.date_bar - self.data_bar
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub enum Progress {
     /// Frames written out of the total.
@@ -327,6 +369,27 @@ pub fn run(req: &Request, cancel: &Arc<AtomicBool>, mut progress: impl FnMut(Pro
     }
 }
 
+/// A clip's GPS points, kept for the rest of the session (the preview
+/// draws the map again after every change; reading a minute's points
+/// over a network share takes a while).
+fn clip_route(path: &Path) -> Arc<Vec<crate::map::RoutePoint>> {
+    use std::collections::HashMap;
+    use std::sync::{Mutex, OnceLock};
+    static ROUTES: OnceLock<Mutex<HashMap<PathBuf, Arc<Vec<crate::map::RoutePoint>>>>> = OnceLock::new();
+    let routes = ROUTES.get_or_init(Default::default);
+    if let Some(r) = routes.lock().unwrap_or_else(|e| e.into_inner()).get(path) {
+        return r.clone();
+    }
+    let r = Arc::new(crate::map::clip_route(path));
+    let mut routes = routes.lock().unwrap_or_else(|e| e.into_inner());
+    // A few days of driving at most.
+    if routes.len() >= 5000 {
+        routes.clear();
+    }
+    routes.insert(path.to_path_buf(), r.clone());
+    r
+}
+
 /// The range's route for the minimap: each minute's GPS points (every
 /// sixth frame of its front clip), kept within the range. Read a few
 /// minutes at a time.
@@ -350,10 +413,10 @@ fn route_points(req: &Request, plan: &Plan) -> Vec<crate::map::RoutePoint> {
                     let path = seg.files.get(&Camera::Front).or_else(|| seg.files.values().next()).cloned();
                     scope.spawn(move || {
                         let Some(path) = path else { return Vec::new() };
-                        let length = track_of(&path).map(|t| t.duration).unwrap_or(60.0).max(0.001);
-                        let points = crate::map::clip_route(&path);
+                        let length = length_of(&path).unwrap_or(60.0).max(0.001);
+                        let points = clip_route(&path);
                         let n = points.len().max(2) - 1;
-                        points.into_iter().enumerate().filter(|(i, _)| (from - 0.5..=to + 0.5).contains(&(*i as f64 / n as f64 * length))).map(|(_, p)| p).collect()
+                        points.iter().copied().enumerate().filter(|(i, _)| (from - 0.5..=to + 0.5).contains(&(*i as f64 / n as f64 * length))).map(|(_, p)| p).collect()
                     })
                 })
                 .collect();
@@ -375,6 +438,37 @@ enum Sink {
     Capture,
 }
 
+/// What the editor can move: drawn on their own in a preview, so they
+/// follow the pointer over the frame without drawing it again.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PieceKind {
+    Camera(Camera),
+    Dashboard,
+    Map,
+    Watermark,
+}
+
+/// A movable piece of a preview: where it is in the export (its pixels),
+/// and its picture at the preview's scale (RGBA, not premultiplied).
+#[derive(Debug)]
+pub struct Piece {
+    pub kind: PieceKind,
+    pub at: (f32, f32),
+    pub shown: (u32, u32),
+    pub rgba: Vec<u8>,
+}
+
+/// A preview frame being drawn: frame `k`, with and without the movable
+/// pieces (BGRA), and the pieces.
+struct Capture {
+    k: usize,
+    /// Also the frame without the pieces, and the pieces (for dragging).
+    with_pieces: bool,
+    full: Vec<u8>,
+    base: Vec<u8>,
+    pieces: Vec<(PieceKind, super::overlay::Picture, f32, f32)>,
+}
+
 /// One frame of an export as it will look, for the dialog's preview.
 #[derive(Debug)]
 pub struct Preview {
@@ -384,18 +478,40 @@ pub struct Preview {
     /// The frame, scaled down to the size asked for (RGBA).
     pub shown: (u32, u32),
     pub rgba: Vec<u8>,
+    /// The frame without the movable pieces, and the pieces.
+    pub base: Vec<u8>,
+    pub pieces: Vec<Piece>,
 }
 
-/// Draws the export's frame nearest `at` through the same decoding,
-/// compositing, overlays and blur as the export, without encoding, and
-/// scales it to at most `max_width` wide.
-pub fn preview(req: &Request, at: Position, max_width: u32) -> Result<Preview> {
-    let plan = plan(req)?;
-    let k = plan.frames.iter().position(|&(s, t)| s > at.segment || (s == at.segment && t >= at.secs - 0.5 / FPS as f64)).unwrap_or(plan.frames.len() - 1);
-    let cancel = Arc::new(AtomicBool::new(false));
-    let mut bgra = Vec::new();
-    encode_all(req, &plan, &cancel, &mut |_| {}, &mut Vec::new(), Some((k, &mut bgra)))?;
-    let (w, h) = (plan.width, plan.height);
+/// The part of a BGRA frame `width` wide at `(x, y, w, h)`, as an opaque
+/// picture (RGBA).
+fn crop_bgra(frame: &[u8], width: u32, (x, y, w, h): (u32, u32, u32, u32)) -> super::overlay::Picture {
+    let mut rgba = Vec::with_capacity(w as usize * h as usize * 4);
+    for row in y..y + h {
+        let start = (row as usize * width as usize + x as usize) * 4;
+        let Some(line) = frame.get(start..start + w as usize * 4) else { break };
+        for px in line.chunks_exact(4) {
+            rgba.extend_from_slice(&[px[2], px[1], px[0], 255]);
+        }
+    }
+    let h = (rgba.len() / 4 / w.max(1) as usize) as u32;
+    super::overlay::Picture { width: w, height: h, rgba }
+}
+
+/// Paints `(x, y, w, h)` of a BGRA frame `width` wide black.
+fn clear_bgra(frame: &mut [u8], width: u32, (x, y, w, h): (u32, u32, u32, u32)) {
+    for row in y..y + h {
+        let start = (row as usize * width as usize + x as usize) * 4;
+        if let Some(line) = frame.get_mut(start..start + w as usize * 4) {
+            for px in line.chunks_exact_mut(4) {
+                px.copy_from_slice(&[0, 0, 0, 255]);
+            }
+        }
+    }
+}
+
+/// BGRA at the export's size to RGBA at `shown`.
+fn shrink(mut bgra: Vec<u8>, (w, h): (u32, u32), shown: (u32, u32)) -> Result<Vec<u8>> {
     if bgra.len() < w as usize * h as usize * 4 {
         bail!("the preview frame came back short");
     }
@@ -404,10 +520,44 @@ pub fn preview(req: &Request, at: Position, max_width: u32) -> Result<Preview> {
         px.swap(0, 2);
     }
     let full = image::RgbaImage::from_raw(w, h, bgra).ok_or_else(|| anyhow::anyhow!("bad preview frame"))?;
+    Ok(if shown == (w, h) { full.into_raw() } else { image::imageops::resize(&full, shown.0, shown.1, image::imageops::FilterType::Triangle).into_raw() })
+}
+
+/// Draws the export's frame nearest `at` through the same decoding,
+/// compositing, overlays and blur as the export, without encoding, and
+/// scales it to at most `max_width` wide; `with_pieces`: with what
+/// dragging needs too.
+pub fn preview(req: &Request, at: Position, max_width: u32, with_pieces: bool) -> Result<Preview> {
+    let plan = plan(req)?;
+    let k = plan.frames.iter().position(|&(s, t)| s > at.segment || (s == at.segment && t >= at.secs - 0.5 / FPS as f64)).unwrap_or(plan.frames.len() - 1);
+    let cancel = Arc::new(AtomicBool::new(false));
+    let mut capture = Capture { k, with_pieces, full: Vec::new(), base: Vec::new(), pieces: Vec::new() };
+    encode_all(req, &plan, &cancel, &mut |_| {}, &mut Vec::new(), Some(&mut capture))?;
+    let (w, h) = (plan.width, plan.height);
     let scale = (max_width as f64 / w as f64).min(1.0);
-    let (sw, sh) = (((w as f64 * scale).round() as u32).max(1), ((h as f64 * scale).round() as u32).max(1));
-    let shown = if (sw, sh) == (w, h) { full } else { image::imageops::resize(&full, sw, sh, image::imageops::FilterType::Triangle) };
-    Ok(Preview { width: w, height: h, shown: (sw, sh), rgba: shown.into_raw() })
+    let shown = (((w as f64 * scale).round() as u32).max(1), ((h as f64 * scale).round() as u32).max(1));
+    let rgba = shrink(std::mem::take(&mut capture.full), (w, h), shown)?;
+    let base = shrink(std::mem::take(&mut capture.base), (w, h), shown).unwrap_or_default();
+    // Each piece at the preview's scale, its colours no longer premultiplied.
+    let pieces = capture
+        .pieces
+        .into_iter()
+        .filter_map(|(kind, pic, x, y)| {
+            let img = image::RgbaImage::from_raw(pic.width, pic.height, pic.rgba)?;
+            let size = (((pic.width as f64 * scale).round() as u32).max(1), ((pic.height as f64 * scale).round() as u32).max(1));
+            let mut img = image::imageops::resize(&img, size.0, size.1, image::imageops::FilterType::Triangle);
+            for px in img.pixels_mut() {
+                let a = px[3] as f32 / 255.0;
+                if a > 0.0 {
+                    for c in 0..3 {
+                        px[c] = (px[c] as f32 / a).min(255.0) as u8;
+                    }
+                }
+            }
+            Some(Piece { kind, at: (x, y), shown: size, rgba: img.into_raw() })
+        })
+        .collect();
+    Ok(Preview { width: w, height: h, shown, rgba, base, pieces })
 }
 
 /// True when finished, false when cancelled; `warnings` gets what was
@@ -420,7 +570,7 @@ fn encode_all(
     // dyn: one copy of this long function for exports and previews.
     progress: &mut dyn FnMut(Progress),
     warnings: &mut Vec<&'static str>,
-    mut capture: Option<(usize, &mut Vec<u8>)>,
+    mut capture: Option<&mut Capture>,
 ) -> Result<bool> {
     use anyhow::anyhow;
     use std::sync::atomic::Ordering;
@@ -463,7 +613,7 @@ fn encode_all(
 
     // A decoding thread per camera, a few frames ahead of the encoder.
     let frames = Arc::new(match &capture {
-        Some((k, _)) => vec![plan.frames[*k]],
+        Some(c) => vec![plan.frames[c.k]],
         None => plan.frames.clone(),
     });
     let segments = Arc::new(req.segments.clone());
@@ -491,7 +641,7 @@ fn encode_all(
         })
         .collect::<std::io::Result<_>>()?;
 
-    let (cw, ch) = (plan.cell.0 as f32, plan.cell.1 as f32);
+    let cw = plan.cell.0 as f32;
     let total = frames.len();
 
     // A dashboard with no telemetry anywhere in the range is left out, as
@@ -518,8 +668,11 @@ fn encode_all(
         .map(|tile| {
             let zones: Vec<&super::blur::BlurZone> = req.blur_zones.iter().filter(|z| z.camera == tile.camera && z.points.len() >= 3).collect();
             let privacy = (!zones.is_empty()).then(|| super::blur::mask(&zones, plan.cell.0, plan.cell.1));
-            let cell = (tile.col as f32 * cw, plan.video_top as f32 + tile.row as f32 * ch);
-            let glass = frost.and_then(|(rect, sigma)| super::blur::rounded_mask(rect, cell, plan.cell.0, plan.cell.1).map(|m| (m, sigma)));
+            // The glass in the camera's own pixels (it may be drawn bigger
+            // or smaller than a cell).
+            let (tx, ty, tw, _) = tile.rect(plan.cell, plan.width, plan.height, plan.video_top);
+            let k = cw / tw.max(1.0);
+            let glass = frost.and_then(|([x, y, w, h, r], sigma)| super::blur::rounded_mask([(x - tx) * k, (y - ty) * k, w * k, h * k, r * k], (0.0, 0.0), plan.cell.0, plan.cell.1).map(|m| (m, sigma * k)));
             if privacy.is_none() && glass.is_none() {
                 return None;
             }
@@ -527,15 +680,43 @@ fn encode_all(
             Some(compositor.blur_mask(plan.cell.0, plan.cell.1, privacy.as_deref().unwrap_or(&[]), &glass, sigma))
         })
         .collect();
+    // A preview's frame without the movable pieces has no glass either.
+    let plain_masks: Vec<Option<super::compose::BlurMask>> = if capture.is_some() && frost.is_some() {
+        req.tiles
+            .iter()
+            .map(|tile| {
+                let zones: Vec<&super::blur::BlurZone> = req.blur_zones.iter().filter(|z| z.camera == tile.camera && z.points.len() >= 3).collect();
+                (!zones.is_empty()).then(|| compositor.blur_mask(plan.cell.0, plan.cell.1, &super::blur::mask(&zones, plan.cell.0, plan.cell.1), &[], 0.0))
+            })
+            .collect()
+    } else {
+        Vec::new()
+    };
     if !req.blur_zones.is_empty() || frost.is_some() {
         log::info!("export: blur zones or glass on {} camera(s)", masks.iter().filter(|m| m.is_some()).count());
     }
     // Overlays: drawn again only when what they show changes.
-    let wants_overlays = req.timestamp.is_some() || dashboard.is_some() || req.minimap.is_some();
+    let wants_overlays = req.timestamp.is_some() || dashboard.is_some() || req.minimap.is_some() || req.watermark.is_some();
     let mut painter = if wants_overlays { super::overlay::Painter::new() } else { None };
     if wants_overlays && painter.is_none() {
         log::warn!("export: no software renderer for the overlays; exporting without them");
     }
+    // The watermark: drawn once, the same on every frame.
+    let mut wm_picture = None;
+    let watermark = match (req.watermark, painter.as_mut()) {
+        (Some(wm), Some(p)) => {
+            let (x, y) = wm.place_in(plan.width, plan.height, plan.video_top, plan.area_height());
+            let picture = wm.paint(p, plan.width);
+            let overlay = compositor.overlay(&picture, None);
+            if capture.is_some() {
+                wm_picture = Some(picture);
+            }
+            Some((overlay, x, y))
+        }
+        _ => None,
+    };
+    let mut dash_picture = None;
+    let mut map_picture = None;
     let mut stamp: Option<(i64, super::compose::Overlay)> = None;
     let mut dash: Option<(String, super::compose::Overlay)> = None;
     let mut date_bar: Option<(String, super::compose::Overlay)> = None;
@@ -567,7 +748,7 @@ fn encode_all(
             match mm.fit(&route, side) {
                 Some(fit) if mm.live => {
                     // Drawn frame by frame as the car moves (below).
-                    let (x, y) = mm.place(side, plan.width, plan.height);
+                    let (x, y) = mm.place_in(side, plan.width, plan.height, plan.video_top, plan.area_height());
                     log::info!("export: live minimap {side} px, {} route points", route.len());
                     let blank = super::overlay::Picture { width: side, height: side, rgba: vec![0; side as usize * side as usize * 4] };
                     Some((mm, fit, compositor.overlay(&blank, None), x, y, route))
@@ -577,7 +758,7 @@ fn encode_all(
                         log::warn!("export: some map tiles didn't arrive in time; the minimap shows what there is");
                     }
                     let picture = mm.paint_map(p, &route, &fit);
-                    let (x, y) = mm.place(side, plan.width, plan.height);
+                    let (x, y) = mm.place_in(side, plan.width, plan.height, plan.video_top, plan.area_height());
                     log::info!("export: minimap {side} px at zoom {:.1}, {} route points", fit.zoom, route.len());
                     Some((mm, fit, compositor.overlay(&picture, None), x, y, route))
                 }
@@ -603,12 +784,17 @@ fn encode_all(
         }
         let mut pictures = Vec::with_capacity(req.tiles.len());
         let mut blurs = Vec::new();
-        for ((tile, rx), mask) in req.tiles.iter().zip(&receivers).zip(&masks) {
+        let mut plain_blurs = Vec::new();
+        for (i, ((tile, rx), mask)) in req.tiles.iter().zip(&receivers).zip(&masks).enumerate() {
             let picture = rx.recv().map_err(|_| anyhow!("a camera's decoding stopped"))?;
             if let Some(p) = picture {
-                let place = Placement { x: tile.col as f32 * cw, y: plan.video_top as f32 + tile.row as f32 * ch, width: cw, height: ch, mirror: req.mirror && tile.camera.mirrored() };
+                let (x, y, width, height) = tile.rect(plan.cell, plan.width, plan.height, plan.video_top);
+                let place = Placement { x, y, width, height, mirror: req.mirror && tile.camera.mirrored() };
                 if let Some(m) = mask {
                     blurs.push((pictures.len(), m));
+                }
+                if let Some(Some(m)) = plain_masks.get(i) {
+                    plain_blurs.push((pictures.len(), m));
                 }
                 pictures.push((p, place));
             }
@@ -650,6 +836,9 @@ fn encode_all(
                         super::overlay::DashStyle::Compact => d.paint(p, &state, plan.width),
                         super::overlay::DashStyle::TeslaMobile => super::tesla_mobile::paint_data(p, plan.width, plan.data_bar, &state, d.metric, !d.bar_on_top()),
                     };
+                    if capture.is_some() && d.style == super::overlay::DashStyle::Compact {
+                        dash_picture = Some(picture.clone());
+                    }
                     let old = dash.take().map(|(_, o)| o);
                     dash = Some((signature, compositor.overlay(&picture, old)));
                 }
@@ -664,9 +853,16 @@ fn encode_all(
             }
         }
         let mut overlays = Vec::new();
+        // Which overlays the editor moves (left out of a preview's base).
+        let mut kinds: Vec<Option<(PieceKind, f32, f32)>> = Vec::new();
+        if let Some((o, x, y)) = watermark.as_ref() {
+            overlays.push((o, *x, *y));
+            kinds.push(Some((PieceKind::Watermark, *x, *y)));
+        }
         if let (Some(ts), Some((_, o))) = (req.timestamp, stamp.as_ref()) {
-            let (x, y) = ts.corner.place(o.width, o.height, plan.width, plan.height);
+            let (x, y) = super::overlay::corner_in(ts.corner, o.width, o.height, plan.width, plan.video_top, plan.area_height());
             overlays.push((o, x, y));
+            kinds.push(None);
         }
         if let (Some(d), Some((_, o))) = (dashboard, dash.as_ref()) {
             let (x, y) = match d.style {
@@ -674,9 +870,11 @@ fn encode_all(
                 super::overlay::DashStyle::TeslaMobile => (0.0, if d.bar_on_top() { plan.date_bar } else { plan.height - plan.data_bar } as f32),
             };
             overlays.push((o, x, y));
+            kinds.push((d.style == super::overlay::DashStyle::Compact).then_some((PieceKind::Dashboard, x, y)));
         }
         if let Some((_, o)) = date_bar.as_ref() {
             overlays.push((o, 0.0, 0.0));
+            kinds.push(None);
         }
         // The live map: drawn again when the car moves half a pixel or turns.
         if let (Some((mm, _, map_overlay, _, _, route)), Some((lat, lon, heading)), Some(p)) = (minimap.as_mut(), car, painter.as_mut()) {
@@ -701,6 +899,9 @@ fn encode_all(
                         }
                     }
                     let picture = mm.paint_map_with(p, route, &fit, Some((lat, lon, heading)), side);
+                    if capture.is_some() {
+                        map_picture = Some(picture.clone());
+                    }
                     let old = std::mem::replace(map_overlay, compositor.overlay(&picture, None));
                     drop(old);
                 }
@@ -708,6 +909,7 @@ fn encode_all(
         }
         if let Some((mm, fit, map_overlay, mx, my, _)) = minimap.as_ref() {
             overlays.push((map_overlay, *mx, *my));
+            kinds.push(Some((PieceKind::Map, *mx, *my)));
             if let (Some((lat, lon, heading)), Some(p)) = (car.filter(|_| !mm.live), painter.as_mut()) {
                 let a = mm.arrow_side(fit);
                 let deg = heading.round() as i32;
@@ -722,6 +924,7 @@ fn encode_all(
                 if px >= half && py >= half && px <= fit.side as f32 - half && py <= fit.side as f32 - half {
                     if let Some((_, o)) = arrow.as_ref() {
                         overlays.push((o, mx + px - half, my + py - half));
+                        kinds.push(Some((PieceKind::Map, f32::NAN, f32::NAN)));
                     }
                 }
             }
@@ -740,8 +943,35 @@ fn encode_all(
                 encoder.take()
             }
             Sink::Capture => {
-                if let Some((_, bytes)) = capture.as_mut() {
-                    compositor.draw_to_bytes(plan.width, plan.height, &pictures, &blurs, &overlays, bytes)?;
+                if let Some(c) = capture.as_mut() {
+                    compositor.draw_to_bytes(plan.width, plan.height, &pictures, &blurs, &overlays, &mut c.full)?;
+                }
+                if let Some(c) = capture.as_mut().filter(|c| c.with_pieces) {
+                    // Without the movable pieces (or the dashboard's glass).
+                    let base: Vec<_> = overlays.iter().zip(&kinds).filter(|(_, k)| k.is_none()).map(|(o, _)| *o).collect();
+                    let base_blurs = if plain_masks.is_empty() { &blurs } else { &plain_blurs };
+                    compositor.draw_to_bytes(plan.width, plan.height, &pictures, base_blurs, &base, &mut c.base)?;
+                    // Each camera as a piece of its own (first, so the
+                    // overlays sit over them), and the base without them.
+                    let rects: Vec<_> = req.tiles.iter().map(|t| (t.camera, t.rect(plan.cell, plan.width, plan.height, plan.video_top))).collect();
+                    for (camera, (x, y, w, h)) in &rects {
+                        let picture = crop_bgra(&c.base, plan.width, (*x as u32, *y as u32, *w as u32, *h as u32));
+                        c.pieces.push((PieceKind::Camera(*camera), picture, *x, *y));
+                    }
+                    for (_, (x, y, w, h)) in &rects {
+                        clear_bgra(&mut c.base, plan.width, (*x as u32, *y as u32, *w as u32, *h as u32));
+                    }
+                    for (kind, x, y) in kinds.iter().flatten() {
+                        let picture = match kind {
+                            PieceKind::Dashboard => dash_picture.take(),
+                            PieceKind::Map if x.is_finite() => map_picture.take(),
+                            PieceKind::Watermark => wm_picture.take(),
+                            _ => None,
+                        };
+                        if let Some(p) = picture {
+                            c.pieces.push((*kind, p, *x, *y));
+                        }
+                    }
                 }
                 Vec::new()
             }
@@ -855,6 +1085,7 @@ mod tests {
             timestamp: None,
             dashboard: None,
             minimap: None,
+            watermark: None,
             blur_zones: Vec::new(),
             output: out.clone(),
         };
@@ -905,7 +1136,7 @@ mod tests {
         let segments = vec![Segment { start: 0, files }];
         let length = track_of(&dir.join("cam0.mp4")).unwrap().duration;
         // Playback's layout: pillars and front on top, repeaters and back below.
-        let tiles: Vec<Tile> = crate::library::GRID.iter().enumerate().map(|(i, &camera)| Tile { camera, col: i as u32 % 3, row: i as u32 / 3 }).collect();
+        let tiles: Vec<Tile> = crate::library::GRID.iter().enumerate().map(|(i, &camera)| Tile { camera, col: i as u32 % 3, row: i as u32 / 3, free: None }).collect();
         let out = std::env::temp_dir().join(format!("sentry-studio-jobspeed-{}.mp4", std::process::id()));
         for (quality, speed, fast) in [(Quality::High, 1.0, false), (Quality::High, 1.0, true), (Quality::Max, 1.0, true), (Quality::Medium, 1.0, true), (Quality::High, 8.0, true)] {
             let req = Request {
@@ -921,6 +1152,7 @@ mod tests {
                 timestamp: Some(super::super::overlay::Timestamp { corner: super::super::overlay::Corner::BottomCenter, date_format: crate::settings::DateFormat::Ymd, h24: false }),
                 dashboard: None,
                 minimap: None,
+            watermark: None,
                 blur_zones: Vec::new(),
                 output: out.clone(),
             };
@@ -965,7 +1197,7 @@ mod tests {
             dashboard: Some(super::super::overlay::Dashboard {
                 style: super::super::overlay::DashStyle::Compact,
                 corner: super::super::overlay::Corner::BottomCenter,
-                size: super::super::overlay::DashSize::Medium,
+                share: super::super::overlay::DashSize::Medium.share(),
                 metric: false,
                 h24: false,
                 accel: crate::dashboard::AccelMode::IconBar,
@@ -973,6 +1205,7 @@ mod tests {
                 free: None,
             }),
             minimap: None,
+            watermark: None,
             blur_zones: Vec::new(),
             output: out.clone(),
         };
@@ -1019,12 +1252,13 @@ mod tests {
             dashboard: None,
             minimap: Some(super::super::overlay::Minimap {
                 corner: super::super::overlay::Corner::TopRight,
-                size: super::super::overlay::DashSize::XLarge,
+                share: super::super::overlay::DashSize::XLarge.share(),
                 dark: false,
                 tiles: super::super::overlay::MapTiles(crate::map::tiles::Tiles::new(Some(dir.join("map")))),
                 live: std::env::var("SENTRY_DUMP_LIVE").is_ok(),
                 free: None,
             }),
+            watermark: None,
             blur_zones: Vec::new(),
             output: out.clone(),
         };

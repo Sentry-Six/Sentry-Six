@@ -9,7 +9,7 @@ pub use share_ui::{ShareMsg, ShareUi};
 
 use crate::export::encode::{Format, Support};
 use crate::export::job::{self, Position, Quality, Tile};
-use crate::export::overlay::{Corner, DashSize, DashStyle, Dashboard, MapTiles, Minimap, Timestamp};
+use crate::export::overlay::{Corner, DashSize, DashStyle, Dashboard, MapTiles, Minimap, Timestamp, Watermark};
 
 /// The minimap's corners, as earlier versions offered them.
 const MAP_CORNERS: [Corner; 4] = [Corner::TopRight, Corner::TopLeft, Corner::BottomRight, Corner::BottomLeft];
@@ -29,17 +29,37 @@ const CHECK_SVG: &str = r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 
 
 /// Time-lapse speeds, as earlier versions offered them (8x by default).
 pub const SPEEDS: [f64; 7] = [0.5, 2.0, 4.0, 8.0, 16.0, 32.0, 64.0];
+/// Chevrons for the editor's folding cards.
+const CHEVRON_DOWN_SVG: &str = r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>"#;
+const CHEVRON_UP_SVG: &str = r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 15 12 9 18 15"/></svg>"#;
+
 /// A play triangle (the finished screen's play button).
+/// The editor's video tiles use the player's slots plus this, so they
+/// don't share the playback grid's (each slot has one place and picture).
+const EDITOR_SLOTS: usize = 100;
 const PLAY_SVG: &str = r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="white"><path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.5-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z"/></svg>"#;
 const POLL: Duration = Duration::from_millis(250);
 /// The preview's width in pixels (twice the dialog's, for sharp screens).
 const PREVIEW_WIDTH: u32 = 1440;
 
+/// The editor's sections, which fold.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Fold {
+    Cameras = 1,
+    Quality = 2,
+    Overlays = 4,
+    Privacy = 8,
+    TimeLapse = 16,
+    Share = 32,
+}
+
 /// What's being dragged in the preview.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Dragged {
+    Camera(Camera),
     Dashboard,
     Map,
+    Watermark,
 }
 
 /// Where it was dropped: near one of its places (snapped there), or
@@ -56,6 +76,35 @@ pub struct Shown {
     pub handle: iced::widget::image::Handle,
     pub size: (u32, u32),
     pub full: (u32, u32),
+    /// The frame without the movable pieces, and the pieces: shown while
+    /// one is dragged, so it moves without the preview being drawn again.
+    pub base: Option<iced::widget::image::Handle>,
+    pub pieces: Vec<(Dragged, iced::widget::image::Handle)>,
+}
+
+impl Shown {
+    fn from_preview(p: &job::Preview) -> Shown {
+        let handle = |w: u32, h: u32, rgba: &[u8]| iced::widget::image::Handle::from_rgba(w, h, rgba.to_vec());
+        Shown {
+            handle: handle(p.shown.0, p.shown.1, &p.rgba),
+            size: p.shown,
+            full: (p.width, p.height),
+            base: (!p.base.is_empty()).then(|| handle(p.shown.0, p.shown.1, &p.base)),
+            pieces: p
+                .pieces
+                .iter()
+                .map(|piece| {
+                    let what = match piece.kind {
+                        job::PieceKind::Camera(c) => Dragged::Camera(c),
+                        job::PieceKind::Dashboard => Dragged::Dashboard,
+                        job::PieceKind::Map => Dragged::Map,
+                        job::PieceKind::Watermark => Dragged::Watermark,
+                    };
+                    (what, handle(piece.shown.0, piece.shown.1, &piece.rgba))
+                })
+                .collect(),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -74,7 +123,6 @@ pub enum ExportMsg {
     Corner(usize),
     Dashboard(bool),
     DashCorner(usize),
-    DashSize(usize),
     DashStyle(usize),
     Bar(usize),
     ZoneCameraMenu,
@@ -91,16 +139,32 @@ pub enum ExportMsg {
     DismissRestore,
     Minimap(bool),
     MapCorner(usize),
-    MapSize(usize),
+    Watermark(bool),
+    WatermarkCorner(usize),
     Format(Format),
     Formats([Support; 3]),
     Preview(Arc<Result<job::Preview, String>>),
     /// The camera's picture for the zone editor, at the preview's moment.
     ZoneSnapshot(Camera, Option<Box<crate::blur_editor::Snapshot>>),
-    /// The dashboard or map dragged in the preview.
+    /// The dashboard or map dragged in the preview, and let go.
     Drag(Dragged, DragTo),
+    /// Resized in the preview: its new share, and where it is now.
+    Resize(Dragged, f64, DragTo),
+    /// The cameras back in their grid.
+    ResetLayout,
+    /// The editor's playhead moved by this many seconds (the skip buttons).
+    Skip(f64),
+    /// Nothing (the live map in the editor isn't panned or zoomed).
+    Nothing,
+    DragDone,
     /// Sharing (see share_ui).
     Share(share_ui::ShareMsg),
+    /// The editor: a section folded or opened, the timeline moved (and
+    /// let go), the preview played or paused.
+    Fold(Fold),
+    Seek(f64),
+    SeekDone,
+    PlayPreview,
     Start,
     Picked(Option<PathBuf>),
     Poll(u64),
@@ -119,7 +183,7 @@ pub enum State {
     Running { id: u64, started: Instant, output: PathBuf },
     /// Finished: the file, its size, the video's length and format, and
     /// how long it took.
-    Done { output: PathBuf, bytes: u64, seconds: f64, length: f64, format: Format, quality: Quality },
+    Done { output: PathBuf, bytes: u64, length: f64, format: Format, quality: Quality },
     Failed(String),
 }
 
@@ -155,19 +219,42 @@ pub struct Export {
     pub corner: Corner,
     pub dashboard: bool,
     pub dash_corner: Corner,
-    pub dash_size: DashSize,
+    /// The dashboard's size as a share (see Dashboard::share).
+    pub dash_share: f64,
     pub dash_style: DashStyle,
     /// Tesla Mobile's data bar on top.
     pub bar_top: bool,
     pub minimap: bool,
     pub map_corner: Corner,
-    pub map_size: DashSize,
+    /// The map's side as a share of the frame's shorter side.
+    pub map_share: f64,
+    /// The watermark's width as a share of the frame's.
+    pub wm_share: f32,
     /// The dashboard (compact) and map dragged to a place of their own in
     /// the preview: top-left as shares of the frame.
     pub dash_free: Option<(f32, f32)>,
     pub map_free: Option<(f32, f32)>,
+    /// Cameras moved or resized in the preview (see job::Tile::free), the
+    /// last moved last (drawn over the others). Kept while the app runs.
+    pub cam_free: Vec<(Camera, (f32, f32, f32))>,
+    /// The Sentry Six watermark: on, its corner, or dragged somewhere.
+    pub watermark: bool,
+    pub wm_corner: Corner,
+    pub wm_free: Option<(f32, f32)>,
     /// Sharing the finished export, and the list of shared clips.
     pub share: ShareUi,
+    /// The editor's folded sections (bits of Fold).
+    pub folded: u8,
+    /// Where in the range the preview shows (playback seconds), and
+    /// whether it's playing (the preview drawn again and again, moving on
+    /// by the time each took).
+    pub at: Option<f64>,
+    pub playing: bool,
+    pub preview_started: Option<Instant>,
+    /// A piece is being dragged (the frame isn't drawn again meanwhile), or
+    /// was let go and the exact render is on its way.
+    pub dragging: bool,
+    pub drag_wait: bool,
     /// Time left: when it was last estimated, and the seconds left then.
     /// It counts down between estimates, and each new one only nudges it,
     /// so it doesn't flicker as the frame rate wobbles.
@@ -209,15 +296,26 @@ impl Default for Export {
             corner: Corner::BottomCenter,
             dashboard: false,
             dash_corner: Corner::BottomCenter,
-            dash_size: DashSize::Medium,
+            dash_share: DashSize::Medium.share(),
             dash_style: DashStyle::Compact,
             bar_top: false,
             minimap: false,
             map_corner: Corner::TopRight,
-            map_size: DashSize::Small,
+            map_share: DashSize::Small.share(),
+            wm_share: Watermark::SHARE,
             dash_free: None,
+            cam_free: Vec::new(),
             map_free: None,
+            watermark: true,
+            wm_corner: Corner::BottomRight,
+            wm_free: None,
             share: ShareUi::default(),
+            folded: 0,
+            at: None,
+            playing: false,
+            preview_started: None,
+            dragging: false,
+            drag_wait: false,
             eta: None,
             zones: Vec::new(),
             zone_camera: Camera::Back,
@@ -389,6 +487,20 @@ impl App {
     }
 
     /// The chosen cameras that have footage here.
+    /// The chosen cameras' tiles: in their grid, or where they were moved
+    /// in the preview (drawn after the others, the last moved last).
+    fn export_tiles(&self) -> Vec<Tile> {
+        let chosen = self.export_cameras();
+        let order: Vec<Camera> = self.settings.camera_order.iter().copied().filter(|c| chosen.contains(c)).collect();
+        let mut tiles = job::grid(&order);
+        for t in &mut tiles {
+            t.free = self.export.cam_free.iter().find(|(c, _)| *c == t.camera).map(|(_, f)| *f);
+        }
+        let rank = |t: &Tile| self.export.cam_free.iter().position(|(c, _)| *c == t.camera).map_or(0, |i| i + 1);
+        tiles.sort_by_key(rank);
+        tiles
+    }
+
     fn export_cameras(&self) -> Vec<Camera> {
         let available = self.available_cameras();
         self.export.cameras.iter().copied().filter(|c| available.contains(c)).collect()
@@ -408,9 +520,7 @@ impl App {
     fn export_request(&self, start: Position, end: Position, output: PathBuf) -> Option<job::Request> {
         // Cameras keep playback's layout: their slots in the 3x2
         // grid, packed into Electron's grid shape.
-        let chosen = self.export_cameras();
-        let order: Vec<Camera> = self.settings.camera_order.iter().copied().filter(|c| chosen.contains(c)).collect();
-        let tiles: Vec<Tile> = job::grid(&order);
+        let tiles = self.export_tiles();
         Some(job::Request {
             segments: self.player.segments().to_vec(),
             start,
@@ -422,16 +532,19 @@ impl App {
             mirror: self.settings.mirror_cameras,
             fast: true,
             // Earlier versions never burned in both: the dashboard shows the time.
-            timestamp: (self.export.timestamp && !self.export.dashboard).then_some(Timestamp {
-                corner: self.export.corner,
-                date_format: self.settings.date_format,
-                h24: self.settings.time_24h,
-            }),
+            timestamp: self.export_timestamp(),
             dashboard: self.export_dashboard(),
             minimap: self.export_minimap(),
+            watermark: self.export_watermark(),
             blur_zones: self.export.zones.clone(),
             output: output.clone(),
         })
+    }
+
+    /// The burned-in time as set up (earlier versions never burned in both:
+    /// the dashboard shows the time).
+    fn export_timestamp(&self) -> Option<Timestamp> {
+        (self.export.timestamp && !self.export.dashboard).then_some(Timestamp { corner: self.export.corner, date_format: self.settings.date_format, h24: self.settings.time_24h })
     }
 
     /// The dashboard as set up (None when it's off).
@@ -444,7 +557,7 @@ impl App {
                 DashStyle::TeslaMobile => Corner::BottomCenter,
                 DashStyle::Compact => e.dash_corner,
             },
-            size: e.dash_size,
+            share: e.dash_share,
             metric: self.settings.metric,
             h24: self.settings.time_24h,
             accel: self.settings.accel_mode,
@@ -453,12 +566,18 @@ impl App {
         })
     }
 
+    /// The watermark as set up (None when it's off).
+    fn export_watermark(&self) -> Option<Watermark> {
+        let e = &self.export;
+        e.watermark.then_some(Watermark { corner: e.wm_corner, free: e.wm_free, share: e.wm_share })
+    }
+
     /// The minimap as set up (None when it's off).
     fn export_minimap(&self) -> Option<Minimap> {
         let e = &self.export;
         e.minimap.then(|| Minimap {
             corner: e.map_corner,
-            size: e.map_size,
+            share: e.map_share,
             dark: self.settings.map_dark,
             tiles: MapTiles(self.tiles.clone()),
             // Only the Live Map: it follows the car.
@@ -467,10 +586,22 @@ impl App {
         })
     }
 
+    /// The range in playback seconds (start, end).
+    fn export_range_secs(&self) -> Option<(f64, f64)> {
+        self.export_range().map(|(a, b)| (self.player.position_at(a.segment, a.secs), self.player.position_at(b.segment, b.secs)))
+    }
+
     /// Where the preview is drawn: the playhead when it's inside the range,
     /// else the range's start.
     fn preview_at(&self, start: Position, end: Position) -> Position {
-        let here = self.here();
+        // The editor's timeline, else the playhead.
+        let here = match self.export.at {
+            Some(t) => {
+                let (segment, secs) = self.player.locate_at(t);
+                Position { segment, secs }
+            }
+            None => self.here(),
+        };
         let key = |p: &Position| (p.segment, p.secs);
         if key(&here) >= key(&start) && key(&here) <= key(&end) {
             here
@@ -496,10 +627,14 @@ impl App {
             return Task::none();
         }
         let at = self.preview_at(start, end);
+        // With the pieces: dragging needs them, and so does playing (the
+        // overlays over the live video).
+        let with_pieces = true;
         self.export.preview_busy = true;
+        self.export.preview_started = Some(Instant::now());
         self.export.preview_again = false;
         Task::perform(
-            off_thread_or(Err("The preview stopped unexpectedly.".to_string()), move || job::preview(&request, at, PREVIEW_WIDTH).map_err(|e| format!("{e:#}"))),
+            off_thread_or(Err("The preview stopped unexpectedly.".to_string()), move || job::preview(&request, at, PREVIEW_WIDTH, with_pieces).map_err(|e| format!("{e:#}"))),
             |r| wrap(ExportMsg::Preview(Arc::new(r))),
         )
     }
@@ -588,16 +723,20 @@ impl App {
                 | ExportMsg::Dashboard(_)
                 | ExportMsg::DashStyle(_)
                 | ExportMsg::DashCorner(_)
-                | ExportMsg::DashSize(_)
                 | ExportMsg::Bar(_)
                 | ExportMsg::Minimap(_)
                 | ExportMsg::MapCorner(_)
-                | ExportMsg::Drag(..)
-                | ExportMsg::MapSize(_)
+                | ExportMsg::DragDone
+                | ExportMsg::ResetLayout
+                | ExportMsg::Seek(_)
+                | ExportMsg::Skip(_)
+                | ExportMsg::Watermark(_)
+                | ExportMsg::WatermarkCorner(_)
                 | ExportMsg::SaveZone
                 | ExportMsg::RemoveZone(_)
                 | ExportMsg::RestoreZones
         );
+        let redraw = redraw && !(self.export.playing && matches!(m, ExportMsg::Seek(_) | ExportMsg::SeekDone | ExportMsg::Skip(_)));
         let task = self.export_step(m);
         if redraw {
             Task::batch([task, self.refresh_preview()])
@@ -606,18 +745,87 @@ impl App {
         }
     }
 
+    /// Whether the editor takes the playback keys (play/pause, skip): open
+    /// on its settings, not on a finished export or the zone editor.
+    pub(crate) fn editor_has_keys(&self) -> bool {
+        self.export.open && self.export.editing.is_none() && !matches!(self.export.state, State::Done { .. })
+    }
+
+    /// Every frame: while the editor plays, its playhead follows the
+    /// video, and it stops at the range's end.
+    pub(crate) fn export_tick(&mut self) -> Task<Message> {
+        if !self.export.playing {
+            return Task::none();
+        }
+        let Some((a, b)) = self.export_range_secs() else { return Task::none() };
+        let t = self.player.position();
+        // Outside the range: the jump to its start hasn't happened yet.
+        if t < a - 0.5 || t > b + 1.0 {
+            return Task::none();
+        }
+        if t >= b - 0.02 || !self.player.is_playing() || !self.export.open {
+            self.export.playing = false;
+            self.player.set_playing(false);
+            self.export.at = Some(t.clamp(a, b));
+            return self.refresh_preview();
+        }
+        self.export.at = Some(t.max(a));
+        Task::none()
+    }
+
     fn export_step(&mut self, m: ExportMsg) -> Task<Message> {
         match m {
             ExportMsg::Share(m) => return self.share_step(m),
             ExportMsg::Preview(result) => {
                 self.export.preview_busy = false;
+                // The exact render after a drag: the pieces give way to it.
+                if self.export.drag_wait && !self.export.preview_again {
+                    self.export.drag_wait = false;
+                    self.export.dragging = false;
+                }
                 self.export.preview = Some(match result.as_ref() {
-                    Ok(p) => Ok(Shown { handle: iced::widget::image::Handle::from_rgba(p.shown.0, p.shown.1, p.rgba.clone()), size: p.shown, full: (p.width, p.height) }),
+                    Ok(p) => Ok(Shown::from_preview(p)),
                     Err(e) => Err(e.clone()),
                 });
                 if self.export.preview_again {
                     return self.refresh_preview();
                 }
+            }
+            ExportMsg::Fold(f) => self.export.folded ^= f as u8,
+            ExportMsg::Seek(t) => {
+                self.export.at = Some(t);
+                if self.export.playing {
+                    self.player.seek(t);
+                }
+            }
+            ExportMsg::Skip(d) => {
+                if let Some((a, b)) = self.export_range_secs() {
+                    let from = if self.export.playing { self.player.position() } else { self.export.at.unwrap_or(a) };
+                    let t = (from + d).clamp(a, b);
+                    self.export.at = Some(t);
+                    if self.export.playing {
+                        self.player.seek(t);
+                    }
+                }
+            }
+            ExportMsg::SeekDone => {}
+            ExportMsg::PlayPreview => {
+                let Some((a, b)) = self.export_range_secs() else { return Task::none() };
+                self.export.playing = !self.export.playing;
+                if self.export.playing {
+                    // The real video, played by playback's decoders, laid
+                    // out as the export (see preview_block).
+                    if self.export.at.is_none_or(|t| t >= b - 0.05 || t < a) {
+                        self.export.at = Some(a);
+                    }
+                    self.player.seek(self.export.at.unwrap_or(a));
+                    self.player.set_playing(true);
+                    return Task::none();
+                }
+                self.player.set_playing(false);
+                self.export.at = Some(self.player.position().clamp(a, b));
+                // Paused: the export's own frame here, with what dragging needs.
+                return self.refresh_preview();
             }
             ExportMsg::SetStart | ExportMsg::SetEnd => {
                 if !self.player.has_media() {
@@ -637,6 +845,10 @@ impl App {
                     return Task::none();
                 }
                 self.export.open = true;
+                self.export.at = None;
+                self.export.playing = false;
+                // The editor plays the video itself (with playback's decoders).
+                self.player.set_playing(false);
                 if matches!(self.export.state, State::Done { .. } | State::Failed(_)) {
                     self.export.state = State::Idle;
                 }
@@ -648,15 +860,19 @@ impl App {
                     self.export.timestamp = self.settings.export_timestamp;
                     self.export.dashboard = self.settings.export_dashboard;
                     self.export.dash_corner = Corner::from_key(&self.settings.export_dash_position).unwrap_or(Corner::BottomCenter);
-                    self.export.dash_size = DashSize::from_key(&self.settings.export_dash_size).unwrap_or(DashSize::Medium);
+                    self.export.dash_share = self.settings.export_dash_scale.unwrap_or_else(|| DashSize::from_key(&self.settings.export_dash_size).unwrap_or(DashSize::Medium).share());
                     // Last time's blur zones, offered once a session.
                     self.export.restore_offer = self.export.zones.is_empty() && !self.settings.export_blur_zones.is_empty() && !self.export.restore_answered;
                     self.export.dash_style = DashStyle::from_key(&self.settings.export_dash_style).unwrap_or(DashStyle::Compact);
                     self.export.bar_top = self.settings.export_dash_tm_top;
                     self.export.minimap = self.settings.export_minimap;
                     self.export.map_corner = Corner::from_key(&self.settings.export_minimap_position).filter(|c| MAP_CORNERS.contains(c)).unwrap_or(Corner::TopRight);
-                    self.export.map_size = DashSize::from_key(&self.settings.export_minimap_size).unwrap_or(DashSize::Small);
+                    self.export.map_share = self.settings.export_map_scale.unwrap_or_else(|| DashSize::from_key(&self.settings.export_minimap_size).unwrap_or(DashSize::Small).share());
+                    self.export.wm_share = self.settings.export_watermark_scale.map_or(Watermark::SHARE, |x| x as f32);
                     self.export.dash_free = self.settings.export_dash_free;
+                    self.export.watermark = self.settings.export_watermark;
+                    self.export.wm_corner = Corner::from_key(&self.settings.export_watermark_position).unwrap_or(Corner::BottomRight);
+                    self.export.wm_free = self.settings.export_watermark_free;
                     self.export.map_free = self.settings.export_map_free;
                     self.export.timelapse = self.settings.export_timelapse;
                     self.export.speed = self.settings.export_speed;
@@ -700,10 +916,18 @@ impl App {
                 if self.export.running() {
                     return Task::none();
                 }
+                let shape = |tiles: &[Tile]| (tiles.iter().map(|t| t.col).max(), tiles.iter().map(|t| t.row).max());
+                let before = shape(&self.export_tiles());
                 if let Some(i) = self.export.cameras.iter().position(|x| *x == c) {
                     self.export.cameras.remove(i);
                 } else {
                     self.export.cameras.push(c);
+                }
+                // Moved cameras stay put while the frame keeps its shape.
+                let chosen = self.export_cameras();
+                self.export.cam_free.retain(|(c, _)| chosen.contains(c));
+                if shape(&self.export_tiles()) != before {
+                    self.export.cam_free.clear();
                 }
             }
             ExportMsg::Quality(q) => {
@@ -740,11 +964,6 @@ impl App {
                 if let Some(c) = Corner::ALL.get(i).filter(|_| !self.export.running()) {
                     self.export.dash_corner = *c;
                     self.export.dash_free = None;
-                }
-            }
-            ExportMsg::DashSize(i) => {
-                if let Some(z) = DashSize::ALL.get(i).filter(|_| !self.export.running()) {
-                    self.export.dash_size = *z;
                 }
             }
             ExportMsg::ZoneCameraMenu => {
@@ -846,11 +1065,27 @@ impl App {
                     self.export.map_free = None;
                 }
             }
+            ExportMsg::Watermark(on) => {
+                if !self.export.running() {
+                    self.export.watermark = on;
+                }
+            }
+            ExportMsg::WatermarkCorner(i) => {
+                if let Some(c) = Corner::ALL.get(i).filter(|_| !self.export.running()) {
+                    self.export.wm_corner = *c;
+                    self.export.wm_free = None;
+                }
+            }
+            ExportMsg::DragDone => {
+                self.export.drag_wait = true;
+            }
             ExportMsg::Drag(what, to) => {
                 if self.export.running() {
                     return Task::none();
                 }
+                self.export.dragging = true;
                 match (what, to) {
+                    (Dragged::Camera(_), _) => {}
                     (Dragged::Dashboard, DragTo::Corner(c)) => {
                         self.export.dash_corner = c;
                         self.export.dash_free = None;
@@ -861,12 +1096,32 @@ impl App {
                         self.export.map_free = None;
                     }
                     (Dragged::Map, DragTo::Free(x, y)) => self.export.map_free = Some((x, y)),
+                    (Dragged::Watermark, DragTo::Corner(c)) => {
+                        self.export.wm_corner = c;
+                        self.export.wm_free = None;
+                    }
+                    (Dragged::Watermark, DragTo::Free(x, y)) => self.export.wm_free = Some((x, y)),
                 }
             }
-            ExportMsg::MapSize(i) => {
-                if let Some(z) = DashSize::ALL.get(i).filter(|_| !self.export.running()) {
-                    self.export.map_size = *z;
+            ExportMsg::ResetLayout => self.export.cam_free.clear(),
+            ExportMsg::Nothing => {}
+            ExportMsg::Resize(what, share, to) => {
+                if self.export.running() {
+                    return Task::none();
                 }
+                if let (Dragged::Camera(c), DragTo::Free(x, y)) = (what, to) {
+                    self.export.dragging = true;
+                    self.export.cam_free.retain(|(k, _)| *k != c);
+                    self.export.cam_free.push((c, (x, y, share as f32)));
+                    return Task::none();
+                }
+                match what {
+                    Dragged::Camera(_) => {}
+                    Dragged::Dashboard => self.export.dash_share = share,
+                    Dragged::Map => self.export.map_share = share,
+                    Dragged::Watermark => self.export.wm_share = share as f32,
+                }
+                return self.export_step(ExportMsg::Drag(what, to));
             }
             ExportMsg::DashStyle(i) => {
                 if let Some(d) = DashStyle::ALL.get(i).filter(|_| !self.export.running()) {
@@ -913,7 +1168,8 @@ impl App {
                 self.settings.export_timestamp = self.export.timestamp;
                 self.settings.export_dashboard = self.export.dashboard;
                 self.settings.export_dash_position = self.export.dash_corner.key().to_string();
-                self.settings.export_dash_size = self.export.dash_size.key().to_string();
+                self.settings.export_dash_size = DashSize::nearest(self.export.dash_share).key().to_string();
+                self.settings.export_dash_scale = Some(self.export.dash_share);
                 self.settings.export_dash_style = self.export.dash_style.key().to_string();
                 self.settings.export_dash_tm_top = self.export.bar_top;
                 self.settings.export_minimap = self.export.minimap;
@@ -921,9 +1177,14 @@ impl App {
                     self.settings.export_blur_zones = self.export.zones.clone();
                 }
                 self.settings.export_minimap_position = self.export.map_corner.key().to_string();
-                self.settings.export_minimap_size = self.export.map_size.key().to_string();
+                self.settings.export_minimap_size = DashSize::nearest(self.export.map_share).key().to_string();
+                self.settings.export_map_scale = Some(self.export.map_share);
+                self.settings.export_watermark_scale = Some(self.export.wm_share as f64);
                 self.settings.export_minimap_live = true;
                 self.settings.export_dash_free = self.export.dash_free;
+                self.settings.export_watermark = self.export.watermark;
+                self.settings.export_watermark_position = self.export.wm_corner.key().to_string();
+                self.settings.export_watermark_free = self.export.wm_free;
                 self.settings.export_map_free = self.export.map_free;
                 self.settings.export_timelapse = self.export.timelapse;
                 self.settings.export_speed = self.export.speed;
@@ -968,9 +1229,9 @@ impl App {
                 }
                 let output = output.clone();
                 match result {
-                    Ok(job::Outcome::Done { bytes, seconds, frames, warnings }) => {
+                    Ok(job::Outcome::Done { bytes, frames, warnings, .. }) => {
                         let format = self.export_format();
-                        self.export.state = State::Done { output, bytes, seconds, length: frames as f64 / job::FPS as f64, format, quality: self.export.quality };
+                        self.export.state = State::Done { output, bytes, length: frames as f64 / job::FPS as f64, format, quality: self.export.quality };
                         self.export.share.reset();
                         // The finished screen, even if the dialog was put away.
                         self.export.open = true;
@@ -1059,6 +1320,30 @@ impl App {
     fn movables(&self, w: u32, h: u32) -> Vec<Movable> {
         let mut out = Vec::new();
         let rect = |x: f32, y: f32, cw: u32, ch: u32| iced::Rectangle::new(iced::Point::new(x, y), iced::Size::new(cw as f32, ch as f32));
+        // The cameras, under the overlays: their grid fills the frame less
+        // Tesla Mobile's bars.
+        let tiles = self.export_tiles();
+        let cols = tiles.iter().map(|t| t.col + 1).max().unwrap_or(1);
+        let rows = tiles.iter().map(|t| t.row + 1).max().unwrap_or(1);
+        let (top, bars) = match self.export_dashboard().filter(|d| d.style == DashStyle::TeslaMobile) {
+            Some(d) => {
+                let (date, data) = crate::export::tesla_mobile::bar_heights(w);
+                (date + if d.bar_on_top() { data } else { 0 }, date + data)
+            }
+            None => (0, 0),
+        };
+        let cell = (w / cols, h.saturating_sub(bars) / rows);
+        for t in &tiles {
+            let (x, y, tw, th) = t.rect(cell, w, h, top);
+            out.push(Movable {
+                what: Dragged::Camera(t.camera),
+                rect: iced::Rectangle::new(iced::Point::new(x, y), iced::Size::new(tw, th)),
+                snaps: Vec::new(),
+                corner: None,
+                unit: w as f32,
+                shares: (0.1, 1.0),
+            });
+        }
         if let Some(d) = self.export_dashboard().filter(|d| d.style == DashStyle::Compact) {
             let size = d.size(w);
             let (x, y) = d.place(size.width, size.height, w, h);
@@ -1069,19 +1354,50 @@ impl App {
                     (*c, iced::Point::new(sx, sy))
                 })
                 .collect();
-            out.push(Movable { what: Dragged::Dashboard, rect: rect(x, y, size.width, size.height), snaps });
+            let (lo, hi) = Dashboard::SHARES;
+            let unit = Dashboard::UNIT as f32;
+            out.push(Movable {
+                what: Dragged::Dashboard,
+                rect: rect(x, y, size.width, size.height),
+                snaps,
+                corner: d.free.is_none().then_some(d.corner),
+                unit,
+                shares: (lo as f32, (hi as f32).min(w.saturating_sub(80) as f32 / unit)),
+            });
         }
         if let Some(m) = self.export_minimap() {
             let side = m.side(w, h);
-            let (x, y) = m.place(side, w, h);
+            let (x, y) = m.place_in(side, w, h, top, h.saturating_sub(bars));
             let snaps = MAP_CORNERS
                 .iter()
                 .map(|c| {
-                    let (sx, sy) = c.place(side, side, w, h);
+                    let (sx, sy) = crate::export::overlay::corner_in(*c, side, side, w, top, h.saturating_sub(bars));
                     (*c, iced::Point::new(sx, sy))
                 })
                 .collect();
-            out.push(Movable { what: Dragged::Map, rect: rect(x, y, side, side), snaps });
+            let (lo, hi) = Minimap::SHARES;
+            out.push(Movable { what: Dragged::Map, rect: rect(x, y, side, side), snaps, corner: m.free.is_none().then_some(m.corner), unit: w.min(h) as f32, shares: (lo as f32, hi as f32) });
+        }
+        if let Some(wm) = self.export_watermark() {
+            let (ww, wh) = wm.size(w);
+            let (x, y) = wm.place_in(w, h, top, h.saturating_sub(bars));
+            let snaps = Corner::ALL
+                .iter()
+                .map(|c| {
+                    let (sx, sy) = crate::export::overlay::corner_in(*c, ww, wh, w, top, h.saturating_sub(bars));
+                    (*c, iced::Point::new(sx, sy))
+                })
+                .collect();
+            let (lo, hi) = Watermark::SHARES;
+            let (pl, ph) = Watermark::PIXELS;
+            out.push(Movable {
+                what: Dragged::Watermark,
+                rect: rect(x, y, ww, wh),
+                snaps,
+                corner: wm.free.is_none().then_some(wm.corner),
+                unit: w as f32,
+                shares: (lo.max(pl / w as f32), hi.min(ph / w as f32)),
+            });
         }
         out
     }
@@ -1154,6 +1470,149 @@ impl App {
         opaque(mouse_area(container(measured(dialog)).center(Length::Fill).style(theme::backdrop)).on_press(wrap(ExportMsg::Close)))
     }
 
+    /// The editor's timeline: play the preview, and scrub through the range.
+    fn editor_timeline(&self) -> Element<'_, Message> {
+        let Some((a, b)) = self.export_range_secs().filter(|(a, b)| b > a) else { return space().height(0).into() };
+        let here = self.player.position();
+        let pos = self.export.at.unwrap_or(if (a..=b).contains(&here) { here } else { a }).clamp(a, b);
+        let enabled = !self.export.running();
+        // As playback's bar: the time, the skip and play buttons, the timeline.
+        let time = container(
+            row![
+                text(crate::hms(pos - a)).font(theme::MONO).size(13),
+                text("/").font(theme::MONO).size(13).color(theme::TEXT_MUTED),
+                text(crate::hms(b - a)).font(theme::MONO).size(13),
+            ]
+            .spacing(4),
+        )
+        .padding([6, 12])
+        .style(theme::time_pill);
+        let skip_secs = self.settings.skip_seconds;
+        let skip = |glyph: char, by: f64| {
+            crate::glass(
+                stack![
+                    container(theme::icon(glyph, 20.0)).center(24),
+                    container(text(format!("{}", skip_secs as u32)).size(9).font(theme::bold(theme::INTER)))
+                        .width(28)
+                        .height(28)
+                        .align_x(iced::alignment::Horizontal::Right)
+                        .align_y(iced::alignment::Vertical::Bottom),
+                ],
+                6,
+                10.0,
+            )
+            .on_press_maybe(enabled.then_some(wrap(ExportMsg::Skip(by))))
+        };
+        let play = crate::glass(container(theme::icon(if self.export.playing { theme::icon::PAUSE } else { theme::icon::PLAY }, 26.0)).center(28), [6, 8], 12.0)
+            .on_press_maybe(enabled.then_some(wrap(ExportMsg::PlayPreview)));
+        let timeline: Element<'_, Message> = crate::timeline::Timeline::new(b - a, pos - a, move |t| wrap(ExportMsg::Seek(a + t))).on_release(wrap(ExportMsg::SeekDone)).into();
+        row![time, row![skip(theme::icon::SKIP_BACK, -skip_secs), play, skip(theme::icon::SKIP_FORWARD, skip_secs)].spacing(6).align_y(Alignment::Center), timeline]
+            .spacing(14)
+            .align_y(Alignment::Center)
+            .height(44)
+            .into()
+    }
+
+    /// While the editor plays: the cameras' real video from playback's
+    /// decoders, each where the export puts it, with the overlays drawn
+    /// live from what's playing (the same drawing as the export's, at the
+    /// preview's size): the dashboard on its frosted glass, Tesla Mobile's
+    /// bars, the time and the map. The watermark is the preview's picture.
+    fn live_layers<'a>(&'a self, items: &[Movable], full: (u32, u32), (w, h): (f32, f32)) -> iced::widget::Stack<'a, Message> {
+        use crate::export::overlay::{corner_in, DashState};
+        use iced::widget::pin;
+        let scale = w / full.0.max(1) as f32;
+        // A preview rectangle on whole pixels, from the frame's pixels.
+        let px = |x: f32, y: f32, rw: f32, rh: f32| {
+            let (x0, y0) = ((x * scale).round(), (y * scale).round());
+            let (x1, y1) = (((x + rw) * scale).round().min(w), ((y + rh) * scale).round().min(h));
+            iced::Rectangle::new(iced::Point::new(x0, y0), iced::Size::new((x1 - x0).max(1.0), (y1 - y0).max(1.0)))
+        };
+        let place = |layers: iced::widget::Stack<'a, Message>, r: iced::Rectangle, e: Element<'a, Message>| layers.push(pin(container(e).width(r.width).height(r.height)).x(r.x).y(r.y).width(w).height(h));
+        let mut layers = stack![container(space()).width(w).height(h).style(|_| container::Style { background: Some(Background::Color(Color::BLACK)), ..Default::default() })];
+        let dashboard = self.export_dashboard();
+        // The dashboard's glass, in preview pixels.
+        let frost = dashboard.and_then(|d| d.frost(full.0, full.1)).map(|([x, y, fw, fh, r], sigma)| (px(x, y, fw, fh), r * scale, sigma * scale));
+        for item in items {
+            let Dragged::Camera(c) = item.what else { continue };
+            let Some(idx) = GRID.iter().position(|g| *g == c) else { continue };
+            if !self.player.slot_active(idx) {
+                continue;
+            }
+            let picture = self.player.shown(idx).map(|s| (s.id, s.frame.clone()));
+            let view = crate::video::View { mirror: c.mirrored() && self.settings.mirror_cameras, square: true, ..Default::default() };
+            let r = px(item.rect.x, item.rect.y, item.rect.width, item.rect.height);
+            // The glass from the tile's top-left (see video::View::square).
+            let glass2 = frost.filter(|(g, _, _)| g.intersects(&r)).map(|(g, radius, blur)| crate::video::Glass {
+                rect: iced::Rectangle::new(iced::Point::new(g.x - r.x, g.y - r.y), g.size()),
+                radius,
+                blur,
+                saturate: 1.85,
+            });
+            // Slots of their own: the shader keeps each slot's place and picture.
+            let tile = iced::widget::shader(crate::video::VideoTile { slot: EDITOR_SLOTS + idx, picture, glass: None, glass2, view });
+            layers = layers.push(pin(tile.width(r.width).height(r.height)).x(r.x).y(r.y).width(w).height(h));
+        }
+        let telemetry = self.front_telemetry();
+        let wall = self.player.wall_clock();
+        // Tesla Mobile's bars, across the frame.
+        let (top, bars) = match dashboard.filter(|d| d.style == DashStyle::TeslaMobile) {
+            Some(d) => {
+                let (date, data) = crate::export::tesla_mobile::bar_heights(full.0);
+                let line = wall.map(|t| crate::export::tesla_mobile::date_line(t, self.settings.time_24h)).unwrap_or_default();
+                layers = place(layers, px(0.0, 0.0, full.0 as f32, date as f32), crate::export::tesla_mobile::date_bar(line));
+                let data_y = if d.bar_on_top() { date } else { full.1.saturating_sub(data) };
+                let state = DashState { telemetry: telemetry.cloned(), time: String::new(), steering: self.steering, blink_ms: self.epoch.elapsed().as_millis() % 700 };
+                layers = place(layers, px(0.0, data_y as f32, full.0 as f32, data as f32), crate::export::tesla_mobile::data_bar(state, self.metric(), !d.bar_on_top()));
+                (date + if d.bar_on_top() { data } else { 0 }, date + data)
+            }
+            None => (0, 0),
+        };
+        // The time.
+        if let (Some(ts), Some(t)) = (self.export_timestamp(), wall) {
+            let size = ts.size(full.0);
+            let (x, y) = corner_in(ts.corner, size.width, size.height, full.0, top, full.1.saturating_sub(bars));
+            layers = place(layers, px(x, y, size.width as f32, size.height as f32), ts.label(t, scale));
+        }
+        // The compact dashboard, as the export draws it at this size.
+        if let (Some(d), Some(item)) = (dashboard.filter(|d| d.style == DashStyle::Compact), items.iter().find(|m| m.what == Dragged::Dashboard)) {
+            let r = px(item.rect.x, item.rect.y, item.rect.width, item.rect.height);
+            let inner = r.width / 650.0;
+            layers = place(layers, r, Dashboard::bar(crate::dashboard::compact(self.dash(inner)), d.glass > 0.0, r.height, 6.0 * inner));
+        }
+        // The map following the car: playback's map at this size (its 260 px
+        // at zoom 16, as the export's live map).
+        if let Some(item) = items.iter().find(|m| m.what == Dragged::Map) {
+            let r = px(item.rect.x, item.rect.y, item.rect.width, item.rect.height);
+            let car = telemetry.and_then(crate::map::car);
+            let route = self.map_route().0;
+            let center = car.map(|(lat, lon, _)| (lat, lon)).or_else(|| route.get(route.len() / 2).map(|p| (p.0 as f64, p.1 as f64)));
+            if let Some(center) = center {
+                let side = r.width;
+                let zoom = crate::map::DEFAULT_ZOOM + (side / 260.0).log2();
+                let corner = side * 24.0 / 260.0;
+                let style = if self.settings.map_dark { crate::map::tiles::Style::Dark } else { crate::map::tiles::Style::Light };
+                let tiles = crate::map::TileLayer { tiles: &self.tiles, style, center, zoom, bearing: 0.0, radius: corner };
+                let view = crate::map::MapView { center, zoom, bearing: 0.0, car, route, events: &[], arrow: &self.arrow, on_pan: |_, _| wrap(ExportMsg::Nothing), on_zoom: |_| wrap(ExportMsg::Nothing) };
+                let map: Element<'a, Message> = container(stack![iced::widget::canvas(tiles).width(side).height(side), iced::widget::canvas(view).width(side).height(side)])
+                    .style(move |_| container::Style { border: Border { color: Color::from_rgba(1.0, 1.0, 1.0, 0.25), width: 1.0, radius: corner.into() }, ..Default::default() })
+                    .into();
+                layers = place(layers, r, map);
+            } else if let Some((_, piece)) = self.export.preview.as_ref().and_then(|p| p.as_ref().ok()).and_then(|sh| sh.pieces.iter().find(|(what, _)| *what == Dragged::Map)) {
+                // No position yet: the preview's map.
+                layers = place(layers, r, iced::widget::image(piece.clone()).width(r.width).height(r.height).content_fit(iced::ContentFit::Fill).into());
+            }
+        }
+        // The watermark: its picture from the preview.
+        if let (Some(Ok(sh)), Some(item)) = (self.export.preview.as_ref(), items.iter().find(|m| m.what == Dragged::Watermark)) {
+            if let Some((_, piece)) = sh.pieces.iter().find(|(what, _)| *what == Dragged::Watermark) {
+                let r = px(item.rect.x, item.rect.y, item.rect.width, item.rect.height);
+                layers = place(layers, r, iced::widget::image(piece.clone()).width(r.width).height(r.height).content_fit(iced::ContentFit::Fill).into());
+            }
+        }
+        layers
+    }
+
     /// The preview of the export, with its size, format and range under it.
     fn preview_block(&self, (a, b): (f64, f64), secs: f64, speed: f64, multi: bool, used: Format, (wide, tall): (f32, f32)) -> Element<'_, Message> {
         let e = &self.export;
@@ -1166,9 +1625,39 @@ impl App {
                 let (w, h) = if WIDE / aspect > TALL { (TALL * aspect, TALL) } else { (WIDE, WIDE / aspect) };
                 let picture = iced::widget::image(handle.clone()).width(w).height(h).content_fit(iced::ContentFit::Fill);
                 let full = e.preview.as_ref().and_then(|p| p.as_ref().ok()).map(|p| p.full).unwrap_or(*shown);
-                let drag = PreviewDrag { frame: (full.0 as f32, full.1 as f32), items: self.movables(full.0, full.1), enabled: !e.running() };
-                let mut layers = stack![picture, iced::widget::canvas(drag).width(w).height(h)];
-                if e.preview_busy {
+                let items = self.movables(full.0, full.1);
+                // While a piece is dragged: the frame without the pieces,
+                // and each piece where it is now (scaled with the preview).
+                let pieces_shown = e.dragging || e.drag_wait;
+                // The pictures under the drag layer: one layer whatever they
+                // are, so the drag layer keeps its place (and what it holds)
+                // when they change from the frame to the pieces.
+                let content: Element<'_, Message> = if e.playing {
+                    self.live_layers(&items, full, (w, h)).into()
+                } else {
+                    match e.preview.as_ref().and_then(|p| p.as_ref().ok()).filter(|p| pieces_shown && p.base.is_some()) {
+                    Some(sh) => {
+                        let scale = w / full.0.max(1) as f32;
+                        let mut layers = stack![iced::widget::image(sh.base.clone().unwrap_or_else(|| handle.clone())).width(w).height(h).content_fit(iced::ContentFit::Fill)];
+                        for (what, piece) in &sh.pieces {
+                            if let Some(item) = items.iter().find(|m| m.what == *what) {
+                                let r = item.rect;
+                                layers = layers.push(
+                                    container(iced::widget::image(piece.clone()).width(r.width * scale).height(r.height * scale).content_fit(iced::ContentFit::Fill))
+                                        .padding(iced::Padding { top: r.y * scale, left: r.x * scale, ..iced::Padding::ZERO })
+                                        .width(w)
+                                        .height(h),
+                                );
+                            }
+                        }
+                        layers.into()
+                    }
+                    None => picture.into(),
+                    }
+                };
+                let drag = PreviewDrag { frame: (full.0 as f32, full.1 as f32), items, enabled: !e.running() };
+                let mut layers = stack![content, iced::widget::canvas(drag).width(w).height(h)];
+                if e.preview_busy && !e.playing {
                     layers = layers.push(container(container(text(t("ui.export.previewUpdating")).size(10).color(theme::TEXT_SECONDARY)).padding([3, 8]).style(|_| container::Style {
                         background: Some(Background::Color(Color::from_rgba(0.0, 0.0, 0.0, 0.6))),
                         border: Border { radius: 6.0.into(), ..Default::default() },
@@ -1209,7 +1698,7 @@ impl App {
         ]
         .align_y(Alignment::Center);
         let mut block = column![container(frame).center_x(Length::Fill), caption].spacing(8);
-        if e.preview.as_ref().is_some_and(|p| p.is_ok()) && (e.minimap || (e.dashboard && e.dash_style == DashStyle::Compact)) {
+        if e.preview.as_ref().is_some_and(|p| p.is_ok()) {
             block = block.push(text(t("ui.export.previewDragHint")).size(10).color(theme::TEXT_MUTED));
         }
         block.into()
@@ -1241,9 +1730,14 @@ impl App {
             let mut r = row![].spacing(8);
             for &c in chunk {
                 let on = chosen.contains(&c);
-                r = r.push(option_card(column![row![check(on), text(c.label()).size(12).font(theme::medium(theme::INTER))].spacing(8).align_y(Alignment::Center)], on, (!busy).then_some(wrap(ExportMsg::Camera(c)))));
+                // All the same height, one line or two ("Right Repeater").
+                let label = row![check(on), text(c.label()).size(12).font(theme::medium(theme::INTER))].spacing(7).align_y(Alignment::Center);
+                r = r.push(option_card(container(label).height(32).align_y(Alignment::Center), on, (!busy).then_some(wrap(ExportMsg::Camera(c)))));
             }
             cams = cams.push(r);
+        }
+        if !e.cam_free.is_empty() {
+            cams = cams.push(secondary(t("ui.export.resetLayout"), (!busy).then_some(wrap(ExportMsg::ResetLayout))));
         }
 
         // Quality, with each camera's size.
@@ -1372,8 +1866,7 @@ impl App {
                 overlays = overlays.push(sub(labelled(t("ui.export.position"), "", segmented(bars, e.bar_top as usize, !busy, ExportMsg::Bar))));
             } else {
                 let (place, lit) = if e.dash_free.is_some() { (t("ui.export.customPosition"), None) } else { (t(e.dash_corner.label_key()), Some(e.dash_corner)) };
-                let size = DashSize::ALL.iter().position(|z| *z == e.dash_size).unwrap_or(1);
-                overlays = overlays.push(sub(place_and_size(place, corner_pad(&Corner::ALL, lit, !busy, ExportMsg::DashCorner), segmented(size_labels(), size, !busy, ExportMsg::DashSize))));
+                overlays = overlays.push(sub(labelled(t("ui.export.position"), place, corner_pad(&Corner::ALL, lit, !busy, ExportMsg::DashCorner))));
             }
         }
         overlays = overlays.push(labelled(
@@ -1383,13 +1876,20 @@ impl App {
         ));
         if e.minimap {
             let (place, lit) = if e.map_free.is_some() { (t("ui.export.customPosition"), None) } else { (t(e.map_corner.label_key()), Some(e.map_corner)) };
-            let size = DashSize::ALL.iter().position(|z| *z == e.map_size).unwrap_or(0);
-            overlays = overlays.push(sub(place_and_size(place, corner_pad(&MAP_CORNERS, lit, !busy, ExportMsg::MapCorner), segmented(size_labels(), size, !busy, ExportMsg::MapSize))));
+            overlays = overlays.push(sub(labelled(t("ui.export.position"), place, corner_pad(&MAP_CORNERS, lit, !busy, ExportMsg::MapCorner))));
         }
 
-        let section = |title: String, body: Element<'static, Message>| -> Element<'static, Message> {
-            column![text(title).size(13).font(theme::semibold(theme::INTER)), body].spacing(10).into()
-        };
+        // The Sentry Six watermark.
+        overlays = overlays.push(labelled(
+            t("ui.export.watermark"),
+            t("ui.export.watermarkDesc"),
+            toggler(e.watermark).size(22).on_toggle_maybe((!busy).then_some(|b| wrap(ExportMsg::Watermark(b)))).style(theme::toggle).into(),
+        ));
+        if e.watermark {
+            let (place, lit) = if e.wm_free.is_some() { (t("ui.export.customPosition"), None) } else { (t(e.wm_corner.label_key()), Some(e.wm_corner)) };
+            overlays = overlays.push(sub(labelled(t("ui.export.position"), place, corner_pad(&Corner::ALL, lit, !busy, ExportMsg::WatermarkCorner))));
+        }
+
         // Privacy: blur zones.
         let mut privacy = Column::new().spacing(8);
         if e.restore_offer {
@@ -1442,52 +1942,60 @@ impl App {
             privacy = privacy.push(info(tf("ui.export.blurZonesWarning", &[("cameras", &unselected.join(", "))]), theme::WARNING));
         }
 
-        // Side by side when the window is wide enough: the preview stays in
-        // view while the overlays are changed. Otherwise one column of
-        // settings under the preview.
-        let window = self.window_size.unwrap_or(iced::Size::new(1200.0, 800.0));
-        let body_height = (window.height - 64.0 - 80.0 - 48.0).max(300.0);
-        let wide = window.width >= 1060.0;
-        let dialog_width = if wide { (window.width - 80.0).min(1180.0) } else { 760.0 };
-        let body: Element<'_, Message> = if wide {
-            let left_width = ((dialog_width - 40.0 - 24.0) * 0.58).floor();
-            let left = column![
-                self.preview_block((a, b), secs, speed, multi, used, (left_width, 300.0)),
-                section(t("ui.export.layout").into(), cams.into()),
-                section(t("ui.export.quality").into(), quality.into()),
-            ]
-            .spacing(20)
-            .width(left_width);
-            let right = column![
-                section(t("ui.export.overlays").into(), overlays.into()),
-                section(t("ui.export.privacy").into(), privacy.into()),
-                section(t("ui.export.timelapse").into(), timelapse.into()),
-                section(t("ui.export.shareClip").into(), self.share_section(secs / speed, used)),
-            ]
-            .spacing(20)
-            .width(Length::Fill);
-            row![scrolled(left, body_height), scrolled(right, body_height)].into()
-        } else {
-            let left = column![
-                section(t("ui.export.layout").into(), cams.into()),
-                section(t("ui.export.quality").into(), quality.into()),
-                section(t("ui.export.timelapse").into(), timelapse.into())
-            ]
-            .spacing(20)
-            .width(Length::Fill);
-            let right = column![
-                section(t("ui.export.overlays").into(), overlays.into()),
-                section(t("ui.export.privacy").into(), privacy.into()),
-                section(t("ui.export.shareClip").into(), self.share_section(secs / speed, used)),
-            ]
-            .spacing(20)
-            .width(Length::Fill);
-            let content = column![self.preview_block((a, b), secs, speed, multi, used, (720.0, 240.0)), row![left, right].spacing(24)].spacing(20);
-            scrolled(content, body_height)
+        // The editor: the canvas (the preview, sized to the window) with
+        // its timeline on the left, the settings in folding cards on the
+        // right, Export (or its progress) top right.
+        let window = self.window_size.unwrap_or(iced::Size::new(1280.0, 820.0));
+        let side = if window.width >= 1100.0 { 380.0 } else { 320.0 };
+        let canvas_w = (window.width - 48.0 - 40.0 - side - 20.0).max(320.0);
+        let canvas_h = (window.height - 48.0 - 62.0 - 40.0 - 30.0 - 22.0 - 48.0 - 36.0).max(180.0);
+        let folded = e.folded;
+        let card = move |f: Fold, title: String, body: Element<'static, Message>| -> Element<'static, Message> {
+            let open = folded & f as u8 == 0;
+            let head = button(
+                row![
+                    text(title).size(13).font(theme::semibold(theme::INTER)),
+                    space().width(Length::Fill),
+                    svg_icon(if open { CHEVRON_UP_SVG } else { CHEVRON_DOWN_SVG }, 14.0, theme::TEXT_MUTED),
+                ]
+                .align_y(Alignment::Center),
+            )
+            .padding([10, 14])
+            .width(Length::Fill)
+            .style(|_, _| button::Style { text_color: theme::TEXT, ..button::Style::default() })
+            .on_press(wrap(ExportMsg::Fold(f)));
+            let mut col = column![head];
+            if open {
+                col = col.push(container(body).padding(iced::Padding { top: 0.0, right: 14.0, bottom: 14.0, left: 14.0 }));
+            }
+            container(col).width(Length::Fill).style(card_style(false)).into()
         };
+        let sidebar = iced::widget::scrollable(
+            column![
+                card(Fold::Cameras, t("ui.export.layout").into(), cams.into()),
+                card(Fold::Quality, t("ui.export.quality").into(), quality.into()),
+                card(Fold::Overlays, t("ui.export.overlays").into(), overlays.into()),
+                card(Fold::Privacy, t("ui.export.privacy").into(), privacy.into()),
+                card(Fold::TimeLapse, t("ui.export.timelapse").into(), timelapse.into()),
+                card(Fold::Share, t("ui.export.shareClip").into(), self.share_section(secs / speed, used)),
+            ]
+            .spacing(10)
+            .padding(iced::Padding { right: 10.0, ..iced::Padding::ZERO }),
+        )
+        .style(theme::thin_scroll)
+        .width(side)
+        .height(Length::Fill);
+        // The preview in the middle of the canvas, the timeline at its foot.
+        let canvas = column![
+            container(self.preview_block((a, b), secs, speed, multi, used, (canvas_w, canvas_h))).width(Length::Fill).height(Length::Fill).center_y(Length::Fill),
+            self.editor_timeline()
+        ]
+        .spacing(12)
+        .width(Length::Fill);
+        let body = row![container(canvas).width(Length::Fill).height(Length::Fill), sidebar].spacing(20).padding(20).height(Length::Fill);
 
-        // Footer: the buttons, or the progress.
-        let footer: Element<'_, Message> = match &e.state {
+        // Top right: Export, or the export's progress, or why it failed.
+        let action: Element<'_, Message> = match &e.state {
             State::Running { .. } => {
                 let done = e.done.load(Ordering::Relaxed);
                 let total = e.total.load(Ordering::Relaxed);
@@ -1501,62 +2009,40 @@ impl App {
                 if let Some(l) = left {
                     words = format!("{words}  ·  {} left", clock(l));
                 }
-                column![
-                    row![text(words).size(12).color(theme::TEXT_SECONDARY), space().width(Length::Fill), secondary(t("ui.export.cancel"), Some(wrap(ExportMsg::Cancel)))]
-                        .align_y(Alignment::Center),
-                    progress_bar(frac),
-                    text(t("ui.export.minimizeHint")).size(10).color(theme::TEXT_MUTED),
-                ]
-                .spacing(8)
-                .into()
+                row![column![text(words).size(11).color(theme::TEXT_SECONDARY), progress_bar(frac)].spacing(6).width(260), secondary(t("ui.export.cancel"), Some(wrap(ExportMsg::Cancel)))]
+                    .spacing(12)
+                    .align_y(Alignment::Center)
+                    .into()
             }
-            State::Done { bytes, seconds, .. } => row![
-                svg_icon(CHECK_SVG, 16.0, theme::SUCCESS),
-                text(tf("ui.export.exportCompleteMB", &[("size", &format!("{:.1}", *bytes as f64 / 1e6))])).size(12).color(theme::SUCCESS),
-                text(format!("{:.0} s", seconds)).size(11).color(theme::TEXT_MUTED),
-                space().width(Length::Fill),
-                secondary(reveal_label(), Some(wrap(ExportMsg::Reveal))),
-                primary(t("ui.changelog.close"), Some(wrap(ExportMsg::Close))),
-            ]
-            .spacing(10)
-            .align_y(Alignment::Center)
-            .into(),
             State::Failed(message) => row![
-                text(message.clone()).size(12).color(theme::ERROR).width(Length::Fill),
-                secondary(t("ui.export.cancel"), Some(wrap(ExportMsg::Close))),
+                text(message.clone()).size(11).color(theme::ERROR).width(Length::Fixed(360.0)),
                 primary(t("ui.export.exportBtn"), Some(wrap(ExportMsg::Start))),
             ]
-            .spacing(10)
+            .spacing(12)
             .align_y(Alignment::Center)
             .into(),
-            State::Idle | State::Choosing => row![
-                space().width(Length::Fill),
-                secondary(t("ui.export.cancel"), Some(wrap(ExportMsg::Close))),
-                primary(t("ui.export.exportBtn"), (!busy && !chosen.is_empty() && secs >= 0.1).then_some(wrap(ExportMsg::Start))),
-            ]
-            .spacing(10)
-            .align_y(Alignment::Center)
-            .into(),
+            _ => primary(t("ui.export.exportBtn"), (!busy && !chosen.is_empty() && secs >= 0.1).then_some(wrap(ExportMsg::Start))),
         };
-
         let header = row![
             svg_icon(DOWNLOAD_SVG, 18.0, theme::ACCENT),
             text(t("ui.export.title")).size(15).font(theme::semibold(theme::INTER)),
             space().width(Length::Fill),
+            action,
             button(container(text("×").size(18)).center(Length::Fill)).width(28).height(28).padding(0).style(theme::modal_close).on_press(wrap(ExportMsg::Close)),
         ]
-        .spacing(8)
+        .spacing(12)
         .align_y(Alignment::Center);
         let dialog = container(column![
-            container(header).padding([16, 20]).style(theme::modal_header),
+            container(header).padding([14, 20]).style(theme::modal_header),
             container(space().height(1)).width(Length::Fill).style(theme::subtle_line),
             body,
-            container(footer).padding([16, 20]).width(Length::Fill).style(theme::modal_footer),
         ])
-        .width(dialog_width)
+        .width(Length::Fill)
+        .height(Length::Fill)
         .clip(true)
-        .style(theme::modal);
-        opaque(mouse_area(container(measured(dialog)).center(Length::Fill).style(theme::backdrop)).on_press(wrap(ExportMsg::Close)))
+        .style(theme::modal_editor);
+        // Over the whole window (Escape or × closes it).
+        opaque(container(measured(dialog)).padding(24).width(Length::Fill).height(Length::Fill).style(theme::backdrop))
     }
 }
 
@@ -1623,7 +2109,7 @@ fn card_style(on: bool) -> impl Fn(&iced::Theme) -> container::Style {
 
 /// A selectable card (a camera, a quality).
 fn option_card<'a>(content: impl Into<Element<'a, Message>>, on: bool, press: Option<Message>) -> Element<'a, Message> {
-    button(container(content).padding([9, 12]).width(Length::Fill).style(card_style(on)))
+    button(container(content).padding([9, 10]).width(Length::Fill).style(card_style(on)))
         .padding(0)
         .width(Length::Fill)
         // The card draws itself; text in it is the app's (a plain button
@@ -1651,7 +2137,27 @@ struct Movable {
     what: Dragged,
     rect: iced::Rectangle,
     snaps: Vec<(Corner, iced::Point)>,
+    /// The usual place it's in (None when dragged somewhere of its own).
+    corner: Option<Corner>,
+    /// Its width in the frame's pixels for a share of 1, and the shares
+    /// it may be resized between.
+    unit: f32,
+    shares: (f32, f32),
 }
+
+/// How a held piece follows the pointer.
+#[derive(Debug, Clone, Copy)]
+enum Grip {
+    /// Moved, held this far into it (preview pixels).
+    Move(iced::Vector),
+    /// Resized by a corner handle: the corner that stays put (the frame's
+    /// pixels), which way the handle is from it, and whether it grows
+    /// both ways from its centre (centred at the top or bottom).
+    Resize { fixed: iced::Point, left: bool, up: bool, centred: bool, keep: Option<Corner> },
+}
+
+/// How near a corner (preview pixels) the pointer takes the resize handle.
+const HANDLE_REACH: f32 = 9.0;
 
 /// The layer over the preview that moves the dashboard and map: an outline
 /// on hover, dragged anywhere, snapping to its usual places when near one.
@@ -1664,9 +2170,31 @@ struct PreviewDrag {
 
 #[derive(Default)]
 struct DragState {
-    /// What's held, and where in it the pointer took hold (preview pixels).
-    held: Option<(usize, iced::Vector)>,
-    hover: Option<usize>,
+    /// What's held, and how.
+    /// (By what it is: the pieces' order changes as cameras are moved.)
+    held: Option<(Dragged, Grip)>,
+    hover: Option<Dragged>,
+    /// The lines it's snapped to (the frame's pixels): x of vertical
+    /// lines, y of horizontal ones.
+    guides: (Vec<f32>, Vec<f32>),
+}
+
+/// Snaps one axis: the piece's start, centre and end (from `pos`, `len`)
+/// to the nearest of `lines` within `reach`. The new start, and the line.
+fn snap_axis(pos: f32, len: f32, lines: &[f32], reach: f32) -> (f32, Option<f32>) {
+    let mut best: Option<(f32, f32, f32)> = None;
+    for &line in lines {
+        for offset in [0.0, len / 2.0, len] {
+            let d = (pos + offset - line).abs();
+            if d < reach && best.is_none_or(|(bd, _, _)| d < bd) {
+                best = Some((d, line - offset, line));
+            }
+        }
+    }
+    match best {
+        Some((_, start, line)) => (start, Some(line)),
+        None => (pos, None),
+    }
 }
 
 impl PreviewDrag {
@@ -1681,7 +2209,93 @@ impl PreviewDrag {
 
     /// The topmost item under `p` (the map is drawn over the dashboard).
     fn at(&self, p: iced::Point, scale: f32) -> Option<usize> {
-        (0..self.items.len()).rev().find(|&i| self.shown(i, scale).contains(p))
+        (0..self.items.len()).rev().find(|&i| self.shown(i, scale).expand(HANDLE_REACH / 2.0).contains(p))
+    }
+
+    /// The corner handle of item `i` under `p`: (left, up) for which
+    /// corner.
+    fn handle(&self, i: usize, p: iced::Point, scale: f32) -> Option<(bool, bool)> {
+        let r = self.shown(i, scale);
+        [(true, true), (false, true), (true, false), (false, false)].into_iter().find(|(left, up)| {
+            let c = iced::Point::new(if *left { r.x } else { r.x + r.width }, if *up { r.y } else { r.y + r.height });
+            c.distance(p) <= HANDLE_REACH
+        })
+    }
+
+    /// The grip for resizing item `i` by the handle at (left, up).
+    fn resize_grip(&self, i: usize, (left, up): (bool, bool)) -> Grip {
+        let item = &self.items[i];
+        let r = item.rect;
+        // Centred at the top or bottom, by a handle away from that edge:
+        // it stays centred and grows both ways.
+        let centred = match item.corner {
+            Some(Corner::TopCenter) => !up,
+            Some(Corner::BottomCenter) => up,
+            _ => false,
+        };
+        let fixed = iced::Point::new(if centred { r.x + r.width / 2.0 } else if left { r.x + r.width } else { r.x }, if up { r.y + r.height } else { r.y });
+        // In a usual place and held by the corner away from it: still there.
+        let keep = item.corner.filter(|c| {
+            let toward_top = matches!(c, Corner::TopLeft | Corner::TopCenter | Corner::TopRight);
+            let side_ok = match c {
+                Corner::TopLeft | Corner::BottomLeft => !left,
+                Corner::TopRight | Corner::BottomRight => left,
+                _ => centred,
+            };
+            side_ok && toward_top != up
+        });
+        Grip::Resize { fixed, left, up, centred, keep }
+    }
+
+    /// Item `i` resized with its handle at `p` (the frame's pixels): the
+    /// new share and place, the moving edge snapped to the frame's edges
+    /// and centre and the other pieces.
+    #[allow(clippy::type_complexity)]
+    fn resize(&self, state: &mut DragState, i: usize, p: iced::Point, (fixed, left, up, centred, keep): (iced::Point, bool, bool, bool, Option<Corner>), scale: f32) -> Option<iced::widget::canvas::Action<Message>> {
+        let item = &self.items[i];
+        let (fw, fh) = self.frame;
+        let aspect = item.rect.width / item.rect.height.max(1.0);
+        let mut xs = vec![0.0, fw / 2.0, fw];
+        let mut ys = vec![0.0, fh / 2.0, fh];
+        for (_, other) in self.items.iter().enumerate().filter(|(j, _)| *j != i) {
+            let r = other.rect;
+            xs.extend([r.x, r.x + r.width / 2.0, r.x + r.width]);
+            ys.extend([r.y, r.y + r.height / 2.0, r.y + r.height]);
+        }
+        let reach = 6.0 / scale;
+        // The width the pointer asks for, by either axis.
+        let (ex, gx) = if centred { (p.x, None) } else { snap_axis(p.x, 0.0, &xs, reach) };
+        let (ey, gy) = snap_axis(p.y, 0.0, &ys, reach);
+        let dx = if centred { (ex - fixed.x).abs() } else if left { fixed.x - ex } else { ex - fixed.x };
+        let dy = if up { fixed.y - ey } else { ey - fixed.y };
+        // The handle runs along the corner's diagonal: the width whose
+        // handle is nearest the pointer, or the width an edge snapped to.
+        let k = if centred { 0.5 } else { 1.0 };
+        let (want, guide) = match (gx, gy) {
+            (Some(_), _) => (dx / k, (gx, None)),
+            (None, Some(_)) => (dy * aspect, (None, gy)),
+            (None, None) => ((k * dx + dy / aspect) / (k * k + 1.0 / (aspect * aspect)), (None, None)),
+        };
+        // Kept inside the frame, and between the sizes it may be.
+        let room_x = if centred { 2.0 * fixed.x.min(fw - fixed.x) } else if left { fixed.x } else { fw - fixed.x };
+        let room_y = (if up { fixed.y } else { fh - fixed.y }) * aspect;
+        let (lo, hi) = item.shares;
+        let hi = hi.min(room_x.min(room_y) / item.unit).max(lo);
+        let share = (want / item.unit).clamp(lo, hi);
+        let w = share * item.unit;
+        let h = w / aspect;
+        let x = if centred { fixed.x - w / 2.0 } else if left { fixed.x - w } else { fixed.x };
+        let y = if up { fixed.y - h } else { fixed.y };
+        // Only a guide it actually reaches.
+        let at_edge = |g: Option<f32>, edge: f32| g.filter(|g| (g - edge).abs() < 1.0);
+        let edge_x = if left { x } else { x + w };
+        let edge_y = if up { y } else { y + h };
+        state.guides = (at_edge(guide.0, edge_x).into_iter().collect(), at_edge(guide.1, edge_y).into_iter().collect());
+        let to = match keep {
+            Some(c) => DragTo::Corner(c),
+            None => DragTo::Free(x / fw, y / fh),
+        };
+        Some(iced::widget::canvas::Action::publish(wrap(ExportMsg::Resize(item.what, share as f64, to))).and_capture())
     }
 }
 
@@ -1699,30 +2313,69 @@ impl iced::widget::canvas::Program<Message> for PreviewDrag {
             Event::Mouse(M::ButtonPressed(Button::Left)) => {
                 let p = cursor.position_in(bounds)?;
                 let i = self.at(p, scale)?;
-                state.held = Some((i, p - self.shown(i, scale).position()));
+                let grip = match self.handle(i, p, scale) {
+                    Some(corner) => self.resize_grip(i, corner),
+                    None => Grip::Move(p - self.shown(i, scale).position()),
+                };
+                state.held = Some((self.items[i].what, grip));
                 Some(Action::capture())
             }
             Event::Mouse(M::CursorMoved { .. }) => {
-                let Some((i, grip)) = state.held else {
-                    let hover = cursor.position_in(bounds).and_then(|p| self.at(p, scale));
+                let Some((what, grip)) = state.held else {
+                    let hover = cursor.position_in(bounds).and_then(|p| self.at(p, scale)).map(|i| self.items[i].what);
                     let changed = hover != state.hover;
                     state.hover = hover;
                     return changed.then(Action::request_redraw);
                 };
+                let i = self.items.iter().position(|m| m.what == what)?;
                 let p = cursor.position_from(bounds.position())?;
-                let item = &self.items[i];
-                // The new top-left in the frame's pixels, kept inside it.
-                let x = ((p.x - grip.x) / scale).clamp(0.0, (self.frame.0 - item.rect.width).max(0.0));
-                let y = ((p.y - grip.y) / scale).clamp(0.0, (self.frame.1 - item.rect.height).max(0.0));
-                // Within 12 preview pixels of a usual place: there.
-                let near = item.snaps.iter().find(|(_, s)| ((s.x - x) * scale).hypot((s.y - y) * scale) < 12.0);
-                let to = match near {
-                    Some((c, _)) => DragTo::Corner(*c),
-                    None => DragTo::Free(x / self.frame.0, y / self.frame.1),
+                let grip = match grip {
+                    Grip::Move(v) => v,
+                    Grip::Resize { fixed, left, up, centred, keep } => {
+                        return self.resize(state, i, iced::Point::new(p.x / scale, p.y / scale), (fixed, left, up, centred, keep), scale);
+                    }
                 };
+                let item = &self.items[i];
+                let (w, h) = (item.rect.width, item.rect.height);
+                // The new top-left in the frame's pixels.
+                let x = (p.x - grip.x) / scale;
+                let y = (p.y - grip.y) / scale;
+                // Lines to snap to: the frame's edges and centre, the usual
+                // places' edges, and the other pieces' edges and centres.
+                let (fw, fh) = self.frame;
+                let mut xs = vec![0.0, fw / 2.0, fw];
+                let mut ys = vec![0.0, fh / 2.0, fh];
+                for (_, s) in &item.snaps {
+                    xs.extend([s.x, s.x + w]);
+                    ys.extend([s.y, s.y + h]);
+                }
+                for (j, other) in self.items.iter().enumerate().filter(|(j, _)| *j != i) {
+                    let _ = j;
+                    let r = other.rect;
+                    xs.extend([r.x, r.x + r.width / 2.0, r.x + r.width]);
+                    ys.extend([r.y, r.y + r.height / 2.0, r.y + r.height]);
+                }
+                let reach = 6.0 / scale;
+                let (x, gx) = snap_axis(x, w, &xs, reach);
+                let (y, gy) = snap_axis(y, h, &ys, reach);
+                let x = x.clamp(0.0, (fw - w).max(0.0));
+                let y = y.clamp(0.0, (fh - h).max(0.0));
+                state.guides = (gx.into_iter().collect(), gy.into_iter().collect());
+                // Exactly on one of its usual places: that place.
+                let corner = item.snaps.iter().find(|(_, s)| (s.x - x).abs() < 0.5 && (s.y - y).abs() < 0.5);
+                let to = match corner {
+                    Some((c, _)) => DragTo::Corner(*c),
+                    None => DragTo::Free(x / fw, y / fh),
+                };
+                if let Dragged::Camera(_) = item.what {
+                    return Some(Action::publish(wrap(ExportMsg::Resize(item.what, (w / item.unit) as f64, to))).and_capture());
+                }
                 Some(Action::publish(wrap(ExportMsg::Drag(item.what, to))).and_capture())
             }
-            Event::Mouse(M::ButtonReleased(Button::Left)) => state.held.take().map(|_| Action::capture()),
+            Event::Mouse(M::ButtonReleased(Button::Left)) => {
+                state.guides = (Vec::new(), Vec::new());
+                state.held.take().map(|_| Action::publish(wrap(ExportMsg::DragDone)).and_capture())
+            }
             _ => None,
         }
     }
@@ -1731,16 +2384,28 @@ impl iced::widget::canvas::Program<Message> for PreviewDrag {
         use iced::widget::canvas::{Frame, Path, Stroke};
         let mut frame = Frame::new(renderer, bounds.size());
         let scale = self.scale(bounds);
-        let lit = state.held.map(|(i, _)| i).or(state.hover);
-        if let Some(i) = lit.filter(|i| *i < self.items.len()) {
+        let lit = state.held.map(|(what, _)| what).or(state.hover);
+        if let Some(i) = lit.and_then(|what| self.items.iter().position(|m| m.what == what)) {
             let r = self.shown(i, scale);
             let outline = Path::rounded_rectangle(r.position(), r.size(), 4.0.into());
             frame.fill(&outline, Color { a: 0.10, ..theme::ACCENT });
             frame.stroke(&outline, Stroke::default().with_width(1.5).with_color(theme::ACCENT));
-            // While held: the usual places it snaps to.
+            // The resize handles at its corners.
+            for (cx, cy) in [(r.x, r.y), (r.x + r.width, r.y), (r.x, r.y + r.height), (r.x + r.width, r.y + r.height)] {
+                let handle = Path::rectangle(iced::Point::new(cx - 4.0, cy - 4.0), iced::Size::new(8.0, 8.0));
+                frame.fill(&handle, Color::WHITE);
+                frame.stroke(&handle, Stroke::default().with_width(1.5).with_color(theme::ACCENT));
+            }
+            // While held: the lines it has snapped to, across the frame.
             if state.held.is_some() {
-                for (_, s) in &self.items[i].snaps {
-                    frame.fill(&Path::circle(iced::Point::new(s.x * scale + 3.0, s.y * scale + 3.0), 3.0), Color { a: 0.8, ..theme::ACCENT });
+                let line = Stroke::default().with_width(1.0).with_color(Color { a: 0.9, ..theme::ACCENT });
+                for x in &state.guides.0 {
+                    let x = (x * scale).round() + 0.5;
+                    frame.stroke(&Path::line(iced::Point::new(x, 0.0), iced::Point::new(x, bounds.height)), line);
+                }
+                for y in &state.guides.1 {
+                    let y = (y * scale).round() + 0.5;
+                    frame.stroke(&Path::line(iced::Point::new(0.0, y), iced::Point::new(bounds.width, y)), line);
                 }
             }
         }
@@ -1751,48 +2416,29 @@ impl iced::widget::canvas::Program<Message> for PreviewDrag {
         if !self.enabled {
             return iced::mouse::Interaction::default();
         }
-        if state.held.is_some() {
-            return iced::mouse::Interaction::Grabbing;
+        use iced::mouse::Interaction;
+        let diagonal = |left: bool, up: bool| if left == up { Interaction::ResizingDiagonallyDown } else { Interaction::ResizingDiagonallyUp };
+        match state.held {
+            Some((_, Grip::Move(_))) => return Interaction::Grabbing,
+            Some((_, Grip::Resize { left, up, .. })) => return diagonal(left, up),
+            None => {}
         }
-        match cursor.position_in(bounds).and_then(|p| self.at(p, self.scale(bounds))) {
-            Some(_) => iced::mouse::Interaction::Grab,
-            None => iced::mouse::Interaction::default(),
+        let scale = self.scale(bounds);
+        let Some(p) = cursor.position_in(bounds) else { return Interaction::default() };
+        match self.at(p, scale) {
+            Some(i) => match self.handle(i, p, scale) {
+                Some((left, up)) => diagonal(left, up),
+                None => Interaction::Grab,
+            },
+            None => Interaction::default(),
         }
     }
 }
 
-/// Padded, scrolling once it's taller than `max`.
-fn scrolled<'a>(content: Column<'a, Message>, max: f32) -> Element<'a, Message> {
-    container(iced::widget::scrollable(container(content).padding(20)).style(theme::thin_scroll)).max_height(max).into()
-}
 
 /// A setting that belongs to the one above it: indented under it.
 fn sub(content: Element<'_, Message>) -> Element<'_, Message> {
     container(content).padding(iced::Padding { left: 16.0, ..iced::Padding::ZERO }).width(Length::Fill).into()
-}
-
-/// Where an overlay goes and how big, on one line: the place in words,
-/// the pad, the sizes.
-fn place_and_size<'a>(place: &'a str, pad: Element<'a, Message>, sizes: Element<'a, Message>) -> Element<'a, Message> {
-    row![
-        column![
-            text(format!("{} · {}", t("ui.export.position"), t("ui.export.size"))).size(12).font(theme::medium(theme::INTER)),
-            text(place).size(10).color(theme::TEXT_MUTED),
-        ]
-        .spacing(2)
-        .width(Length::Fill),
-        pad,
-        sizes,
-    ]
-    .spacing(10)
-    .align_y(Alignment::Center)
-    .into()
-}
-
-/// The overlay sizes as their share of the frame ("25%"), the same in
-/// every language and short enough to sit side by side.
-fn size_labels() -> Vec<String> {
-    DashSize::ALL.iter().map(|z| format!("{:.0}%", z.share() * 100.0)).collect()
 }
 
 /// Choices side by side, the chosen one lit.
@@ -1959,16 +2605,26 @@ mod tests {
             if std::env::var_os("SENTRY_DIALOG_FREE").is_some() {
                 app.export.dash_free = Some((0.30, 0.40));
             }
+            // SENTRY_DIALOG_CAMS: the front camera moved and shrunk, over
+            // the back (with the dashboard's glass over it).
+            if std::env::var_os("SENTRY_DIALOG_CAMS").is_some() {
+                app.export.cam_free = vec![(super::Camera::Front, (0.36, 0.38, 0.30))];
+            }
             if std::env::var_os("SENTRY_DIALOG_TESLA").is_some() {
                 app.export.dash_style = crate::export::overlay::DashStyle::TeslaMobile;
             }
             let (start, end) = app.export_range().unwrap();
             let request = app.export_request(start, end, std::path::PathBuf::new()).unwrap();
-            let p = crate::export::job::preview(&request, super::Position { segment: 0, secs: 10.0 }, super::PREVIEW_WIDTH).unwrap();
-            app.export.preview = Some(Ok(super::Shown { handle: iced::widget::image::Handle::from_rgba(p.shown.0, p.shown.1, p.rgba), size: p.shown, full: (p.width, p.height) }));
+            let p = crate::export::job::preview(&request, super::Position { segment: 0, secs: 10.0 }, super::PREVIEW_WIDTH, true).unwrap();
+            app.export.preview = Some(Ok(super::Shown::from_preview(&p)));
+        }
+        // SENTRY_DIALOG_PLAYING: the editor playing (live overlays; the
+        // video itself is a shader, which this painter leaves out).
+        if std::env::var_os("SENTRY_DIALOG_PLAYING").is_some() {
+            app.export.playing = true;
         }
         if std::env::var_os("SENTRY_DIALOG_DONE").is_some() {
-            app.export.state = super::State::Done { output: "/Users/me/Movies/Tesla 2026-11-07 08-24-23.mp4".into(), bytes: 168_800_000, seconds: 67.9, length: 179.0, format: super::Format::H264, quality: super::Quality::High };
+            app.export.state = super::State::Done { output: "/Users/me/Movies/Tesla 2026-11-07 08-24-23.mp4".into(), bytes: 168_800_000, length: 179.0, format: super::Format::H264, quality: super::Quality::High };
         }
         if let Ok(which) = std::env::var("SENTRY_DIALOG_SHARE") {
             let clip = |code: &str, name: &str, hours: i64| crate::share::SharedClip {
@@ -1987,6 +2643,11 @@ mod tests {
                 "done" => app.export.share.state = super::share_ui::Sharing::Done(app.settings.shared_clips[0].clone()),
                 _ => {}
             }
+        }
+        // SENTRY_DIALOG_DRAGGING: the dashboard mid-drag, top left.
+        if std::env::var_os("SENTRY_DIALOG_DRAGGING").is_some() {
+            app.export.dragging = true;
+            app.export.dash_free = Some((0.05, 0.08));
         }
         let mut painter = crate::export::overlay::Painter::new().unwrap();
         let pic = painter.paint_scaled(app.export_dialog(), iced::Size::new(w * 2, h * 2), 2.0);
@@ -2114,7 +2775,8 @@ mod tests {
                 let _ = a.export_update(e);
             }
         };
-        let r = app.movables(w, h)[0].rect;
+        let dash = |a: &crate::App| a.movables(W, H).into_iter().find(|m| m.what == super::Dragged::Dashboard).expect("no dashboard").rect;
+        let r = dash(&app);
         let (cx, cy) = ((r.x + r.width / 2.0) * scale, (r.y + r.height / 2.0) * scale);
         use iced::mouse::{Button, Event as M};
         let at = |x: f32, y: f32| iced::Event::Mouse(M::CursorMoved { position: iced::Point::new(x, y) });
@@ -2127,16 +2789,145 @@ mod tests {
         painter.run(&mut app, view, update, iced::Size::new(shown, 400.0), &steps);
         eprintln!("free: {:?}", app.export.dash_free);
         let (fx, fy) = app.export.dash_free.expect("the dashboard didn't move");
-        assert!((fx * w as f32 - (r.x - 90.0 / scale)).abs() < 3.0 && (fy * h as f32 - (r.y - 72.0 / scale)).abs() < 3.0);
+        eprintln!("moved to {:?}, aimed at {:?}", (fx * w as f32, fy * h as f32), (r.x - 90.0 / scale, r.y - 72.0 / scale));
+        // Where it was aimed, or snapped to a line within reach (6 preview pixels).
+        let reach = 6.0 / scale + 3.0;
+        assert!((fx * w as f32 - (r.x - 90.0 / scale)).abs() < reach && (fy * h as f32 - (r.y - 72.0 / scale)).abs() < reach);
+        // Dropped with its centre near the frame's centre: snapped onto it.
+        let r = dash(&app);
+        let grip = ((r.x + r.width / 2.0) * scale, (r.y + r.height / 2.0) * scale);
+        let aim = ((w as f32 / 2.0 + 15.0) * scale, (h as f32 / 2.0 - 12.0) * scale);
+        let steps = vec![at(grip.0, grip.1), iced::Event::Mouse(M::ButtonPressed(Button::Left)), at(aim.0, aim.1), iced::Event::Mouse(M::ButtonReleased(Button::Left))];
+        painter.run(&mut app, view, update, iced::Size::new(shown, 400.0), &steps);
+        let c = dash(&app);
+        eprintln!("centred: {:?}", c);
+        assert!((c.x + c.width / 2.0 - w as f32 / 2.0).abs() < 1.0 && (c.y + c.height / 2.0 - h as f32 / 2.0).abs() < 1.0);
         // Dropped next to the top-left place: snapped there.
-        let r = app.movables(w, h)[0].rect;
+        let r = dash(&app);
         let target = iced::Point::new(40.0 * scale + 2.0, 40.0 * scale + 2.0);
-        let grip = (r.x * scale + 5.0, r.y * scale + 5.0);
-        let steps = vec![at(grip.0, grip.1), iced::Event::Mouse(M::ButtonPressed(Button::Left)), at(target.x + 5.0, target.y + 5.0), iced::Event::Mouse(M::ButtonReleased(Button::Left))];
+        let grip = ((r.x + r.width / 2.0) * scale, (r.y + r.height / 2.0) * scale);
+        let steps = vec![at(grip.0, grip.1), iced::Event::Mouse(M::ButtonPressed(Button::Left)), at(target.x + r.width / 2.0 * scale, target.y + r.height / 2.0 * scale), iced::Event::Mouse(M::ButtonReleased(Button::Left))];
         painter.run(&mut app, view, update, iced::Size::new(shown, 400.0), &steps);
         eprintln!("corner: {:?}, free: {:?}", app.export.dash_corner, app.export.dash_free);
         assert_eq!(app.export.dash_corner, crate::export::overlay::Corner::TopLeft);
         assert!(app.export.dash_free.is_none());
+        // Its bottom-right handle dragged 30 preview pixels right: wider,
+        // still in the top-left place.
+        let r = dash(&app);
+        let handle = ((r.x + r.width) * scale, (r.y + r.height) * scale);
+        let before = app.export.dash_share;
+        let steps = vec![at(handle.0, handle.1), iced::Event::Mouse(M::ButtonPressed(Button::Left)), at(handle.0 + 15.0, handle.1), at(handle.0 + 30.0, handle.1), iced::Event::Mouse(M::ButtonReleased(Button::Left))];
+        painter.run(&mut app, view, update, iced::Size::new(shown, 400.0), &steps);
+        let after = dash(&app);
+        eprintln!("resized: {before} -> {}, {r:?} -> {after:?}", app.export.dash_share);
+        assert_eq!(app.export.dash_corner, crate::export::overlay::Corner::TopLeft);
+        assert!(app.export.dash_free.is_none());
+        assert!((after.width - (r.width + 30.0 / scale)).abs() < 3.0, "{after:?}");
+        assert!((after.x - r.x).abs() < 1.0 && (after.y - r.y).abs() < 1.0);
+        // Its top-left handle dragged in: smaller, placed where it ended.
+        let r = after;
+        let handle = (r.x * scale, r.y * scale);
+        let steps = vec![at(handle.0, handle.1), iced::Event::Mouse(M::ButtonPressed(Button::Left)), at(handle.0 + 40.0, handle.1 + 2.0), iced::Event::Mouse(M::ButtonReleased(Button::Left))];
+        painter.run(&mut app, view, update, iced::Size::new(shown, 400.0), &steps);
+        let after = dash(&app);
+        eprintln!("shrunk: {r:?} -> {after:?}, free {:?}", app.export.dash_free);
+        assert!(app.export.dash_free.is_some());
+        assert!((after.x + after.width - (r.x + r.width)).abs() < 2.0 && (after.y + after.height - (r.y + r.height)).abs() < 2.0);
+        assert!(after.width < r.width - 30.0 / scale);
+        // The front camera: shrunk by its top-left handle (its bottom-right
+        // stays), then moved by its middle; Reset Layout puts it back.
+        let cam = |a: &crate::App| a.movables(W, H).into_iter().find(|m| m.what == super::Dragged::Camera(super::Camera::Front)).expect("no front camera").rect;
+        let home_rect = cam(&app);
+        let handle = (home_rect.x * scale, home_rect.y * scale);
+        let steps = vec![at(handle.0, handle.1), iced::Event::Mouse(M::ButtonPressed(Button::Left)), at(handle.0 + 40.0, handle.1 + 26.0), iced::Event::Mouse(M::ButtonReleased(Button::Left))];
+        painter.run(&mut app, view, update, iced::Size::new(shown, 400.0), &steps);
+        let small = cam(&app);
+        eprintln!("front: {home_rect:?} -> {small:?}, {:?}", app.export.cam_free);
+        assert!(small.width < home_rect.width - 100.0);
+        assert!((small.x + small.width - (home_rect.x + home_rect.width)).abs() < 3.0 && (small.y + small.height - (home_rect.y + home_rect.height)).abs() < 3.0);
+        let grip = ((small.x + small.width / 2.0) * scale, (small.y + small.height / 2.0) * scale);
+        let steps = vec![at(grip.0, grip.1), iced::Event::Mouse(M::ButtonPressed(Button::Left)), at(grip.0 - 25.0, grip.1 + 20.0), iced::Event::Mouse(M::ButtonReleased(Button::Left))];
+        painter.run(&mut app, view, update, iced::Size::new(shown, 400.0), &steps);
+        let moved = cam(&app);
+        eprintln!("moved front: {moved:?}");
+        assert!((moved.width - small.width).abs() < 2.0);
+        assert!(moved.x < small.x - 60.0 && moved.y > small.y + 40.0);
+        // Its tile is drawn last, at that place.
+        let tiles = app.export_tiles();
+        assert_eq!(tiles.last().map(|t| t.camera), Some(super::Camera::Front));
+        let _ = app.export_update(super::ExportMsg::ResetLayout);
+        assert_eq!(cam(&app), home_rect);
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    /// One press drags the dashboard all the way in the whole preview
+    /// (the picture turning into the pieces mid-drag mustn't drop it), and
+    /// a moved camera doesn't take over another's drag
+    /// (SENTRY_DIALOG_CLIPS).
+    #[test]
+    #[ignore]
+    fn editor_drags_on_first_press() {
+        let Some(dir) = std::env::var_os("SENTRY_DIALOG_CLIPS") else { return };
+        let home = std::env::temp_dir().join(format!("sentry-press-{}", std::process::id()));
+        std::fs::create_dir_all(&home).unwrap();
+        // SAFETY: the test runs alone (ignored, run on its own).
+        unsafe { std::env::set_var("HOME", &home) };
+        let (mut app, _) = crate::App::boot();
+        let collections = crate::library::scan(std::path::Path::new(&dir)).unwrap();
+        app.player.load(crate::library::load_segments(&collections[0]).unwrap(), 0.0);
+        app.export.open = true;
+        app.export.dashboard = true;
+        let (start, end) = app.export_range().unwrap();
+        let request = app.export_request(start, end, std::path::PathBuf::new()).unwrap();
+        let p = crate::export::job::preview(&request, super::Position { segment: 0, secs: 10.0 }, super::PREVIEW_WIDTH, true).unwrap();
+        app.export.preview = Some(Ok(super::Shown::from_preview(&p)));
+        const WIDE: f32 = 720.0;
+        fn view(a: &crate::App) -> iced::Element<'_, crate::Message> {
+            let (a0, b0) = a.export_range_secs().unwrap();
+            a.preview_block((a0, b0), b0 - a0, 1.0, true, super::Format::H264, (WIDE, 600.0))
+        }
+        let update = |a: &mut crate::App, m: crate::Message| {
+            if let crate::Message::Export(e) = m {
+                let _ = a.export_update(e);
+            }
+        };
+        let (w, h) = (p.width, p.height);
+        let scale = WIDE / w as f32;
+        let find = |a: &crate::App, what: super::Dragged| a.movables(w, h).into_iter().find(|m| m.what == what).unwrap().rect;
+        use iced::mouse::{Button, Event as M};
+        let at = |x: f32, y: f32| iced::Event::Mouse(M::CursorMoved { position: iced::Point::new(x, y) });
+        let mut painter = crate::export::overlay::Painter::new().unwrap();
+        // The dashboard, 10 moves of 8 px up and left in one press.
+        let r = find(&app, super::Dragged::Dashboard);
+        let (cx, cy) = ((r.x + r.width / 2.0) * scale, (r.y + r.height / 2.0) * scale);
+        let mut steps = vec![at(cx, cy), iced::Event::Mouse(M::ButtonPressed(Button::Left))];
+        for k in 1..=10 {
+            steps.push(at(cx - 8.0 * k as f32, cy - 8.0 * k as f32));
+        }
+        steps.push(iced::Event::Mouse(M::ButtonReleased(Button::Left)));
+        painter.run(&mut app, view, update, iced::Size::new(WIDE, 700.0), &steps);
+        let after = find(&app, super::Dragged::Dashboard);
+        eprintln!("dashboard {r:?} -> {after:?}");
+        assert!(r.y - after.y > 60.0 / scale, "the drag stopped early: {r:?} -> {after:?}");
+        // The left pillar moved (to the end of the order), then the right
+        // pillar dragged: only the right pillar moves.
+        for (what, dx) in [(super::Camera::LeftPillar, 30.0), (super::Camera::RightPillar, -30.0)] {
+            let r = find(&app, super::Dragged::Camera(what));
+            let (cx, cy) = ((r.x + r.width / 2.0) * scale, (r.y + r.height * 0.7) * scale);
+            let mut steps = vec![at(cx, cy), iced::Event::Mouse(M::ButtonPressed(Button::Left))];
+            for k in 1..=5 {
+                steps.push(at(cx + dx * k as f32 / 5.0, cy + 6.0 * k as f32));
+            }
+            steps.push(iced::Event::Mouse(M::ButtonReleased(Button::Left)));
+            let left_before = find(&app, super::Dragged::Camera(super::Camera::LeftPillar));
+            painter.run(&mut app, view, update, iced::Size::new(WIDE, 700.0), &steps);
+            let moved = find(&app, super::Dragged::Camera(what));
+            eprintln!("{what:?}: {r:?} -> {moved:?}");
+            assert!((moved.x - r.x - dx / scale).abs() < 6.0 / scale + 2.0, "{what:?} didn't follow");
+            if what == super::Camera::RightPillar {
+                assert_eq!(find(&app, super::Dragged::Camera(super::Camera::LeftPillar)), left_before, "the left pillar moved too");
+            }
+        }
         let _ = std::fs::remove_dir_all(&home);
     }
 
@@ -2163,8 +2954,8 @@ mod tests {
         app.export.front_size = Some((2896, 1876));
         let (start, end) = app.export_range().unwrap();
         let request = app.export_request(start, end, std::path::PathBuf::new()).unwrap();
-        let p = crate::export::job::preview(&request, super::Position { segment: 0, secs: 10.0 }, super::PREVIEW_WIDTH).unwrap();
-        app.export.preview = Some(Ok(super::Shown { handle: iced::widget::image::Handle::from_rgba(p.shown.0, p.shown.1, p.rgba.clone()), size: p.shown, full: (p.width, p.height) }));
+        let p = crate::export::job::preview(&request, super::Position { segment: 0, secs: 10.0 }, super::PREVIEW_WIDTH, true).unwrap();
+        app.export.preview = Some(Ok(super::Shown::from_preview(&p)));
         // Behind the dialog: the footage filling the window, frosted under
         // the dialog as the app does, and dimmed by the backdrop.
         let frame = match std::env::var_os("SENTRY_LOOKS_BACKGROUND") {

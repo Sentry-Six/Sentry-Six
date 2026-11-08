@@ -226,6 +226,21 @@ pub fn modal(_: &Theme) -> container::Style {
     }
 }
 
+/// The export editor, which fills the window: the glass, but dense
+/// enough that the video under it is only a hint of colour.
+pub fn modal_editor(_: &Theme) -> container::Style {
+    if SOLID_DIALOGS.load(std::sync::atomic::Ordering::Relaxed) {
+        return modal_solid(&Theme::Dark);
+    }
+    container::Style {
+        background: Some(Background::Gradient(iced::gradient::Linear::new(iced::Degrees(180.0)).add_stop(0.0, rgba(30, 34, 41, 0.86)).add_stop(1.0, rgba(18, 20, 25, 0.92)).into())),
+        border: Border { color: white(0.16), width: 1.0, radius: 24.0.into() },
+        shadow: Shadow { color: black(0.5), offset: Vector::new(0.0, 32.0), blur_radius: 100.0 },
+        text_color: Some(TEXT),
+        ..Default::default()
+    }
+}
+
 /// The Settings sidebar (its right border is a separate hairline).
 pub fn modal_nav(_: &Theme) -> container::Style {
     container::Style { background: Some(rgba(7, 9, 12, 0.5).into()), ..Default::default() }

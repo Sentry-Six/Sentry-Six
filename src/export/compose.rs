@@ -591,23 +591,20 @@ impl Compositor {
                 timestamp_writes: None,
                 occlusion_query_set: None,
             });
-            pass.set_pipeline(&self.pipeline);
+            // In order: a camera moved over another is drawn after it.
             for (i, group, p) in groups {
-                if blurred(*i).is_some() {
-                    continue;
+                match blurred(*i) {
+                    Some(b) => {
+                        pass.set_pipeline(&self.blur_pipeline);
+                        pass.set_bind_group(0, &b.group, &[]);
+                    }
+                    None => {
+                        pass.set_pipeline(&self.pipeline);
+                        pass.set_bind_group(0, group, &[]);
+                    }
                 }
                 pass.set_viewport(p.x, p.y, p.width, p.height, 0.0, 1.0);
-                pass.set_bind_group(0, group, &[]);
                 pass.draw(0..4, 0..1);
-            }
-            if !blurs.is_empty() {
-                pass.set_pipeline(&self.blur_pipeline);
-                for (i, _, p) in groups {
-                    let Some(b) = blurred(*i) else { continue };
-                    pass.set_viewport(p.x, p.y, p.width, p.height, 0.0, 1.0);
-                    pass.set_bind_group(0, &b.group, &[]);
-                    pass.draw(0..4, 0..1);
-                }
             }
             if !overlays.is_empty() {
                 let (fw, fh) = size;

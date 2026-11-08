@@ -825,7 +825,8 @@ impl App {
             Message::Tick => {
                 self.player.tick();
                 self.animate_dashboard();
-                return self.follow_map();
+                let editor = self.export_tick();
+                return Task::batch([self.follow_map(), editor]);
             }
             Message::DashDrag(dx, dy) => {
                 self.dash_offset += iced::Vector::new(dx, dy);
@@ -2027,6 +2028,19 @@ impl App {
     fn run_shortcut(&mut self, action: shortcuts::Action) -> Task<Message> {
         use shortcuts::Action;
         let speed_index = || SPEEDS.iter().position(|s| s.0 == self.player.rate()).unwrap_or(1);
+        // The export editor open: its own play and skip; the speed keys
+        // still set the speed (it plays with playback's decoders); the
+        // rest would change what's under it.
+        if self.editor_has_keys() {
+            use export_view::ExportMsg;
+            match action {
+                Action::PlayPause => return Task::done(Message::Export(ExportMsg::PlayPreview)),
+                Action::SkipForward => return Task::done(Message::Export(ExportMsg::Skip(self.settings.skip_seconds))),
+                Action::SkipBackward => return Task::done(Message::Export(ExportMsg::Skip(-self.settings.skip_seconds))),
+                Action::SpeedUp | Action::SpeedDown | Action::SpeedReset | Action::SpeedMax => {}
+                _ => return Task::none(),
+            }
+        }
         match action {
             Action::PlayPause => return Task::done(Message::TogglePlay),
             Action::SkipForward => return Task::done(Message::Skip(self.settings.skip_seconds)),
@@ -2563,6 +2577,7 @@ impl App {
                 zoom: if focused { self.zoom } else { 1.0 },
                 pan: if focused { self.pan } else { (0.0, 0.0) },
                 mirror: camera.mirrored() && self.settings.mirror_cameras && !self.gm(),
+                square: false,
             };
             // The video fills the tile's cell, half the gap included, so
             // frosted glass can smear across the gaps too.

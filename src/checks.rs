@@ -645,7 +645,7 @@ pub fn export_check(dir: &std::path::Path, quality: Option<&str>, speed: Option<
                 // SENTRY_EXPORT_DASHBOARD=tesla-mobile for that style.
                 style: crate::export::overlay::DashStyle::from_key(&std::env::var("SENTRY_EXPORT_DASHBOARD").unwrap_or_default()).unwrap_or(crate::export::overlay::DashStyle::Compact),
                 corner: std::env::var("SENTRY_EXPORT_DASH_CORNER").ok().and_then(|c| crate::export::overlay::Corner::from_key(&c)).unwrap_or(crate::export::overlay::Corner::BottomCenter),
-                size: crate::export::overlay::DashSize::Medium,
+                share: crate::export::overlay::DashSize::Medium.share(),
                 metric: false,
                 h24: false,
                 accel: crate::dashboard::AccelMode::IconBar,
@@ -656,13 +656,15 @@ pub fn export_check(dir: &std::path::Path, quality: Option<&str>, speed: Option<
             // The minimap with SENTRY_EXPORT_MINIMAP=1.
             minimap: std::env::var_os("SENTRY_EXPORT_MINIMAP").map(|_| crate::export::overlay::Minimap {
                 corner: crate::export::overlay::Corner::TopRight,
-                size: crate::export::overlay::DashSize::Small,
+                share: crate::export::overlay::DashSize::Small.share(),
                 dark: false,
                 tiles: crate::export::overlay::MapTiles(crate::map::tiles::Tiles::new(crate::settings::data_dir().map(|d| d.join("map")))),
                 // SENTRY_EXPORT_MINIMAP=live: the map follows the car.
                 live: std::env::var("SENTRY_EXPORT_MINIMAP").is_ok_and(|v| v == "live"),
                 free: None,
             }),
+            // The watermark with SENTRY_EXPORT_WATERMARK=1.
+            watermark: std::env::var_os("SENTRY_EXPORT_WATERMARK").map(|_| crate::export::overlay::Watermark { corner: crate::export::overlay::Corner::BottomRight, free: None, share: crate::export::overlay::Watermark::SHARE }),
             // A zone over the middle of every camera with SENTRY_EXPORT_BLUR=1.
             blur_zones: if std::env::var_os("SENTRY_EXPORT_BLUR").is_some() { cameras.iter().map(|c| crate::export::blur::BlurZone::starting(*c)).collect() } else { Vec::new() },
             output: output.clone(),
@@ -676,7 +678,7 @@ pub fn export_check(dir: &std::path::Path, quality: Option<&str>, speed: Option<
             for _ in 0..2 {
                 let started = std::time::Instant::now();
                 let width = std::env::var("SENTRY_EXPORT_PREVIEW_WIDTH").ok().and_then(|w| w.parse().ok()).unwrap_or(960);
-                let p = job::preview(&request, job::Position { segment: 0, secs: 10.0 }, width)?;
+                let p = job::preview(&request, job::Position { segment: 0, secs: 10.0 }, width, true)?;
                 println!("preview of {}x{} in {} ms ({}x{})", p.width, p.height, started.elapsed().as_millis(), p.shown.0, p.shown.1);
                 // The PNG encoder itself: image's save() would link every
                 // format's encoder (AVIF's alone is over 1 MB).

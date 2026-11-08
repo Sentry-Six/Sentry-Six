@@ -49,11 +49,16 @@ pub struct View {
     /// Pan in tile pixels before zooming (CSS `translate` inside `scale`).
     pub pan: (f32, f32),
     pub mirror: bool,
+    /// Square corners, no border and no margin: the bounds are the tile
+    /// and the picture covers all of it (the export editor's cameras, edge
+    /// to edge like the export); its glass areas are from the tile's
+    /// top-left, not the window's.
+    pub square: bool,
 }
 
 impl Default for View {
     fn default() -> Self {
-        Self { zoom: 1.0, pan: (0.0, 0.0), mirror: false }
+        Self { zoom: 1.0, pan: (0.0, 0.0), mirror: false, square: false }
     }
 }
 
@@ -587,21 +592,32 @@ impl shader::Primitive for VideoPrimitive {
             return;
         }
         let scale = viewport.scale_factor();
+        // The editor's tiles (square) give their glass from their own top-left.
+        let at_bounds = |g: Option<Glass>| {
+            g.map(|mut g| {
+                if self.view.square {
+                    g.rect.x += bounds.x;
+                    g.rect.y += bounds.y;
+                }
+                g
+            })
+        };
+        let (glass, glass2) = (at_bounds(self.glass), at_bounds(self.glass2));
         // Only tiles a glass area actually overlaps need the blurred copy.
         let covers = |g: &Option<Glass>| g.is_some_and(|g| g.rect.intersects(bounds));
-        let has_glass = covers(&self.glass) || covers(&self.glass2);
+        let has_glass = covers(&glass) || covers(&glass2);
         let blur_size = (
             ((bounds.width * scale) / BLUR_DOWNSCALE).ceil().max(1.0) as u32,
             ((bounds.height * scale) / BLUR_DOWNSCALE).ceil().max(1.0) as u32,
         );
         // Both glass areas share the blur settings.
-        let (sigma, saturate) = match self.glass.or(self.glass2) {
+        let (sigma, saturate) = match glass.or(glass2) {
             Some(g) => ((g.blur * scale).max(0.5), g.saturate),
             None => (1.0, 1.0),
         };
         let sigma_small = (sigma / BLUR_DOWNSCALE).max(0.5);
         // Glass Blur 0 means no blur at all (CSS blur(0)), just the tint.
-        let raw_sigma = self.glass.or(self.glass2).map_or(0.0, |g| g.blur * scale);
+        let raw_sigma = glass.or(glass2).map_or(0.0, |g| g.blur * scale);
 
         let needs_new = pipeline.tiles.get(&self.slot).is_none_or(|t| t.size != size);
         if needs_new {
@@ -657,17 +673,25 @@ impl shader::Primitive for VideoPrimitive {
         let tile = pipeline.tiles.get_mut(&self.slot).unwrap();
 
         // The tile inside the bounds, and how much bigger the bounds are.
+        let margin = if self.view.square { 0.0 } else { MARGIN };
         let tile_rect = Rectangle {
-            x: bounds.x + MARGIN,
-            y: bounds.y + MARGIN,
-            width: (bounds.width - 2.0 * MARGIN).max(1.0),
-            height: (bounds.height - 2.0 * MARGIN).max(1.0),
+            x: bounds.x + margin,
+            y: bounds.y + margin,
+            width: (bounds.width - 2.0 * margin).max(1.0),
+            height: (bounds.height - 2.0 * margin).max(1.0),
         };
         let grow = (bounds.width / tile_rect.width, bounds.height / tile_rect.height);
         // Fit the picture inside the tile, keeping its aspect ratio.
         let video_aspect = size.0 as f32 / size.1 as f32;
         let tile_aspect = (tile_rect.width / tile_rect.height).max(0.01);
-        let (fx, fy) = if video_aspect > tile_aspect { (1.0, tile_aspect / video_aspect) } else { (video_aspect / tile_aspect, 1.0) };
+        let (fx, fy) = if self.view.square {
+            // Covering: no bars when the tile is a hair off the picture's shape.
+            if video_aspect > tile_aspect { (video_aspect / tile_aspect, 1.0) } else { (1.0, tile_aspect / video_aspect) }
+        } else if video_aspect > tile_aspect {
+            (1.0, tile_aspect / video_aspect)
+        } else {
+            (video_aspect / tile_aspect, 1.0)
+        };
         let zoom = self.view.zoom.max(1.0);
         let (sx, sy) = (fx * zoom, fy * zoom);
         // CSS translate inside scale: on screen the pan moves by pan * zoom.
@@ -679,11 +703,12 @@ impl shader::Primitive for VideoPrimitive {
             Some(g) => (1.0, [g.rect.x * scale, g.rect.y * scale, g.rect.width * scale, g.rect.height * scale], g.radius * scale),
             None => (0.0, [0.0; 4], 0.0),
         };
-        let (glass_on, panel, radius) = rect(self.glass);
-        let (glass2_on, panel2, radius2) = rect(self.glass2);
+        let (glass_on, panel, radius) = rect(glass);
+        let (glass2_on, panel2, radius2) = rect(glass2);
         // The tile's inside: 1 px in from its border, 11 px corners (12 - 1).
         let t = tile_rect;
-        let inner = [(t.x + 1.0) * scale, (t.y + 1.0) * scale, (t.width - 2.0).max(0.0) * scale, (t.height - 2.0).max(0.0) * scale];
+        let inset = if self.view.square { 0.0 } else { 1.0 };
+        let inner = [(t.x + inset) * scale, (t.y + inset) * scale, (t.width - 2.0 * inset).max(0.0) * scale, (t.height - 2.0 * inset).max(0.0) * scale];
         let cell = [bounds.x * scale, bounds.y * scale, bounds.width * scale, bounds.height * scale];
         let uniform: [f32; 32] = [
             sx, sy, if srgb { 1.0 } else { 0.0 }, glass_on,
@@ -691,7 +716,7 @@ impl shader::Primitive for VideoPrimitive {
             radius, raw_sigma, saturate, if self.view.mirror { 1.0 } else { 0.0 },
             grow.0, grow.1, offset.0, offset.1,
             inner[0], inner[1], inner[2], inner[3],
-            TILE_RADIUS * scale, glass2_on, radius2, scale,
+            if self.view.square { 0.0 } else { TILE_RADIUS * scale }, glass2_on, radius2, scale,
             panel2[0], panel2[1], panel2[2], panel2[3],
             cell[0], cell[1], cell[2], cell[3],
         ];

@@ -576,6 +576,12 @@ mod length_cache {
     }
 }
 
+/// A clip's remembered length, without touching the file (see
+/// `length_cache::remembered`).
+pub fn remembered_length(path: &std::path::Path) -> Option<f64> {
+    length_cache::remembered(path)
+}
+
 /// The clip a minute's length is read from: its front camera's, or any.
 fn length_clip(s: &Segment) -> Option<&PathBuf> {
     s.files.get(&Camera::Front).or_else(|| s.files.values().next())

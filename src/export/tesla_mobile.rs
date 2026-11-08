@@ -36,40 +36,49 @@ pub fn date_line(t: crate::library::LocalSecs, h24: bool) -> String {
     format!("{}, {} {}, {}   {}", date.format("%A"), date.format("%B"), date.day(), date.year(), crate::dashboard::time_of_day(t.rem_euclid(86400), h24))
 }
 
+/// The date bar's drawing, at whatever size it's given.
+struct Date(String);
+
+impl<M> canvas::Program<M> for Date {
+    type State = ();
+    fn draw(&self, _: &(), renderer: &Renderer, _: &Theme, b: Rectangle, _: mouse::Cursor) -> Vec<canvas::Geometry> {
+        let mut f = Frame::new(renderer, b.size());
+        f.fill_rectangle(Point::ORIGIN, b.size(), BAR);
+        f.fill_rectangle(Point::new(0.0, b.height - 1.0), Size::new(b.width, 1.0), LINE);
+        f.fill_text(Text {
+            content: self.0.to_string(),
+            position: Point::new(b.width / 2.0, b.height / 2.0),
+            color: Color::WHITE,
+            size: (b.height * 0.55).into(),
+            font: crate::theme::INTER,
+            align_x: iced::widget::text::Alignment::Center,
+            align_y: iced::alignment::Vertical::Center,
+            ..Text::default()
+        });
+        vec![f.into_geometry()]
+    }
+}
+
+/// The date bar, filling what it's given (the export, or the editor
+/// while it plays).
+pub fn date_bar<'a, M: 'a>(line: String) -> iced::Element<'a, M> {
+    iced::widget::canvas(Date(line)).width(iced::Length::Fill).height(iced::Length::Fill).into()
+}
+
 /// The date bar.
 pub fn paint_date(painter: &mut Painter, width: u32, height: u32, line: &str) -> Picture {
-    struct Date<'a>(&'a str);
-    impl canvas::Program<()> for Date<'_> {
-        type State = ();
-        fn draw(&self, _: &(), renderer: &Renderer, _: &Theme, b: Rectangle, _: mouse::Cursor) -> Vec<canvas::Geometry> {
-            let mut f = Frame::new(renderer, b.size());
-            f.fill_rectangle(Point::ORIGIN, b.size(), BAR);
-            f.fill_rectangle(Point::new(0.0, b.height - 1.0), Size::new(b.width, 1.0), LINE);
-            f.fill_text(Text {
-                content: self.0.to_string(),
-                position: Point::new(b.width / 2.0, b.height / 2.0),
-                color: Color::WHITE,
-                size: (b.height * 0.55).into(),
-                font: crate::theme::INTER,
-                align_x: iced::widget::text::Alignment::Center,
-                align_y: iced::alignment::Vertical::Center,
-                ..Text::default()
-            });
-            vec![f.into_geometry()]
-        }
-    }
-    let c = iced::widget::canvas(Date(line)).width(width as f32).height(height as f32);
+    let c = iced::widget::canvas(Date(line.to_string())).width(width as f32).height(height as f32);
     painter.paint::<()>(c.into(), Size::new(width, height))
 }
 
-struct DataBar<'a> {
-    state: &'a DashState,
+struct DataBar {
+    state: DashState,
     metric: bool,
     /// The separator on the bar's top edge (bar at the bottom) or bottom.
     line_on_top: bool,
 }
 
-impl canvas::Program<()> for DataBar<'_> {
+impl<M> canvas::Program<M> for DataBar {
     type State = ();
 
     fn draw(&self, _: &(), renderer: &Renderer, _: &Theme, b: Rectangle, _: mouse::Cursor) -> Vec<canvas::Geometry> {
@@ -125,8 +134,11 @@ impl canvas::Program<()> for DataBar<'_> {
         for (on, x, handle) in [(m.blinker_on_left, left_x, &icons.blink_left), (m.blinker_on_right, right_x, &icons.blink_right)] {
             let lit = on && blink;
             let size = diam * 0.9;
+            // The icons are 200 x 175: drawn in a box that shape (in a
+            // square one their tips were cut off).
+            let width = size * 200.0 / 175.0;
             f.draw_svg(
-                Rectangle::new(Point::new(x - size / 2.0, y - size / 2.0), Size::new(size, size)),
+                Rectangle::new(Point::new(x - width / 2.0, y - size / 2.0), Size::new(width, size)),
                 iced::advanced::svg::Svg::new(handle.clone()).color(if lit { GREEN } else { grey(0x40) }),
             );
         }
@@ -149,9 +161,14 @@ impl canvas::Program<()> for DataBar<'_> {
     }
 }
 
+/// The data bar, filling what it's given.
+pub fn data_bar<'a, M: 'a>(state: DashState, metric: bool, line_on_top: bool) -> iced::Element<'a, M> {
+    iced::widget::canvas(DataBar { state, metric, line_on_top }).width(iced::Length::Fill).height(iced::Length::Fill).into()
+}
+
 /// The data bar.
 pub fn paint_data(painter: &mut Painter, width: u32, height: u32, state: &DashState, metric: bool, line_on_top: bool) -> Picture {
-    let c = iced::widget::canvas(DataBar { state, metric, line_on_top }).width(width as f32).height(height as f32);
+    let c = iced::widget::canvas(DataBar { state: state.clone(), metric, line_on_top }).width(width as f32).height(height as f32);
     painter.paint::<()>(c.into(), Size::new(width, height))
 }
 

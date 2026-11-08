@@ -358,7 +358,8 @@
     "ui.export.previewUpdating": "Updating…",
     "ui.export.previewDrawing": "Drawing the preview…",
     "ui.export.customPosition": "Dragged in the preview",
-    "ui.export.previewDragHint": "Drag the dashboard or map in the preview to move it; it snaps to the usual places.",
+    "ui.export.previewDragHint": "Drag anything in the preview to move it, or drag a corner to resize it. It snaps to the edges, the centre and the other pieces.",
+    "ui.export.resetLayout": "Reset Layout",
     "ui.export.blurZoneDraw": "To draw a new zone, click its corners one by one and click the first again to finish, or drag across the picture for a rectangle.",
     "ui.export.playVideo": "Play",
     "ui.settings.dialogStyle": "Dialog Style",
@@ -397,7 +398,10 @@
     "ui.share.shared": "Clip shared successfully!",
     "ui.share.needsH264": "Sharing needs H.264 below Maximum quality, so the link plays in every browser.",
     "ui.share.tooBig": "This video is over 3 GB, the most a shared clip can be.",
-    "ui.share.retry": "Try again"
+    "ui.share.retry": "Try again",
+    "ui.export.watermark": "Sentry Six watermark",
+    "ui.export.watermarkDesc": "A small Sentry Six logo on the video",
+    "ui.export.madeWith": "Made with"
   },
   "es": {
     "app.arrived": "Llegada",
@@ -758,7 +762,8 @@
     "ui.export.previewUpdating": "Actualizando…",
     "ui.export.previewDrawing": "Dibujando la vista previa…",
     "ui.export.customPosition": "Movido en la vista previa",
-    "ui.export.previewDragHint": "Arrastra el tablero o el mapa en la vista previa para moverlo; se ajusta a las posiciones habituales.",
+    "ui.export.previewDragHint": "Arrastra cualquier elemento de la vista previa para moverlo, o arrastra una esquina para cambiar su tamaño. Se ajusta a los bordes, al centro y a las demás piezas.",
+    "ui.export.resetLayout": "Restablecer diseño",
     "ui.export.blurZoneDraw": "Para dibujar una zona nueva, haz clic en sus esquinas una a una y vuelve a hacer clic en la primera para terminar, o arrastra sobre la imagen para un rectángulo.",
     "ui.export.playVideo": "Reproducir",
     "ui.settings.dialogStyle": "Estilo de los diálogos",
@@ -797,7 +802,10 @@
     "ui.share.shared": "¡Clip compartido!",
     "ui.share.needsH264": "Para compartir hace falta H.264 por debajo de la calidad Máxima, para que el enlace se vea en cualquier navegador.",
     "ui.share.tooBig": "Este vídeo pesa más de 3 GB, el máximo para un clip compartido.",
-    "ui.share.retry": "Reintentar"
+    "ui.share.retry": "Reintentar",
+    "ui.export.watermark": "Marca de agua de Sentry Six",
+    "ui.export.watermarkDesc": "Un pequeño logo de Sentry Six en el vídeo",
+    "ui.export.madeWith": "Hecho con"
   },
   "fr": {
     "app.arrived": "Arrivée",
@@ -1158,7 +1166,8 @@
     "ui.export.previewUpdating": "Mise à jour…",
     "ui.export.previewDrawing": "Création de l'aperçu…",
     "ui.export.customPosition": "Déplacé dans l'aperçu",
-    "ui.export.previewDragHint": "Faites glisser le tableau de bord ou la carte dans l'aperçu pour les déplacer ; ils s'aimantent aux emplacements habituels.",
+    "ui.export.previewDragHint": "Faites glisser n'importe quel élément de l'aperçu pour le déplacer, ou un coin pour le redimensionner. Il s'aimante aux bords, au centre et aux autres éléments.",
+    "ui.export.resetLayout": "Réinitialiser la disposition",
     "ui.export.blurZoneDraw": "Pour dessiner une nouvelle zone, cliquez sur ses coins un par un puis à nouveau sur le premier pour terminer, ou faites glisser sur l'image pour un rectangle.",
     "ui.export.playVideo": "Lire",
     "ui.settings.dialogStyle": "Style des fenêtres",
@@ -1197,7 +1206,10 @@
     "ui.share.shared": "Clip partagé !",
     "ui.share.needsH264": "Le partage demande du H.264 sous la qualité Maximale, pour que le lien se lise dans tous les navigateurs.",
     "ui.share.tooBig": "Cette vidéo dépasse 3 Go, la taille maximale d'un clip partagé.",
-    "ui.share.retry": "Réessayer"
+    "ui.share.retry": "Réessayer",
+    "ui.export.watermark": "Filigrane Sentry Six",
+    "ui.export.watermarkDesc": "Un petit logo Sentry Six sur la vidéo",
+    "ui.export.madeWith": "Créé avec"
   },
   "de": {
     "app.arrived": "Ankunft",
@@ -1558,7 +1570,8 @@
     "ui.export.previewUpdating": "Wird aktualisiert…",
     "ui.export.previewDrawing": "Vorschau wird erstellt…",
     "ui.export.customPosition": "In der Vorschau verschoben",
-    "ui.export.previewDragHint": "Ziehe das Dashboard oder die Karte in der Vorschau, um sie zu verschieben; sie rasten an den üblichen Stellen ein.",
+    "ui.export.previewDragHint": "Ziehe ein beliebiges Element in der Vorschau, um es zu verschieben, oder an einer Ecke, um die Größe zu ändern. Es rastet an den Rändern, der Mitte und den anderen Elementen ein.",
+    "ui.export.resetLayout": "Layout zurücksetzen",
     "ui.export.blurZoneDraw": "Für einen neuen Bereich klicke nacheinander auf seine Ecken und zum Abschluss erneut auf die erste, oder ziehe über das Bild für ein Rechteck.",
     "ui.export.playVideo": "Abspielen",
     "ui.settings.dialogStyle": "Dialogstil",
@@ -1597,7 +1610,10 @@
     "ui.share.shared": "Clip geteilt!",
     "ui.share.needsH264": "Zum Teilen braucht es H.264 unter maximaler Qualität, damit der Link in jedem Browser läuft.",
     "ui.share.tooBig": "Dieses Video ist größer als 3 GB, die Höchstgröße für einen geteilten Clip.",
-    "ui.share.retry": "Erneut versuchen"
+    "ui.share.retry": "Erneut versuchen",
+    "ui.export.watermark": "Sentry-Six-Wasserzeichen",
+    "ui.export.watermarkDesc": "Ein kleines Sentry-Six-Logo im Video",
+    "ui.export.madeWith": "Erstellt mit"
   },
   "zh": {
     "app.arrived": "到达",
@@ -1958,7 +1974,8 @@
     "ui.export.previewUpdating": "正在更新…",
     "ui.export.previewDrawing": "正在生成预览…",
     "ui.export.customPosition": "已在预览中拖动",
-    "ui.export.previewDragHint": "在预览中拖动仪表板或地图即可移动；靠近常用位置时会自动对齐。",
+    "ui.export.previewDragHint": "在预览中拖动任意元素即可移动，拖动角可调整大小。会自动对齐边缘、中心和其他元素。",
+    "ui.export.resetLayout": "重置布局",
     "ui.export.blurZoneDraw": "要绘制新区域，请依次点击各个角点，再次点击第一个角点完成；或在画面上拖动绘制矩形。",
     "ui.export.playVideo": "播放",
     "ui.settings.dialogStyle": "对话框样式",
@@ -1997,7 +2014,10 @@
     "ui.share.shared": "剪辑已分享！",
     "ui.share.needsH264": "分享需要低于“最高”画质的 H.264，这样链接在所有浏览器中都能播放。",
     "ui.share.tooBig": "此视频超过 3 GB，超出分享剪辑的上限。",
-    "ui.share.retry": "重试"
+    "ui.share.retry": "重试",
+    "ui.export.watermark": "Sentry Six 水印",
+    "ui.export.watermarkDesc": "在视频上显示一个小的 Sentry Six 标志",
+    "ui.export.madeWith": "制作工具"
   },
   "ja": {
     "app.arrived": "到着",
@@ -2358,7 +2378,8 @@
     "ui.export.previewUpdating": "更新中…",
     "ui.export.previewDrawing": "プレビューを作成中…",
     "ui.export.customPosition": "プレビューで移動済み",
-    "ui.export.previewDragHint": "プレビューでダッシュボードや地図をドラッグして移動できます。いつもの位置の近くではそこに合わせます。",
+    "ui.export.previewDragHint": "プレビュー内の要素をドラッグして移動し、角をドラッグしてサイズを変えられます。端、中央、ほかの要素に合わせて吸着します。",
+    "ui.export.resetLayout": "レイアウトをリセット",
     "ui.export.blurZoneDraw": "新しいゾーンを描くには、角を順にクリックし、最初の角をもう一度クリックして完了します。画像の上をドラッグすると長方形になります。",
     "ui.export.playVideo": "再生",
     "ui.settings.dialogStyle": "ダイアログのスタイル",
@@ -2397,7 +2418,10 @@
     "ui.share.shared": "クリップを共有しました",
     "ui.share.needsH264": "共有には最高画質未満の H.264 が必要です（どのブラウザでも再生できるように）。",
     "ui.share.tooBig": "この動画は 3 GB を超えており、共有できるサイズの上限を超えています。",
-    "ui.share.retry": "再試行"
+    "ui.share.retry": "再試行",
+    "ui.export.watermark": "Sentry Six の透かし",
+    "ui.export.watermarkDesc": "動画に小さな Sentry Six のロゴを入れます",
+    "ui.export.madeWith": "制作ツール"
   },
   "ko": {
     "app.arrived": "도착",
@@ -2758,7 +2782,8 @@
     "ui.export.previewUpdating": "업데이트 중…",
     "ui.export.previewDrawing": "미리보기를 만드는 중…",
     "ui.export.customPosition": "미리보기에서 이동함",
-    "ui.export.previewDragHint": "미리보기에서 대시보드나 지도를 끌어 옮길 수 있으며, 기본 위치 근처에서는 그 위치에 맞춰집니다.",
+    "ui.export.previewDragHint": "미리보기의 요소를 끌어 옮기거나 모서리를 끌어 크기를 바꿀 수 있습니다. 가장자리, 가운데, 다른 요소에 맞춰집니다.",
+    "ui.export.resetLayout": "레이아웃 초기화",
     "ui.export.blurZoneDraw": "새 영역을 그리려면 모서리를 차례로 클릭하고 첫 모서리를 다시 클릭해 마치세요. 그림 위를 끌면 사각형이 그려집니다.",
     "ui.export.playVideo": "재생",
     "ui.settings.dialogStyle": "대화 상자 스타일",
@@ -2797,7 +2822,10 @@
     "ui.share.shared": "클립을 공유했습니다!",
     "ui.share.needsH264": "공유하려면 최고 화질 미만의 H.264여야 합니다. 그래야 모든 브라우저에서 재생됩니다.",
     "ui.share.tooBig": "이 영상은 공유 가능한 최대 크기인 3 GB를 넘습니다.",
-    "ui.share.retry": "다시 시도"
+    "ui.share.retry": "다시 시도",
+    "ui.export.watermark": "Sentry Six 워터마크",
+    "ui.export.watermarkDesc": "영상에 작은 Sentry Six 로고를 넣습니다",
+    "ui.export.madeWith": "제작 도구"
   },
   "pt": {
     "app.arrived": "Chegada",
@@ -3158,7 +3186,8 @@
     "ui.export.previewUpdating": "A atualizar…",
     "ui.export.previewDrawing": "A criar a pré-visualização…",
     "ui.export.customPosition": "Movido na pré-visualização",
-    "ui.export.previewDragHint": "Arraste o painel ou o mapa na pré-visualização para o mover; encaixa nas posições habituais.",
+    "ui.export.previewDragHint": "Arraste qualquer elemento da pré-visualização para o mover, ou arraste um canto para o redimensionar. Encaixa nas margens, no centro e nas outras peças.",
+    "ui.export.resetLayout": "Repor disposição",
     "ui.export.blurZoneDraw": "Para desenhar uma nova zona, clique nos cantos um a um e clique de novo no primeiro para terminar, ou arraste sobre a imagem para um retângulo.",
     "ui.export.playVideo": "Reproduzir",
     "ui.settings.dialogStyle": "Estilo das caixas de diálogo",
@@ -3197,7 +3226,10 @@
     "ui.share.shared": "Clip partilhado!",
     "ui.share.needsH264": "Partilhar exige H.264 abaixo da qualidade Máxima, para o link reproduzir em qualquer navegador.",
     "ui.share.tooBig": "Este vídeo tem mais de 3 GB, o máximo para um clip partilhado.",
-    "ui.share.retry": "Tentar de novo"
+    "ui.share.retry": "Tentar de novo",
+    "ui.export.watermark": "Marca d'água Sentry Six",
+    "ui.export.watermarkDesc": "Um pequeno logótipo Sentry Six no vídeo",
+    "ui.export.madeWith": "Feito com"
   },
   "ru": {
     "app.arrived": "Прибытие",
@@ -3558,7 +3590,8 @@
     "ui.export.previewUpdating": "Обновление…",
     "ui.export.previewDrawing": "Создание предпросмотра…",
     "ui.export.customPosition": "Перемещено в предпросмотре",
-    "ui.export.previewDragHint": "Перетащите панель или карту в предпросмотре, чтобы переместить их; рядом со стандартными местами они примагничиваются.",
+    "ui.export.previewDragHint": "Перетащите любой элемент в предпросмотре, чтобы переместить его, или потяните за угол, чтобы изменить размер. Он примагничивается к краям, центру и другим элементам.",
+    "ui.export.resetLayout": "Сбросить макет",
     "ui.export.blurZoneDraw": "Чтобы нарисовать новую зону, щёлкайте по её углам по очереди и снова по первому, чтобы закончить, или проведите по изображению для прямоугольника.",
     "ui.export.playVideo": "Воспроизвести",
     "ui.settings.dialogStyle": "Стиль окон",
@@ -3597,7 +3630,10 @@
     "ui.share.shared": "Клип опубликован!",
     "ui.share.needsH264": "Для публикации нужен H.264 ниже максимального качества, чтобы ссылка открывалась в любом браузере.",
     "ui.share.tooBig": "Видео больше 3 ГБ — это максимум для общего клипа.",
-    "ui.share.retry": "Повторить"
+    "ui.share.retry": "Повторить",
+    "ui.export.watermark": "Водяной знак Sentry Six",
+    "ui.export.watermarkDesc": "Небольшой логотип Sentry Six на видео",
+    "ui.export.madeWith": "Сделано в"
   },
   "it": {
     "app.arrived": "Arrivo",
@@ -3958,7 +3994,8 @@
     "ui.export.previewUpdating": "Aggiornamento…",
     "ui.export.previewDrawing": "Creazione dell'anteprima…",
     "ui.export.customPosition": "Spostato nell'anteprima",
-    "ui.export.previewDragHint": "Trascina il cruscotto o la mappa nell'anteprima per spostarli; si agganciano alle posizioni consuete.",
+    "ui.export.previewDragHint": "Trascina qualsiasi elemento nell'anteprima per spostarlo, oppure trascina un angolo per ridimensionarlo. Si aggancia ai bordi, al centro e agli altri elementi.",
+    "ui.export.resetLayout": "Ripristina layout",
     "ui.export.blurZoneDraw": "Per disegnare una nuova zona, fai clic sui suoi angoli uno alla volta e di nuovo sul primo per finire, oppure trascina sull'immagine per un rettangolo.",
     "ui.export.playVideo": "Riproduci",
     "ui.settings.dialogStyle": "Stile delle finestre",
@@ -3997,7 +4034,10 @@
     "ui.share.shared": "Clip condivisa!",
     "ui.share.needsH264": "La condivisione richiede H.264 sotto la qualità Massima, così il link si apre in ogni browser.",
     "ui.share.tooBig": "Questo video supera i 3 GB, il massimo per una clip condivisa.",
-    "ui.share.retry": "Riprova"
+    "ui.share.retry": "Riprova",
+    "ui.export.watermark": "Filigrana Sentry Six",
+    "ui.export.watermarkDesc": "Un piccolo logo Sentry Six sul video",
+    "ui.export.madeWith": "Creato con"
   },
   "nl": {
     "app.arrived": "Aankomst",
@@ -4358,7 +4398,8 @@
     "ui.export.previewUpdating": "Bijwerken…",
     "ui.export.previewDrawing": "Voorbeeld maken…",
     "ui.export.customPosition": "Verplaatst in het voorbeeld",
-    "ui.export.previewDragHint": "Sleep het dashboard of de kaart in het voorbeeld om ze te verplaatsen; ze klikken vast op de gebruikelijke plekken.",
+    "ui.export.previewDragHint": "Sleep een onderdeel in het voorbeeld om het te verplaatsen, of sleep een hoek om het formaat te wijzigen. Het klikt vast aan de randen, het midden en de andere onderdelen.",
+    "ui.export.resetLayout": "Indeling herstellen",
     "ui.export.blurZoneDraw": "Klik voor een nieuw gebied één voor één op de hoeken en klik nogmaals op de eerste om af te ronden, of sleep over het beeld voor een rechthoek.",
     "ui.export.playVideo": "Afspelen",
     "ui.settings.dialogStyle": "Stijl van vensters",
@@ -4397,7 +4438,10 @@
     "ui.share.shared": "Clip gedeeld!",
     "ui.share.needsH264": "Delen vraagt H.264 onder de maximale kwaliteit, zodat de link in elke browser speelt.",
     "ui.share.tooBig": "Deze video is groter dan 3 GB, het maximum voor een gedeelde clip.",
-    "ui.share.retry": "Opnieuw"
+    "ui.share.retry": "Opnieuw",
+    "ui.export.watermark": "Sentry Six-watermerk",
+    "ui.export.watermarkDesc": "Een klein Sentry Six-logo op de video",
+    "ui.export.madeWith": "Gemaakt met"
   },
   "pl": {
     "app.arrived": "Przyjazd",
@@ -4758,7 +4802,8 @@
     "ui.export.previewUpdating": "Aktualizowanie…",
     "ui.export.previewDrawing": "Tworzenie podglądu…",
     "ui.export.customPosition": "Przesunięto w podglądzie",
-    "ui.export.previewDragHint": "Przeciągnij kokpit lub mapę w podglądzie, aby je przesunąć; przyciągają się do zwykłych miejsc.",
+    "ui.export.previewDragHint": "Przeciągnij dowolny element w podglądzie, aby go przesunąć, albo przeciągnij róg, aby zmienić rozmiar. Przyciąga się do krawędzi, środka i innych elementów.",
+    "ui.export.resetLayout": "Resetuj układ",
     "ui.export.blurZoneDraw": "Aby narysować nową strefę, klikaj kolejno jej narożniki i kliknij ponownie pierwszy, aby zakończyć, albo przeciągnij po obrazie, aby zrobić prostokąt.",
     "ui.export.playVideo": "Odtwórz",
     "ui.settings.dialogStyle": "Styl okien",
@@ -4797,7 +4842,10 @@
     "ui.share.shared": "Klip udostępniony!",
     "ui.share.needsH264": "Udostępnianie wymaga H.264 poniżej jakości maksymalnej, aby link działał w każdej przeglądarce.",
     "ui.share.tooBig": "Ten film ma ponad 3 GB, czyli więcej niż maksimum dla udostępnianego klipu.",
-    "ui.share.retry": "Spróbuj ponownie"
+    "ui.share.retry": "Spróbuj ponownie",
+    "ui.export.watermark": "Znak wodny Sentry Six",
+    "ui.export.watermarkDesc": "Małe logo Sentry Six na filmie",
+    "ui.export.madeWith": "Stworzone w"
   },
   "tr": {
     "app.arrived": "Varış",
@@ -5158,7 +5206,8 @@
     "ui.export.previewUpdating": "Güncelleniyor…",
     "ui.export.previewDrawing": "Önizleme hazırlanıyor…",
     "ui.export.customPosition": "Önizlemede taşındı",
-    "ui.export.previewDragHint": "Gösterge panelini veya haritayı önizlemede sürükleyerek taşıyın; olağan konumlara yaklaşınca oraya oturur.",
+    "ui.export.previewDragHint": "Önizlemedeki herhangi bir öğeyi sürükleyerek taşıyın ya da bir köşesinden sürükleyerek boyutunu değiştirin. Kenarlara, ortaya ve diğer öğelere hizalanır.",
+    "ui.export.resetLayout": "Düzeni sıfırla",
     "ui.export.blurZoneDraw": "Yeni bir bölge çizmek için köşelerine sırayla tıklayın ve bitirmek için ilkine yeniden tıklayın ya da dikdörtgen için resmin üzerinde sürükleyin.",
     "ui.export.playVideo": "Oynat",
     "ui.settings.dialogStyle": "İletişim kutusu stili",
@@ -5197,6 +5246,9 @@
     "ui.share.shared": "Klip paylaşıldı!",
     "ui.share.needsH264": "Paylaşım için Maksimum kalitenin altında H.264 gerekir; böylece bağlantı her tarayıcıda oynatılır.",
     "ui.share.tooBig": "Bu video 3 GB'tan büyük; paylaşılan bir klip en fazla bu kadar olabilir.",
-    "ui.share.retry": "Yeniden dene"
+    "ui.share.retry": "Yeniden dene",
+    "ui.export.watermark": "Sentry Six filigranı",
+    "ui.export.watermarkDesc": "Videoda küçük bir Sentry Six logosu",
+    "ui.export.madeWith": "Şununla yapıldı"
   }
 }

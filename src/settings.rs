@@ -110,7 +110,20 @@ pub struct Settings {
     /// Clips shared from this computer (`sharedClips`, as earlier versions
     /// kept it: code, link, delete token, expiry), newest first.
     pub shared_clips: Vec<crate::share::SharedClip>,
+    /// The Sentry Six watermark on exports (`exportWatermark`, on by
+    /// default), its corner (`exportWatermarkPosition`) and dragged place
+    /// (`exportWatermarkFree`). New in this version.
+    pub export_watermark: bool,
+    pub export_watermark_position: String,
+    pub export_watermark_free: Option<(f32, f32)>,
     pub export_map_free: Option<(f32, f32)>,
+    /// Sizes set by resizing in the export preview, as shares
+    /// (`exportDashboardScale`, `exportMinimapScale`,
+    /// `exportWatermarkScale`); without, the size keys above. New in this
+    /// version.
+    pub export_dash_scale: Option<f64>,
+    pub export_map_scale: Option<f64>,
+    pub export_watermark_scale: Option<f64>,
     /// The last export's blur zones (`exportLastBlurZones`: camera and
     /// coordinates, as earlier versions saved them), offered again.
     pub export_blur_zones: Vec<crate::export::blur::BlurZone>,
@@ -163,7 +176,13 @@ impl Default for Settings {
             export_minimap_live: false,
             export_dash_free: None,
             shared_clips: Vec::new(),
+            export_watermark: true,
+            export_watermark_position: "bottom-right".into(),
+            export_watermark_free: None,
             export_map_free: None,
+            export_dash_scale: None,
+            export_map_scale: None,
+            export_watermark_scale: None,
             export_blur_zones: Vec::new(),
         }
     }
@@ -382,7 +401,14 @@ pub fn to_json(s: &Settings) -> Value {
     let pair = |p: Option<(f32, f32)>| p.map(|(x, y)| serde_json::json!([x, y])).unwrap_or(Value::Null);
     v["exportDashboardFree"] = pair(s.export_dash_free);
     v["sharedClips"] = serde_json::to_value(&s.shared_clips).unwrap_or(Value::Array(Vec::new()));
+    v["exportWatermark"] = serde_json::json!(s.export_watermark);
+    v["exportWatermarkPosition"] = serde_json::json!(s.export_watermark_position);
+    v["exportWatermarkFree"] = pair(s.export_watermark_free);
     v["exportMinimapFree"] = pair(s.export_map_free);
+    let scale = |x: Option<f64>| x.map(|x| serde_json::json!(x)).unwrap_or(Value::Null);
+    v["exportDashboardScale"] = scale(s.export_dash_scale);
+    v["exportMinimapScale"] = scale(s.export_map_scale);
+    v["exportWatermarkScale"] = scale(s.export_watermark_scale);
     v
 }
 
@@ -466,12 +492,25 @@ fn apply(s: &mut Settings, v: &Value) {
     if let Some(m) = v.get("exportMinimapRenderMode").and_then(Value::as_str) {
         s.export_minimap_live = m == "leaflet";
     }
+    if let Some(b) = v.get("exportWatermark").and_then(Value::as_bool) {
+        s.export_watermark = b;
+    }
+    if let Some(p) = v.get("exportWatermarkPosition").and_then(Value::as_str) {
+        s.export_watermark_position = p.to_string();
+    }
+    if v.get("exportWatermarkFree").is_some() {
+        s.export_watermark_free = free_pair(v.get("exportWatermarkFree"));
+    }
     if let Some(list) = v.get("sharedClips").and_then(Value::as_array) {
         s.shared_clips = list.iter().filter_map(|c| serde_json::from_value(c.clone()).ok()).collect();
     }
     if v.get("exportDashboardFree").is_some() {
         s.export_dash_free = free_pair(v.get("exportDashboardFree"));
     }
+    let scale = |k: &str| v.get(k).and_then(Value::as_f64).filter(|x| *x > 0.0 && *x < 1.0);
+    s.export_dash_scale = scale("exportDashboardScale");
+    s.export_map_scale = scale("exportMinimapScale");
+    s.export_watermark_scale = scale("exportWatermarkScale");
     if v.get("exportMinimapFree").is_some() {
         s.export_map_free = free_pair(v.get("exportMinimapFree"));
     }
