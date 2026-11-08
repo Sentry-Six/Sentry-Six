@@ -165,6 +165,27 @@ fn off_thread<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> impl
 /// Like `off_thread`, for work that reads the user's files: if it panics
 /// (a file the parsers didn't expect), the answer is `fallback` instead of
 /// a crash.
+/// An event's preview picture: its front camera (or first) at the moment
+/// the event was triggered, decoded at full quality (the event's own
+/// thumb.png, 128 px wide, when the video can't be read).
+fn event_picture(item: &ClipItem) -> Option<iced::widget::image::Handle> {
+    let camera = item.segments.iter().flat_map(|s| s.files.keys()).find(|c| **c == Camera::Front).or_else(|| item.segments.iter().flat_map(|s| s.files.keys()).next()).copied();
+    let frame = camera.and_then(|camera| {
+        // The minute holding the event's moment, and how far into it.
+        let at = item.event_time.unwrap_or_else(|| item.segments.last().map_or(0, |s| s.start + 30));
+        let segment = item.segments.iter().rposition(|s| s.start <= at).unwrap_or(0);
+        let secs = (at - item.segments.get(segment)?.start).max(0) as f64;
+        crate::export::source::Source::new(camera).frame_at(&item.segments, segment, secs)
+    });
+    if let Some(snap) = frame.and_then(|f| crate::blur_editor::snapshot(&f, false)) {
+        return Some(snap.image);
+    }
+    let bytes = std::fs::read(item.collection.dir.join("thumb.png")).ok()?;
+    let img = image::load_from_memory_with_format(&bytes, image::ImageFormat::Png).ok()?.into_rgba8();
+    let (w, h) = img.dimensions();
+    Some(iced::widget::image::Handle::from_rgba(w, h, img.into_raw()))
+}
+
 fn off_thread_or<T: Send + 'static>(fallback: T, f: impl FnOnce() -> T + Send + 'static) -> impl std::future::Future<Output = T> {
     off_thread(move || std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)).unwrap_or(fallback))
 }
@@ -383,6 +404,8 @@ pub(crate) enum Message {
     Animate,
     /// The pointer over a clip card (for its delete button).
     ClipHover(Option<usize>),
+    /// An event's preview picture, decoded (None: none could be made).
+    EventPreview(PathBuf, Option<iced::widget::image::Handle>),
     /// Delete an event clip: ask, ask again, then do it.
     DeleteClip(usize),
     DeleteNext,
@@ -525,6 +548,9 @@ struct App {
     /// A folder is being dragged over the window.
     file_hover: bool,
     hovered_clip: Option<usize>,
+    /// Sentry and Saved events' preview pictures, by event folder (None
+    /// while one is being made, or when none could be).
+    event_previews: std::collections::HashMap<PathBuf, Option<iced::widget::image::Handle>>,
     /// The two-step delete confirmation: the clip, its folder, and
     /// whether the first question has been answered.
     delete_confirm: Option<(usize, PathBuf, bool)>,
@@ -620,6 +646,7 @@ impl App {
             scanning: false,
             file_hover: false,
             hovered_clip: None,
+            event_previews: std::collections::HashMap::new(),
             delete_confirm: None,
             deleting: false,
             update: None,
@@ -1275,7 +1302,15 @@ impl App {
                     return Task::done(Message::FolderPicked(Some(dir)));
                 }
             }
-            Message::ClipHover(i) => self.hovered_clip = i,
+            Message::ClipHover(i) => {
+                self.hovered_clip = i;
+                if let Some(item) = i.and_then(|i| self.items.get(i)) {
+                    return self.event_preview(item.clone());
+                }
+            }
+            Message::EventPreview(dir, picture) => {
+                self.event_previews.insert(dir, picture);
+            }
             Message::DeleteClip(i) => {
                 if let Some(dir) = self.items.get(i).and_then(deletable_folder) {
                     self.delete_confirm = Some((i, dir, false));
@@ -2440,7 +2475,7 @@ impl App {
                 self.items
                     .iter()
                     .enumerate()
-                    .fold(Column::new().spacing(8), |col, (i, item)| col.push(clip_card(item, i, self.selected == Some(i), self.hovered_clip == Some(i))))
+                    .fold(Column::new().spacing(8), |col, (i, item)| col.push(clip_card(item, i, self.selected == Some(i), self.hovered_clip == Some(i), self.event_previews.get(&item.collection.dir).cloned().flatten())))
                     .padding([2, 12]),
             )
             .direction(scrollable::Direction::Vertical(scrollable::Scrollbar::new().width(6).scroller_width(6).margin(3)))
@@ -2479,6 +2514,17 @@ impl App {
         .height(44)
         .style(theme::panel_radius(COLLAPSED_RADIUS))
         .into()
+    }
+
+    /// Starts making a Sentry or Saved event's preview (once; reading the
+    /// clips can be slow on a share, so on a thread of its own).
+    fn event_preview(&mut self, item: ClipItem) -> Task<Message> {
+        if !matches!(item.collection.kind, Kind::Sentry | Kind::Saved) || self.event_previews.contains_key(&item.collection.dir) {
+            return Task::none();
+        }
+        let dir = item.collection.dir.clone();
+        self.event_previews.insert(dir.clone(), None);
+        Task::perform(off_thread_or(None, move || event_picture(&item)), move |picture| Message::EventPreview(dir.clone(), picture))
     }
 
     fn day_picker(&self) -> Element<'_, Message> {
@@ -2838,7 +2884,7 @@ fn placeholder<'a>(message: &'a str) -> Element<'a, Message> {
 
 /// One card in the clip list. Event clips show a delete button while
 /// the pointer is over them.
-fn clip_card(item: &ClipItem, index: usize, selected: bool, hovered: bool) -> Element<'_, Message> {
+fn clip_card(item: &ClipItem, index: usize, selected: bool, hovered: bool, preview: Option<iced::widget::image::Handle>) -> Element<'_, Message> {
     let (kind_label, kind_color) = match item.collection.kind {
         Kind::Recent => (i18n::t("ui.clipBrowser.recent"), theme::SUCCESS),
         Kind::Sentry => (i18n::t("ui.clipBrowser.sentry"), theme::ERROR),
@@ -2886,7 +2932,17 @@ fn clip_card(item: &ClipItem, index: usize, selected: bool, hovered: bool) -> El
         );
     }
     let card = button(layers).padding(0).width(Length::Fill).style(theme::clip_card(selected)).on_press(Message::SelectItem(index));
-    mouse_area(card).on_enter(Message::ClipHover(Some(index))).on_exit(Message::ClipHover(None)).into()
+    let card = mouse_area(card).on_enter(Message::ClipHover(Some(index))).on_exit(Message::ClipHover(None));
+    if !matches!(item.collection.kind, Kind::Sentry | Kind::Saved) {
+        return card.into();
+    }
+    // Sentry and Saved events: their picture beside the card while the
+    // pointer is on it, as soon as it's made.
+    let picture: Element<'_, Message> = match preview {
+        Some(handle) => container(iced::widget::image(handle).width(480).border_radius(6.0)).style(theme::event_preview).into(),
+        None => space().width(0).height(0).into(),
+    };
+    iced::widget::tooltip(card, picture, iced::widget::tooltip::Position::Right).gap(8).snap_within_viewport(true).into()
 }
 
 /// The folder a card's delete button removes: only a Saved or Sentry event

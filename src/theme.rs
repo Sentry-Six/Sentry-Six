@@ -158,6 +158,16 @@ pub fn backdrop(_: &Theme) -> container::Style {
     container::Style { background: Some(black(0.35).into()), ..Default::default() }
 }
 
+/// An event's preview picture beside its card: a faint edge and a soft
+/// shadow, 6 px corners.
+pub fn event_preview(_: &Theme) -> container::Style {
+    container::Style {
+        border: Border { color: white(0.08), width: 1.0, radius: 6.0.into() },
+        shadow: Shadow { color: black(0.5), offset: Vector::new(0.0, 4.0), blur_radius: 20.0 },
+        ..Default::default()
+    }
+}
+
 /// The support chat panel: glass (the video
 /// under it is frosted, see video::Glass) with a faint accent border.
 pub fn chat_panel(_: &Theme) -> container::Style {
