@@ -253,7 +253,9 @@ impl Encoder {
         };
         unsafe {
             set(&session, kVTCompressionPropertyKey_RealTime, no.as_ref())?;
-            set(&session, kVTCompressionPropertyKey_AllowFrameReordering, no.as_ref())?;
+            // B-frames for HEVC (the MP4 writer orders them by their times).
+            let reorder = if s.codec == Format::Hevc && super::HEVC_B_FRAMES { yes } else { no };
+            set(&session, kVTCompressionPropertyKey_AllowFrameReordering, reorder.as_ref())?;
             if let Some(profile) = profile {
                 set(&session, kVTCompressionPropertyKey_ProfileLevel, profile.as_ref())?;
             }
@@ -446,7 +448,7 @@ mod tests {
         assert_eq!(packets.len(), n);
         assert!(packets[0].sync);
         for p in &packets {
-            mp4.write_sample(&p.data, 1000, p.sync, 0).unwrap();
+            mp4.write_frame(&p.data, 1000, p.sync, p.pts).unwrap();
         }
         mp4.finish(&config).unwrap();
 
@@ -494,12 +496,12 @@ mod decode_speed {
             f.fill_bgra(&pixels, w, h).unwrap();
             enc.encode(&f, i as i64 * 1000, 1000).unwrap();
             for p in enc.take() {
-                mp4.write_sample(&p.data, 1000, p.sync, 0).unwrap();
+                mp4.write_frame(&p.data, 1000, p.sync, p.pts).unwrap();
             }
         }
         let (rest, config) = enc.finish().unwrap();
         for p in rest {
-            mp4.write_sample(&p.data, 1000, p.sync, 0).unwrap();
+            mp4.write_frame(&p.data, 1000, p.sync, p.pts).unwrap();
         }
         mp4.finish(&config).unwrap();
     }

@@ -981,7 +981,7 @@ fn encode_all(
         };
         if let Some(mp4) = mp4.as_mut() {
             for p in packets {
-                mp4.write_sample(&p.data, 1000, p.sync, 0)?;
+                mp4.write_frame(&p.data, 1000, p.sync, p.pts)?;
             }
         }
         if last_report.elapsed().as_millis() >= 100 || k + 1 == total {
@@ -1005,7 +1005,7 @@ fn encode_all(
     match (finished, mp4) {
         (super::encode::Finished::Packets(rest, config), Some(mut mp4)) => {
             for p in rest {
-                mp4.write_sample(&p.data, 1000, p.sync, 0)?;
+                mp4.write_frame(&p.data, 1000, p.sync, p.pts)?;
             }
             if mp4.samples() != total {
                 bail!("the encoder returned {} of {total} frames", mp4.samples());
@@ -1030,8 +1030,10 @@ mod rate_tests {
         assert!((mbit(Quality::Mobile, Format::H264, 1740, 752) - 5.84).abs() < 0.01);
         assert!((mbit(Quality::Medium, Format::H264, 2172, 940) - 7.94).abs() < 0.05);
         assert!((mbit(Quality::High, Format::H264, 3258, 1408) - 15.16).abs() < 0.05);
-        assert!((mbit(Quality::High, Format::Hevc, 3258, 1408) - 15.16).abs() < 0.05);
-        assert!((mbit(Quality::Max, Format::Hevc, 4344, 1876) - 31.69).abs() < 0.05);
+        // HEVC: the same picture for less with B-frames (see Format::rate_share).
+        let hevc = Format::Hevc.rate_share();
+        assert!((mbit(Quality::High, Format::Hevc, 3258, 1408) - 15.16 * hevc).abs() < 0.05);
+        assert!((mbit(Quality::Max, Format::Hevc, 4344, 1876) - 31.69 * hevc).abs() < 0.05);
         // The front camera alone at full size: the car's own 10.4 Mbit/s.
         assert!((bitrate(Quality::Max, true, Format::H264, 2896, 1876) as f64 / 1e6 - 10.37).abs() < 0.05);
     }

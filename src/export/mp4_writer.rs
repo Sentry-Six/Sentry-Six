@@ -60,6 +60,11 @@ pub struct Mp4Writer {
     mdat_start: u64,
     pos: u64,
     samples: Vec<Sample>,
+    /// The next sample's decode time (its durations so far).
+    decode_time: i64,
+    /// The first frame's display time as the encoder gave it: times count
+    /// from there (GStreamer's software encoders add hours to them).
+    pts_base: Option<i64>,
     timescale: u32,
     width: u32,
     height: u32,
@@ -102,9 +107,10 @@ impl Mp4Writer {
         let ftyp = bx(b"ftyp", &[b"isom".as_slice(), &512u32.to_be_bytes(), b"isom", b"iso2", b"avc1", b"mp41"].concat());
         out.write_all(&ftyp)?;
         let index_at = ftyp.len() as u64;
-        // Per sample: a size (4), an offset (8) and perhaps a keyframe
-        // entry (4); the rest of the index fits in 4 KB.
-        let index_space = if samples > 0 { 4096 + 16 * samples as u64 } else { 0 };
+        // Per sample: a size (4), an offset (8), perhaps a keyframe entry
+        // (4) and a display-time entry (8, with B-frames); the rest of the
+        // index fits in 4 KB.
+        let index_space = if samples > 0 { 4096 + 24 * samples as u64 } else { 0 };
         if index_space > 0 {
             out.write_all(&(index_space as u32).to_be_bytes())?;
             out.write_all(b"free")?;
@@ -115,7 +121,7 @@ impl Mp4Writer {
         out.write_all(&1u32.to_be_bytes())?;
         out.write_all(b"mdat")?;
         out.write_all(&0u64.to_be_bytes())?;
-        Ok(Mp4Writer { out, index_at, index_space, mdat_start, pos: mdat_start + 16, samples: Vec::new(), timescale, width, height })
+        Ok(Mp4Writer { out, index_at, index_space, mdat_start, pos: mdat_start + 16, samples: Vec::new(), decode_time: 0, pts_base: None, timescale, width, height })
     }
 
     /// Adds one encoded frame (length-prefixed NAL units), in decode order.
@@ -123,7 +129,21 @@ impl Mp4Writer {
         self.out.write_all(data)?;
         self.samples.push(Sample { offset: self.pos, size: data.len() as u32, duration, sync, cts });
         self.pos += data.len() as u64;
+        self.decode_time += duration as i64;
         Ok(())
+    }
+
+    /// Adds one encoded frame in decode order, shown at `pts` (in ticks,
+    /// from any starting point: the first frame, a keyframe shown first,
+    /// is 0): with B-frames that differs from its decode time.
+    pub fn write_frame(&mut self, data: &[u8], duration: u32, sync: bool, pts: i64) -> std::io::Result<()> {
+        let pts = pts - *self.pts_base.get_or_insert(pts);
+        // In whole frames (B-frames move by whole frames; a tick off from
+        // rounding through nanoseconds is no move at all).
+        let d = duration.max(1) as i64;
+        let frames = ((pts - self.decode_time) as f64 / d as f64).round() as i64;
+        let cts = (frames * d) as i32;
+        self.write_sample(data, duration, sync, cts)
     }
 
     pub fn samples(&self) -> usize {
@@ -228,12 +248,17 @@ impl Mp4Writer {
         }
         let stts = fbx(b"stts", 0, 0, &stts);
 
+        // Display times against decode times (B-frames), moved so none is
+        // negative; the edit list then starts playing that much in, so the
+        // first frame still shows at 0.
+        let shift = self.samples.iter().map(|s| -(s.cts as i64)).max().unwrap_or(0).max(0);
         let ctts = if self.samples.iter().any(|s| s.cts != 0) {
             let mut runs: Vec<(u32, i32)> = Vec::new();
             for s in &self.samples {
+                let c = (s.cts as i64 + shift) as i32;
                 match runs.last_mut() {
-                    Some((n, c)) if *c == s.cts => *n += 1,
-                    _ => runs.push((1, s.cts)),
+                    Some((n, r)) if *r == c => *n += 1,
+                    _ => runs.push((1, c)),
                 }
             }
             let mut b = (runs.len() as u32).to_be_bytes().to_vec();
@@ -241,7 +266,16 @@ impl Mp4Writer {
                 b.extend_from_slice(&n.to_be_bytes());
                 b.extend_from_slice(&c.to_be_bytes());
             }
-            fbx(b"ctts", 1, 0, &b)
+            fbx(b"ctts", 0, 0, &b)
+        } else {
+            Vec::new()
+        };
+        let edts = if shift > 0 {
+            let mut e = 1u32.to_be_bytes().to_vec();
+            e.extend_from_slice(&(duration as u32).to_be_bytes()); // movie ticks (same timescale)
+            e.extend_from_slice(&(shift as u32).to_be_bytes());
+            e.extend_from_slice(&0x0001_0000u32.to_be_bytes()); // rate 1
+            bx(b"edts", &fbx(b"elst", 0, 0, &e))
         } else {
             Vec::new()
         };
@@ -274,7 +308,7 @@ impl Mp4Writer {
         let stbl = bx(b"stbl", &cat(&[stsd, stts, ctts, stss, stsz, stsc, co64]));
         let minf = bx(b"minf", &cat(&[vmhd, dinf, stbl]));
         let mdia = bx(b"mdia", &cat(&[mdhd, hdlr, minf]));
-        let trak = bx(b"trak", &cat(&[tkhd, mdia]));
+        let trak = bx(b"trak", &cat(&[tkhd, edts, mdia]));
         bx(b"moov", &cat(&[mvhd, trak]))
     }
 }
@@ -457,5 +491,28 @@ mod tests {
         fast_start(&path).unwrap();
         assert_eq!(std::fs::read(&path).unwrap(), after);
         let _ = std::fs::remove_file(&path);
+    }
+
+    /// An encoder's own starting time (GStreamer's software ones add hours)
+    /// doesn't delay the frames; B-frames get their offsets and an edit list.
+    #[test]
+    fn display_times_count_from_the_first_frame() {
+        let boxes = |frames: &[(i64, bool)]| {
+            let path = std::env::temp_dir().join(format!("sentry-ctts-{}-{}.mp4", std::process::id(), frames.len()));
+            let mut w = Mp4Writer::create(&path, 64, 64, 36000).unwrap();
+            for (pts, sync) in frames {
+                w.write_frame(&[0, 0, 0, 1, 0x65], 1000, *sync, *pts).unwrap();
+            }
+            w.finish(&avcc(&[vec![0x67, 0x64, 0, 0x1f]], &[vec![0x68]])).unwrap();
+            let bytes = std::fs::read(&path).unwrap();
+            let _ = std::fs::remove_file(&path);
+            let has = |name: &[u8]| bytes.windows(4).any(|w| w == name);
+            (has(b"ctts"), has(b"elst"))
+        };
+        let hours = 750_981_120;
+        // In order, from hours in: no offsets at all.
+        assert_eq!(boxes(&[(hours, true), (hours + 1000, false), (hours + 2000, false)]), (false, false));
+        // I P B (shown I B P): offsets, and an edit list.
+        assert_eq!(boxes(&[(hours, true), (hours + 2000, false), (hours + 1000, false)]), (true, true));
     }
 }

@@ -294,15 +294,61 @@ fn be64(d: &[u8], p: usize) -> Result<u64> {
 }
 
 fn parse_moov(moov: &[u8]) -> Result<VideoTrack> {
+    // The movie's timescale, for the edit list's durations.
+    let movie_scale = match opt_child(moov, b"mvhd")? {
+        Some(mvhd) if mvhd.first() == Some(&1) => be32(mvhd, 20)?,
+        Some(mvhd) => be32(mvhd, 12)?,
+        None => 0,
+    };
     for trak in children(moov)?.into_iter().filter(|b| &b.typ == b"trak") {
         let mdia = child(trak.body, b"mdia")?;
         let hdlr = child(mdia, b"hdlr")?;
         if hdlr.get(8..12) != Some(b"vide") {
             continue;
         }
-        return parse_video_trak(mdia);
+        let mut track = parse_video_trak(mdia)?;
+        // The edit list: where in the media playing starts (and any delay
+        // before it). Encoders with B-frames write one, so the first
+        // frame shows at 0 instead of a couple of frames in.
+        let elst = match opt_child(trak.body, b"edts")? {
+            Some(edts) => opt_child(edts, b"elst")?,
+            None => None,
+        };
+        if let Some(elst) = elst {
+            let shift = edit_shift(elst, track.timescale, movie_scale)?;
+            if shift != 0 {
+                for s in &mut track.samples {
+                    s.pts += shift;
+                }
+                track.duration = (track.duration + shift as f64 / track.timescale as f64).max(0.0);
+            }
+        }
+        return Ok(track);
     }
     bail!("no video track in this clip")
+}
+
+/// How far an edit list moves the media's times (track ticks): an empty
+/// first edit delays it, and the first real edit starts playing at its
+/// media time. Further edits (cut-together clips) aren't followed.
+fn edit_shift(elst: &[u8], track_scale: u32, movie_scale: u32) -> Result<i64> {
+    let v1 = elst.first() == Some(&1);
+    let count = be32(elst, 4)? as usize;
+    let size = if v1 { 20 } else { 12 };
+    let mut delay = 0i64;
+    for i in 0..count {
+        let p = 8 + i * size;
+        let (duration, media_time) = if v1 { (be64(elst, p)? as i64, be64(elst, p + 8)? as i64) } else { (be32(elst, p)? as i64, be32(elst, p + 4)? as i32 as i64) };
+        if media_time == -1 {
+            // An empty edit: nothing shown for its duration (movie ticks).
+            if movie_scale > 0 {
+                delay += duration * track_scale as i64 / movie_scale as i64;
+            }
+            continue;
+        }
+        return Ok(delay - media_time);
+    }
+    Ok(delay)
 }
 
 fn parse_video_trak(mdia: &[u8]) -> Result<VideoTrack> {
@@ -492,5 +538,30 @@ mod tests {
         // A well-formed one.
         let ok = children(&[0, 0, 0, 8, b'f', b'r', b'e', b'e']).unwrap();
         assert_eq!(&ok[0].typ, b"free");
+    }
+
+    #[test]
+    fn edit_lists_move_the_times() {
+        let entry = |dur: u32, media: i32| [dur.to_be_bytes(), (media as u32).to_be_bytes(), 0x0001_0000u32.to_be_bytes()].concat();
+        let elst = |entries: &[Vec<u8>]| [vec![0, 0, 0, 0], (entries.len() as u32).to_be_bytes().to_vec(), entries.concat()].concat();
+        // ffmpeg's B-frame clips: start two frames (1024 ticks) in.
+        assert_eq!(super::edit_shift(&elst(&[entry(2000, 1024)]), 18432, 1000).unwrap(), -1024);
+        // A 0.5 s empty edit first, then the media from its start.
+        assert_eq!(super::edit_shift(&elst(&[entry(500, -1), entry(2000, 0)]), 18432, 1000).unwrap(), 9216);
+        // Tesla's: from the start.
+        assert_eq!(super::edit_shift(&elst(&[entry(599010, 0)]), 10000, 10000).unwrap(), 0);
+    }
+
+    /// A clip's first frames shown at 0, as ffprobe shows them
+    /// (SENTRY_MP4_FILE: an MP4 with B-frames and an edit list).
+    #[test]
+    #[ignore]
+    fn edit_list_clip_starts_at_zero() {
+        let Some(path) = std::env::var_os("SENTRY_MP4_FILE") else { return };
+        let t = super::read_video_track(&std::fs::File::open(path).unwrap()).unwrap();
+        let mut pts: Vec<f64> = (0..t.samples.len()).map(|i| t.pts_secs(i)).collect();
+        pts.sort_by(f64::total_cmp);
+        println!("first {:?}, duration {:.3}", &pts[..3], t.duration);
+        assert!(pts[0].abs() < 1e-9);
     }
 }

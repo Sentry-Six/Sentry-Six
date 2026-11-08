@@ -791,12 +791,12 @@ mod tests {
             compositor.draw_into(&target, &pictures).unwrap();
             enc.encode(&target, i as i64 * 1000, 1000).unwrap();
             for p in enc.take() {
-                mp4.write_sample(&p.data, 1000, p.sync, 0).unwrap();
+                mp4.write_frame(&p.data, 1000, p.sync, p.pts).unwrap();
             }
         }
         let (rest, config) = enc.finish().unwrap();
         for p in rest {
-            mp4.write_sample(&p.data, 1000, p.sync, 0).unwrap();
+            mp4.write_frame(&p.data, 1000, p.sync, p.pts).unwrap();
         }
         mp4.finish(&config).unwrap();
         let grid = decode_all(&out);
@@ -897,12 +897,12 @@ mod speed {
                 compositor.draw_into(&target, &pictures).unwrap();
                 enc.encode(&target, (i / skip) as i64 * 1000, 1000).unwrap();
                 for p in enc.take() {
-                    mp4.write_sample(&p.data, 1000, p.sync, 0).unwrap();
+                    mp4.write_frame(&p.data, 1000, p.sync, p.pts).unwrap();
                 }
             }
             let (rest, config) = enc.finish().unwrap();
             for p in rest {
-                mp4.write_sample(&p.data, 1000, p.sync, 0).unwrap();
+                mp4.write_frame(&p.data, 1000, p.sync, p.pts).unwrap();
             }
             mp4.finish(&config).unwrap();
             let secs = started.elapsed().as_secs_f64();

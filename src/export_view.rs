@@ -1783,6 +1783,8 @@ impl App {
             } else {
                 let what = match f {
                     Format::H264 => t("ui.export.formatH264"),
+                    // With B-frames (Apple's encoder) as fast as H.264 and smaller.
+                    Format::Hevc if crate::export::encode::HEVC_B_FRAMES => t("ui.export.formatHevcSmaller"),
                     Format::Hevc => t("ui.export.formatHevc"),
                     Format::Av1 => t("ui.export.formatAv1"),
                 };

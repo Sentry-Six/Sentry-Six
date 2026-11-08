@@ -75,13 +75,13 @@ pub fn clip_with_telemetry(path: &Path, w: usize, h: usize, n: usize, pixel: imp
         enc.encode(&f, i as i64 * 1000, 1000).unwrap();
         for p in enc.take() {
             let k = (p.pts / 1000) as usize;
-            mp4.write_sample(&with_sei(telemetry(k), p.data), 1000, p.sync, 0).unwrap();
+            mp4.write_frame(&with_sei(telemetry(k), p.data), 1000, p.sync, p.pts).unwrap();
         }
     }
     let (rest, config) = enc.finish().unwrap();
     for p in rest {
         let k = (p.pts / 1000) as usize;
-        mp4.write_sample(&with_sei(telemetry(k), p.data), 1000, p.sync, 0).unwrap();
+        mp4.write_frame(&with_sei(telemetry(k), p.data), 1000, p.sync, p.pts).unwrap();
     }
     mp4.finish(&config).unwrap();
 }

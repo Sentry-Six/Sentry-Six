@@ -20,8 +20,9 @@ use std::ffi::{c_char, c_void, CString};
 type Ptr = *mut c_void;
 
 /// Encoder elements by preference, with their settings for a bitrate
-/// (kbit/s) and keyframe interval (frames). No B-frames: the MP4 writer
-/// keeps frames in the order they come.
+/// (kbit/s) and keyframe interval (frames). B-frames only in x265 (the
+/// software HEVC encoder, tested; the MP4 writer orders them by their
+/// times); the hardware encoders without, until tested.
 fn encoders(codec: Format, kbps: u64, gop: u32) -> Vec<(&'static str, String)> {
     match codec {
         Format::H264 => vec![
@@ -42,7 +43,7 @@ fn encoders(codec: Format, kbps: u64, gop: u32) -> Vec<(&'static str, String)> {
             ("vaapih265enc", format!("vaapih265enc bitrate={kbps} keyframe-period={gop} max-bframes=0")),
             ("qsvh265enc", format!("qsvh265enc bitrate={kbps} gop-size={gop} b-frames=0")),
             ("vtenc_h265_hw", format!("vtenc_h265_hw bitrate={kbps} max-keyframe-interval={gop} allow-frame-reordering=false realtime=false")),
-            ("x265enc", format!("x265enc bitrate={kbps} key-int-max={gop} speed-preset=veryfast option-string=bframes=0")),
+            ("x265enc", format!("x265enc bitrate={kbps} key-int-max={gop} speed-preset=veryfast option-string=bframes=3")),
         ],
         // AV1 on the GPU only (Intel Arc and Core Ultra, AMD RX 7000,
         // NVIDIA RTX 40); the software ones are far too slow at these

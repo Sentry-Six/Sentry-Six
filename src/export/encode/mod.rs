@@ -47,18 +47,24 @@ impl Format {
         }
     }
 
-    /// Its bitrate against H.264's. HEVC gets the same: Apple's hardware
-    /// encoder, without B-frames and in speed mode, makes HEVC no smaller
-    /// than H.264 for the same picture (measured on a drive: equal rates,
-    /// equal quality), so it buys speed rather than size. AV1's share is
+    /// Its bitrate against H.264's. Without B-frames HEVC is no smaller
+    /// than H.264 for the same picture (measured on a drive with Apple's
+    /// encoder: equal rates, equal quality); with them (`HEVC_B_FRAMES`)
+    /// it matches H.264's picture at about 90% of the rate. AV1's share is
     /// the usual one, untested on hardware that encodes it.
     pub fn rate_share(self) -> f64 {
         match self {
-            Format::H264 | Format::Hevc => 1.0,
+            Format::H264 => 1.0,
+            Format::Hevc if HEVC_B_FRAMES => 0.9,
+            Format::Hevc => 1.0,
             Format::Av1 => 0.55,
         }
     }
 }
+
+/// Whether HEVC exports use B-frames: with Apple's encoder (measured);
+/// the other systems' encoders still export without them.
+pub const HEVC_B_FRAMES: bool = cfg!(target_os = "macos");
 
 /// How this computer encodes a format.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
