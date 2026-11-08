@@ -107,6 +107,9 @@ pub struct Settings {
     /// top-left as shares of the frame, [x, y]; null for the corner). New
     /// in this version.
     pub export_dash_free: Option<(f32, f32)>,
+    /// Clips shared from this computer (`sharedClips`, as earlier versions
+    /// kept it: code, link, delete token, expiry), newest first.
+    pub shared_clips: Vec<crate::share::SharedClip>,
     pub export_map_free: Option<(f32, f32)>,
     /// The last export's blur zones (`exportLastBlurZones`: camera and
     /// coordinates, as earlier versions saved them), offered again.
@@ -159,6 +162,7 @@ impl Default for Settings {
             export_minimap_size: "small".into(),
             export_minimap_live: false,
             export_dash_free: None,
+            shared_clips: Vec::new(),
             export_map_free: None,
             export_blur_zones: Vec::new(),
         }
@@ -377,6 +381,7 @@ pub fn to_json(s: &Settings) -> Value {
     v["exportMinimapRenderMode"] = serde_json::json!(if s.export_minimap_live { "leaflet" } else { "ass" });
     let pair = |p: Option<(f32, f32)>| p.map(|(x, y)| serde_json::json!([x, y])).unwrap_or(Value::Null);
     v["exportDashboardFree"] = pair(s.export_dash_free);
+    v["sharedClips"] = serde_json::to_value(&s.shared_clips).unwrap_or(Value::Array(Vec::new()));
     v["exportMinimapFree"] = pair(s.export_map_free);
     v
 }
@@ -460,6 +465,9 @@ fn apply(s: &mut Settings, v: &Value) {
     }
     if let Some(m) = v.get("exportMinimapRenderMode").and_then(Value::as_str) {
         s.export_minimap_live = m == "leaflet";
+    }
+    if let Some(list) = v.get("sharedClips").and_then(Value::as_array) {
+        s.shared_clips = list.iter().filter_map(|c| serde_json::from_value(c.clone()).ok()).collect();
     }
     if v.get("exportDashboardFree").is_some() {
         s.export_dash_free = free_pair(v.get("exportDashboardFree"));

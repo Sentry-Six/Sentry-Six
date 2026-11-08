@@ -79,6 +79,8 @@ pub enum Change {
     ResetCameraOrder,
     ViewChangelog,
     OpenSupportChat,
+    /// The list of clips shared from this computer.
+    OpenSharedClips,
     /// Opens the licences (this app's and the third-party notices).
     OpenLicences,
     /// Waits for the next key or mouse button for an action (again: stop).
@@ -394,7 +396,14 @@ fn system_section<'a>(s: &'a Settings, ui: &'a Ui) -> Element<'a, Message> {
         .push(update_row(t("ui.settings.prereleaseUpdates"), t("ui.settings.prereleaseUpdatesDesc"), toggle(s.prerelease, Change::Prerelease)))
         .push(update_row(t("ui.settings.checkForUpdates"), t("ui.settings.checkForUpdatesDesc"), check.into()))
         .push(
-            container(row![small_button(t("ui.settings.openSupportChat"), Change::OpenSupportChat), small_button(t("ui.settings.viewChangelog"), Change::ViewChangelog)].spacing(8))
+            container(
+                row![
+                    small_button(t("ui.settings.openSupportChat"), Change::OpenSupportChat),
+                    small_button(t("ui.settings.viewChangelog"), Change::ViewChangelog),
+                    small_button(t("ui.sharedClips.title"), Change::OpenSharedClips),
+                ]
+                .spacing(8),
+            )
                 .padding([8, 0]),
         );
     col = col.push(
@@ -542,7 +551,8 @@ fn rows<'a>(s: &'a Settings, ui: &'a Ui, keys: &'a Shortcuts) -> Vec<Row<'a>> {
         toggle(s.show_fsd_events, Change::ShowFsdEvents),
     ));
     list.push(Row { section: System, subtab: None, words: format!(
-            "{} {} {} {} {} {} {}",
+            "{} {} {} {} {} {} {} {}",
+            t("ui.sharedClips.title"),
             t("ui.settings.appVersion"),
             t("ui.settings.architecture"),
             t("ui.settings.prereleaseUpdates"),

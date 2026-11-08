@@ -4,6 +4,9 @@
 //! dialog can be closed meanwhile, and the Export button shows how far it
 //! has got.
 
+mod share_ui;
+pub use share_ui::{ShareMsg, ShareUi};
+
 use crate::export::encode::{Format, Support};
 use crate::export::job::{self, Position, Quality, Tile};
 use crate::export::overlay::{Corner, DashSize, DashStyle, Dashboard, MapTiles, Minimap, Timestamp};
@@ -96,6 +99,8 @@ pub enum ExportMsg {
     ZoneSnapshot(Camera, Option<Box<crate::blur_editor::Snapshot>>),
     /// The dashboard or map dragged in the preview.
     Drag(Dragged, DragTo),
+    /// Sharing (see share_ui).
+    Share(share_ui::ShareMsg),
     Start,
     Picked(Option<PathBuf>),
     Poll(u64),
@@ -114,7 +119,7 @@ pub enum State {
     Running { id: u64, started: Instant, output: PathBuf },
     /// Finished: the file, its size, the video's length and format, and
     /// how long it took.
-    Done { output: PathBuf, bytes: u64, seconds: f64, length: f64, format: Format },
+    Done { output: PathBuf, bytes: u64, seconds: f64, length: f64, format: Format, quality: Quality },
     Failed(String),
 }
 
@@ -161,6 +166,8 @@ pub struct Export {
     /// the preview: top-left as shares of the frame.
     pub dash_free: Option<(f32, f32)>,
     pub map_free: Option<(f32, f32)>,
+    /// Sharing the finished export, and the list of shared clips.
+    pub share: ShareUi,
     /// Time left: when it was last estimated, and the seconds left then.
     /// It counts down between estimates, and each new one only nudges it,
     /// so it doesn't flicker as the frame rate wobbles.
@@ -210,6 +217,7 @@ impl Default for Export {
             map_size: DashSize::Small,
             dash_free: None,
             map_free: None,
+            share: ShareUi::default(),
             eta: None,
             zones: Vec::new(),
             zone_camera: Camera::Back,
@@ -600,6 +608,7 @@ impl App {
 
     fn export_step(&mut self, m: ExportMsg) -> Task<Message> {
         match m {
+            ExportMsg::Share(m) => return self.share_step(m),
             ExportMsg::Preview(result) => {
                 self.export.preview_busy = false;
                 self.export.preview = Some(match result.as_ref() {
@@ -681,8 +690,10 @@ impl App {
             }
             ExportMsg::Close if self.export.editing.is_some() => self.export.editing = None,
             ExportMsg::Close => {
-                if !matches!(self.export.state, State::Choosing) {
+                // Not while a share uploads (its Cancel stops it first).
+                if !matches!(self.export.state, State::Choosing) && !self.export.share.uploading() {
                     self.export.open = false;
+                    self.export.share.list_open = false;
                 }
             }
             ExportMsg::Camera(c) => {
@@ -959,7 +970,8 @@ impl App {
                 match result {
                     Ok(job::Outcome::Done { bytes, seconds, frames, warnings }) => {
                         let format = self.export_format();
-                        self.export.state = State::Done { output, bytes, seconds, length: frames as f64 / job::FPS as f64, format };
+                        self.export.state = State::Done { output, bytes, seconds, length: frames as f64 / job::FPS as f64, format, quality: self.export.quality };
+                        self.export.share.reset();
                         // The finished screen, even if the dialog was put away.
                         self.export.open = true;
                         let tasks: Vec<Task<Message>> = warnings.iter().map(|w| self.notify(t(w).to_string(), true)).collect();
@@ -1075,7 +1087,8 @@ impl App {
     }
 
     /// The finished export: what was made, a look at it, and what next.
-    fn export_complete<'a>(&'a self, output: &'a std::path::Path, bytes: u64, length: f64, format: Format) -> Element<'a, Message> {
+    fn export_complete<'a>(&'a self, output: &'a std::path::Path, bytes: u64, length: f64, format: Format, quality: Quality) -> Element<'a, Message> {
+        let busy = self.export.share.uploading();
         let header = row![
             container(svg_icon(CHECK_SVG, 14.0, theme::BG)).center(26).style(|_| container::Style {
                 background: Some(Background::Color(theme::SUCCESS)),
@@ -1084,7 +1097,7 @@ impl App {
             }),
             text(t("ui.notifications.exportComplete")).size(15).font(theme::semibold(theme::INTER)),
             space().width(Length::Fill),
-            button(container(text("×").size(18)).center(Length::Fill)).width(28).height(28).padding(0).style(theme::modal_close).on_press(wrap(ExportMsg::Close)),
+            button(container(text("×").size(18)).center(Length::Fill)).width(28).height(28).padding(0).style(theme::modal_close).on_press_maybe((!busy).then_some(wrap(ExportMsg::Close))),
         ]
         .spacing(10)
         .align_y(Alignment::Center);
@@ -1118,13 +1131,14 @@ impl App {
         let body = column![
             container(look).center_x(Length::Fill),
             column![text(name).size(13).font(theme::semibold(theme::INTER)), text(facts).size(11).color(theme::TEXT_SECONDARY)].spacing(3),
+            self.share_block(bytes, length, format, quality),
         ]
         .spacing(14);
         let footer = row![
             secondary(reveal_label(), Some(wrap(ExportMsg::Reveal))),
             secondary(t("ui.export.playVideo"), Some(wrap(ExportMsg::Play))),
             space().width(Length::Fill),
-            primary(t("ui.settings.done"), Some(wrap(ExportMsg::Close))),
+            primary(t("ui.settings.done"), (!busy).then_some(wrap(ExportMsg::Close))),
         ]
         .spacing(10)
         .align_y(Alignment::Center);
@@ -1205,8 +1219,11 @@ impl App {
         if let Some(edit) = &self.export.editing {
             return self.zone_editor(edit);
         }
-        if let State::Done { output, bytes, length, format, .. } = &self.export.state {
-            return self.export_complete(output, *bytes, *length, *format);
+        if self.export.share.list_open {
+            return self.shared_clips_dialog();
+        }
+        if let State::Done { output, bytes, length, format, quality, .. } = &self.export.state {
+            return self.export_complete(output, *bytes, *length, *format, *quality);
         }
         let e = &self.export;
         let busy = e.running();
@@ -1445,6 +1462,7 @@ impl App {
                 section(t("ui.export.overlays").into(), overlays.into()),
                 section(t("ui.export.privacy").into(), privacy.into()),
                 section(t("ui.export.timelapse").into(), timelapse.into()),
+                section(t("ui.export.shareClip").into(), self.share_section(secs / speed, used)),
             ]
             .spacing(20)
             .width(Length::Fill);
@@ -1457,7 +1475,13 @@ impl App {
             ]
             .spacing(20)
             .width(Length::Fill);
-            let right = column![section(t("ui.export.overlays").into(), overlays.into()), section(t("ui.export.privacy").into(), privacy.into())].spacing(20).width(Length::Fill);
+            let right = column![
+                section(t("ui.export.overlays").into(), overlays.into()),
+                section(t("ui.export.privacy").into(), privacy.into()),
+                section(t("ui.export.shareClip").into(), self.share_section(secs / speed, used)),
+            ]
+            .spacing(20)
+            .width(Length::Fill);
             let content = column![self.preview_block((a, b), secs, speed, multi, used, (720.0, 240.0)), row![left, right].spacing(24)].spacing(20);
             scrolled(content, body_height)
         };
@@ -1944,7 +1968,25 @@ mod tests {
             app.export.preview = Some(Ok(super::Shown { handle: iced::widget::image::Handle::from_rgba(p.shown.0, p.shown.1, p.rgba), size: p.shown, full: (p.width, p.height) }));
         }
         if std::env::var_os("SENTRY_DIALOG_DONE").is_some() {
-            app.export.state = super::State::Done { output: "/Users/me/Movies/Tesla 2026-11-07 08-24-23.mp4".into(), bytes: 168_800_000, seconds: 67.9, length: 179.0, format: super::Format::H264 };
+            app.export.state = super::State::Done { output: "/Users/me/Movies/Tesla 2026-11-07 08-24-23.mp4".into(), bytes: 168_800_000, seconds: 67.9, length: 179.0, format: super::Format::H264, quality: super::Quality::High };
+        }
+        if let Ok(which) = std::env::var("SENTRY_DIALOG_SHARE") {
+            let clip = |code: &str, name: &str, hours: i64| crate::share::SharedClip {
+                code: code.into(),
+                url: format!("https://clip.sentry-six.com/{code}"),
+                delete_token: "t".into(),
+                expires_at: (chrono::Utc::now() + chrono::Duration::hours(hours)).to_rfc3339(),
+                file_size: 168_800_000,
+                file_name: name.into(),
+                uploaded_at: String::new(),
+            };
+            app.settings.shared_clips = vec![clip("AbCd2345", "Tesla 2026-11-07 08-24-23.mp4", 70), clip("Xy9Kp3Mn", "Tesla Sentry 2026-11-05 14-02-11.mp4", -5)];
+            match which.as_str() {
+                "list" => app.export.share.list_open = true,
+                "intent" => app.export.share.intent = true,
+                "done" => app.export.share.state = super::share_ui::Sharing::Done(app.settings.shared_clips[0].clone()),
+                _ => {}
+            }
         }
         let mut painter = crate::export::overlay::Painter::new().unwrap();
         let pic = painter.paint_scaled(app.export_dialog(), iced::Size::new(w * 2, h * 2), 2.0);

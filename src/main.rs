@@ -32,6 +32,7 @@ mod crmath;
 mod crmath_tables;
 mod settings;
 mod settings_view;
+mod share;
 mod shortcuts;
 mod spinner;
 mod support;
@@ -942,6 +943,8 @@ impl App {
                     }
                 } else if self.settings_ui.recording.is_some() {
                     self.settings_ui.recording = None;
+                } else if self.export.share.list_open {
+                    return self.export_update(export_view::ExportMsg::Share(export_view::ShareMsg::ListClose));
                 } else if self.export.open {
                     return self.export_update(export_view::ExportMsg::Close);
                 } else if self.settings_open {
@@ -1093,6 +1096,10 @@ impl App {
                     }
                     Change::Choose(menu, i) => self.choose(menu, i),
                     Change::ResetCameraOrder => self.settings.camera_order = settings::Settings::default().camera_order,
+                    Change::OpenSharedClips => {
+                        self.settings_open = false;
+                        return self.export_update(export_view::ExportMsg::Share(export_view::ShareMsg::ListOpen));
+                    }
                     Change::OpenSupportChat => {
                         self.settings_open = false;
                         if self.chat.open {
@@ -1437,7 +1444,7 @@ impl App {
 
     /// Whether a dialog is up (they all sit centred over the video).
     fn dialog_open(&self) -> bool {
-        self.settings_open || self.export.open || self.delete_confirm.is_some() || self.privacy_pending() || self.update.is_some() || self.prerelease_question || self.changelog.is_some()
+        self.settings_open || self.export.open || self.export.share.list_open || self.delete_confirm.is_some() || self.privacy_pending() || self.update.is_some() || self.prerelease_question || self.changelog.is_some()
     }
 
     /// Whether the open dialog covers the clip panel.
@@ -2189,7 +2196,9 @@ impl App {
                     .align_y(Vertical::Top),
             );
         }
-        if self.export.open {
+        // The export dialog (which shows the shared clips list when it's
+        // open), or the list on its own (opened from Settings).
+        if self.export.open || self.export.share.list_open {
             let overlay = sensor(self.export_dialog()).on_show(Message::OverlaySized).on_resize(Message::OverlaySized);
             app = app.push(overlay);
         }
