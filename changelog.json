@@ -1,6 +1,45 @@
 {
   "versions": [
     {
+      "version": "2026.45.43",
+      "date": "2026-11-08",
+      "title": "Editor and Sharing",
+      "changes": [
+        {
+          "type": "feature",
+          "description": "Export opens a full-window editor: drag and resize the cameras, dashboard, map and watermark, with snapping guides."
+        },
+        {
+          "type": "feature",
+          "description": "Press play in the editor to watch your export with the real video, dashboard and map."
+        },
+        {
+          "type": "feature",
+          "description": "Share a clip as a link that expires. Your shared clips are in Settings."
+        },
+        {
+          "type": "feature",
+          "description": "An optional Made with Sentry Six watermark."
+        },
+        {
+          "type": "improvement",
+          "description": "All cameras now line up exactly, including the back camera on HW3 cars."
+        },
+        {
+          "type": "improvement",
+          "description": "HEVC exports are about 10% smaller."
+        },
+        {
+          "type": "fix",
+          "description": "Fixes for Linux exports, drawing blur zones, updates and a slow start on network folders."
+        },
+        {
+          "type": "note",
+          "description": "Still to come: the Footage Converter."
+        }
+      ]
+    },
+    {
       "version": "2026.45.42",
       "date": "2026-11-08",
       "title": "Export",

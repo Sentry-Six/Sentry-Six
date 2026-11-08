@@ -1,7 +1,7 @@
 [package]
 name = "sentry-studio"
 # The release version, kept in step with version.json.
-version = "2026.45.42"
+version = "2026.45.43"
 description = "Sentry Studio: synced six-camera Tesla dashcam playback"
 authors = ["Sentry-Six"]
 license = "MIT"
