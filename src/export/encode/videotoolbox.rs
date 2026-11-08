@@ -3,8 +3,9 @@
 //! Frames come from the encoder's own pool of IOSurface-backed BGRA pixel
 //! buffers (`frame`), which the GPU compositor can render into without a
 //! copy, or which can be filled from memory. Encoded frames come back in
-//! order (no B-frames), each with its keyframe flag; the codec's
-//! configuration box (`avcC` / `hvcC`) comes from VideoToolbox itself.
+//! decode order (with B-frames for HEVC), each with its display time and
+//! keyframe flag; the codec's configuration box (`avcC` / `hvcC`) comes
+//! from VideoToolbox itself.
 
 use super::{EncodeSettings, Packet};
 use crate::export::mp4_writer::CodecConfig;

@@ -361,8 +361,8 @@ mod tests {
         // Greenwich on the equator is the middle of the world.
         let (x, y) = world(0.0, 0.0);
         assert!((x - 0.5).abs() < 1e-12 && (y - 0.5).abs() < 1e-12);
-        // Edmonton at zoom 10 is in OSM tile x 189, y 330.
-        let (x, y) = world(53.5461, -113.4938);
-        assert_eq!(((x * 1024.0) as u32, (y * 1024.0) as u32), (189, 330));
+        // 40°N 100°W at zoom 10 is in OSM tile x 227, y 387.
+        let (x, y) = world(40.0, -100.0);
+        assert_eq!(((x * 1024.0) as u32, (y * 1024.0) as u32), (227, 387));
     }
 }

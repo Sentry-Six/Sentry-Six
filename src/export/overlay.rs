@@ -129,10 +129,6 @@ impl Watermark {
         (w, (w as f32 * Self::DESIGN.1 / Self::DESIGN.0).round() as u32)
     }
 
-    pub fn place(&self, frame_w: u32, frame_h: u32) -> (f32, f32) {
-        self.place_in(frame_w, frame_h, 0, frame_h)
-    }
-
     /// Its place in a frame whose cameras are `area_h` high from `top`
     /// (Tesla Mobile's bars are above and below them): a corner of the
     /// cameras, or where it was dragged in the frame.
@@ -204,7 +200,7 @@ pub fn round_corners(picture: &mut Picture, radius: f32) {
     }
 }
 
-/// Where an overlay sits: Electron's six places, 20 px from the edges.
+/// Where an overlay sits: one of six places, 20 px from the edges.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Corner {
     BottomCenter,
@@ -256,7 +252,7 @@ impl Corner {
     }
 }
 
-/// The burned-in recording time, as Electron's: 36 px white type on a
+/// The burned-in recording time: 36 px white type on a
 /// 40% black box.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Timestamp {
@@ -301,7 +297,8 @@ impl Timestamp {
     }
 }
 
-/// The dashboard's width as a share of 1920 px (Electron's Size).
+/// The dashboard's width as a share of 1920 px (the Size setting's
+/// steps; the settings keep the nearest one).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DashSize {
     Small,
@@ -331,23 +328,13 @@ impl DashSize {
         }
     }
 
-    /// The size whose share is nearest `share` (for the settings key
-    /// Electron reads).
+    /// The size whose share is nearest `share` (the settings' size key).
     pub fn nearest(share: f64) -> Self {
         DashSize::ALL.into_iter().min_by(|a, b| (a.share() - share).abs().total_cmp(&(b.share() - share).abs())).unwrap_or(DashSize::Medium)
     }
 
     pub fn from_key(k: &str) -> Option<Self> {
         DashSize::ALL.into_iter().find(|s| s.key() == k)
-    }
-
-    pub fn label_key(self) -> &'static str {
-        match self {
-            DashSize::Small => "ui.export.sizeSmall",
-            DashSize::Medium => "ui.export.sizeMedium",
-            DashSize::Large => "ui.export.sizeLarge",
-            DashSize::XLarge => "ui.export.sizeXLarge",
-        }
     }
 }
 
@@ -369,22 +356,22 @@ impl Corner {
 }
 
 /// The burned-in dashboard: playback's compact dashboard, sized and placed
-/// as Electron placed it (40 px from the edges). With `glass`, it's
+/// 40 px from the edges. With `glass`, it's
 /// playback's frosted glass (the video under it blurred and saturated,
-/// the same tint and edge); without, Electron's dark export bar.
+/// the same tint and edge); without, a dark bar.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Dashboard {
     pub style: DashStyle,
     /// Tesla Mobile: a top corner puts the data bar on top.
     pub corner: Corner,
-    /// Its width as a share of 1920 px (Electron's sizes are 0.25 to
-    /// 0.55; resizing in the preview sets any share in `Dashboard::SHARES`).
+    /// Its width as a share of 1920 px (the size steps are 0.25 to 0.55;
+    /// resizing in the preview sets any share in `Dashboard::SHARES`).
     pub share: f64,
     pub metric: bool,
     pub h24: bool,
     pub accel: crate::dashboard::AccelMode,
     /// Playback's glass blur in its pixels (the Glass Blur setting); 0 for
-    /// Electron's dark bar.
+    /// the dark bar.
     pub glass: f32,
     /// Dragged somewhere of its own: its top-left corner as a share of the
     /// frame's width and height, instead of `corner`.
@@ -413,7 +400,7 @@ pub fn free_place(free: (f32, f32), w: u32, h: u32, frame_w: u32, frame_h: u32) 
     (x.round(), y.round())
 }
 
-/// The dashboard's look (Electron's Style).
+/// The dashboard's look (the Style setting).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DashStyle {
     /// Playback's compact dashboard on a dark bar.
@@ -461,7 +448,7 @@ pub struct DashState {
 }
 
 impl DashState {
-    /// What can be seen change (Electron's state signature): the
+    /// What can be seen change: the
     /// dashboard is drawn again only when this does.
     pub fn signature(&self, metric: bool) -> String {
         match &self.telemetry {
@@ -497,7 +484,7 @@ impl Dashboard {
     /// Pixels of width per share.
     pub const UNIT: f64 = 1920.0 * 1.15;
 
-    /// Electron's size: 1920 x share x 1.15 wide (at most the frame less
+    /// 1920 x share x 1.15 wide (at most the frame less
     /// 80 px), 8.57 times as wide as high.
     pub fn size(&self, frame_w: u32) -> Size<u32> {
         let w = ((Self::UNIT * self.share).round() as u32).min(frame_w.saturating_sub(80)).max(80);
@@ -543,7 +530,7 @@ impl Dashboard {
         painter.paint_scaled::<()>(Self::bar(dash, self.glass > 0.0, height, 6.0), size, scale)
     }
 
-    /// The compact dashboard on its glass (or Electron's dark bar), `height`
+    /// The compact dashboard on its glass (or the dark bar), `height`
     /// high, filling what it's given (the export, or the editor while it
     /// plays).
     pub fn bar<'a, M: 'a>(dash: Element<'a, M>, glass: bool, height: f32, pad: f32) -> Element<'a, M> {
@@ -594,8 +581,9 @@ impl std::fmt::Debug for MapTiles {
     }
 }
 
-/// The GPS minimap, as Electron's "Static Map": the range's route on the
-/// map, fitted with 15% to spare, and the car's arrow moving along it.
+/// The GPS minimap: the range's route on the map, fitted with 15% to
+/// spare, and the car's arrow moving along it; or (`live`) the map
+/// following the car.
 /// Square, a share of the frame's shorter side, in a corner 20 px in.
 #[derive(Debug, Clone)]
 pub struct Minimap {
@@ -604,8 +592,8 @@ pub struct Minimap {
     pub share: f64,
     pub dark: bool,
     pub tiles: MapTiles,
-    /// Electron's "Live Map": the map follows the car, as the playback
-    /// map does, instead of showing the whole route.
+    /// The map follows the car, as the playback map does, instead of
+    /// showing the whole route.
     pub live: bool,
     /// Dragged somewhere of its own (see Dashboard::free).
     pub free: Option<(f32, f32)>,
@@ -636,12 +624,8 @@ impl MapFit {
 }
 
 impl Minimap {
-    /// Where the map goes in a frame (its side from `side`).
-    pub fn place(&self, side: u32, frame_w: u32, frame_h: u32) -> (f32, f32) {
-        self.place_in(side, frame_w, frame_h, 0, frame_h)
-    }
-
-    /// As Watermark::place_in.
+    /// Where the map goes in a frame (its side from `side`), as
+    /// Watermark::place_in.
     pub fn place_in(&self, side: u32, frame_w: u32, frame_h: u32, top: u32, area_h: u32) -> (f32, f32) {
         match self.free {
             Some(free) => free_place_in(free, side, side, frame_w, frame_h, top, area_h),
@@ -817,7 +801,7 @@ mod tests {
     }
 
     #[test]
-    fn timestamps_read_as_electrons() {
+    fn timestamps_read_right() {
         use crate::settings::DateFormat;
         let t = crate::library::parse_stamp("2026-11-07_13-05-09").unwrap();
         let ts = |date_format, h24| Timestamp { corner: Corner::BottomCenter, date_format, h24 }.text(t);
@@ -831,7 +815,7 @@ mod tests {
     #[test]
     fn dashboards_size_and_draw() {
         let d = Dashboard { style: DashStyle::Compact, corner: Corner::BottomCenter, share: DashSize::Medium.share(), metric: false, h24: false, accel: crate::dashboard::AccelMode::IconBar, glass: 0.0, free: None };
-        // Electron's sizes: Medium 773 x 90 on a wide frame; never wider
+        // Medium is 773 x 90 on a wide frame; never wider
         // than the frame less 80 px.
         assert_eq!(d.size(3258), Size::new(773, 90));
         assert_eq!(d.size(600).width, 520);

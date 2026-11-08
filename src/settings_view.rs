@@ -1,10 +1,7 @@
 //! The Settings window: a header with the gradient accent line, a sidebar
 //! with search and the sections, compact rows on the right, and a footer
-//! with Done. The sections and rows keep the words and languages (i18n) of
-//! earlier versions of Sentry Studio, less the settings for parts this
-//! version doesn't have (export, support chat). Selects open the macOS
-//! menu on a Mac and a dropdown elsewhere; changes apply at once and are
-//! saved.
+//! with Done. Selects open the macOS menu on a Mac and a dropdown
+//! elsewhere; changes apply at once and are saved.
 
 use crate::i18n::{self, t};
 use crate::dashboard::AccelMode;
@@ -292,8 +289,8 @@ pub fn action_label(action: Action) -> &'static str {
     })
 }
 
-/// OS and architecture as earlier versions showed them (Node's names,
-/// such as arm64 and x64).
+/// OS and architecture, in the names the update check uses (such as
+/// arm64 and x64).
 fn os_name() -> &'static str {
     match std::env::consts::OS {
         "macos" => "macOS",

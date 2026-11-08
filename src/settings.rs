@@ -21,8 +21,7 @@ pub struct Settings {
     /// Glass blur in px (`glassBlur`).
     pub glass_blur: f32,
     /// Dialogs on a solid dark surface instead of frosted glass
-    /// (`dialogStyle`: "frosted", the default, or "solid"). New in this
-    /// version.
+    /// (`dialogStyle`: "frosted", the default, or "solid").
     pub solid_dialogs: bool,
     /// Mirror the back and repeater cameras (`mirrorCameras`, default on).
     pub mirror_cameras: bool,
@@ -104,23 +103,21 @@ pub struct Settings {
     pub export_minimap_live: bool,
     /// The compact dashboard and the map dragged to a place of their own in
     /// the export preview (`exportDashboardFree`, `exportMinimapFree`: the
-    /// top-left as shares of the frame, [x, y]; null for the corner). New
-    /// in this version.
+    /// top-left as shares of the frame, [x, y]; null for the corner).
     pub export_dash_free: Option<(f32, f32)>,
     /// Clips shared from this computer (`sharedClips`, as earlier versions
     /// kept it: code, link, delete token, expiry), newest first.
     pub shared_clips: Vec<crate::share::SharedClip>,
     /// The Sentry Six watermark on exports (`exportWatermark`, on by
     /// default), its corner (`exportWatermarkPosition`) and dragged place
-    /// (`exportWatermarkFree`). New in this version.
+    /// (`exportWatermarkFree`).
     pub export_watermark: bool,
     pub export_watermark_position: String,
     pub export_watermark_free: Option<(f32, f32)>,
     pub export_map_free: Option<(f32, f32)>,
     /// Sizes set by resizing in the export preview, as shares
     /// (`exportDashboardScale`, `exportMinimapScale`,
-    /// `exportWatermarkScale`); without, the size keys above. New in this
-    /// version.
+    /// `exportWatermarkScale`); without, the size keys above.
     pub export_dash_scale: Option<f64>,
     pub export_map_scale: Option<f64>,
     pub export_watermark_scale: Option<f64>,

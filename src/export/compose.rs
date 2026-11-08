@@ -108,7 +108,7 @@ fn fs(i: VOut) -> @location(0) vec4<f32> {
 
 // Blur zones: the camera drawn on its own (`scratch`), then into the frame
 // blurred where the mask is set and sharp elsewhere. 9 x 9 samples over
-// about 48 px: as strong as earlier versions' boxblur=10:10.
+// about 48 px.
 const BLUR_SHADER: &str = r#"
 struct B { step: vec2<f32>, frost: vec2<f32>, saturate: vec4<f32> };
 @group(0) @binding(0) var scratch: texture_2d<f32>;
@@ -160,8 +160,6 @@ fn fs(i: VOut) -> @location(0) vec4<f32> {
 pub struct BlurMask {
     scratch: wgpu::TextureView,
     group: wgpu::BindGroup,
-    pub width: u32,
-    pub height: u32,
 }
 
 pub struct Compositor {
@@ -363,8 +361,6 @@ impl Compositor {
         overlay
     }
 
-    /// A camera's blur zones: `mask` (one byte a pixel, 255 inside a zone)
-    /// at the camera's size in the frame.
     /// A camera's mask for blurring: `privacy` (blur zones) and `frost`
     /// (glass under the dashboard, with its blur's standard deviation in
     /// the camera's pixels), one byte a pixel each; either may be empty.
@@ -421,18 +417,18 @@ impl Compositor {
                 wgpu::BindGroupEntry { binding: 3, resource: uniform.as_entire_binding() },
             ],
         });
-        BlurMask { scratch, group, width, height }
+        BlurMask { scratch, group }
     }
 
     /// Draws the pictures into an encoder frame and waits for the GPU, so
-    /// the frame can be encoded straight after.
-    #[cfg(target_os = "macos")]
+    /// the frame can be encoded straight after (the tests' frames).
+    #[cfg(all(test, target_os = "macos"))]
     pub fn draw_into(&self, target: &super::encode::Frame, pictures: &[(std::sync::Arc<crate::decode::Frame>, Placement)]) -> Result<()> {
         self.draw_with_overlays(target, pictures, &[])
     }
 
     /// As `draw_into`, then each overlay at its top-left corner (pixels).
-    #[cfg(target_os = "macos")]
+    #[cfg(all(test, target_os = "macos"))]
     pub fn draw_with_overlays(&self, target: &super::encode::Frame, pictures: &[(std::sync::Arc<crate::decode::Frame>, Placement)], overlays: &[(&Overlay, f32, f32)]) -> Result<()> {
         self.draw_frame(target, pictures, &[], overlays)
     }

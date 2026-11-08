@@ -529,14 +529,6 @@ pub struct Player {
     formats_checked: Option<Instant>,
 }
 
-/// Reads the length of every segment's clip (front camera, or the first
-/// one there is), one at a time, and sends `(segment, seconds)`. Stops
-/// early when the receiver is dropped (another collection was loaded).
-///
-/// It runs alongside playback on the same share, so it stays out of the
-/// way: one file at a time, and none at all while `busy` is set (a clip
-/// opening, a seek, or a camera waiting for data). On a network share a
-/// burst of index reads made playback stutter for the first 15-30 s.
 /// Clip lengths remembered between runs (clip-lengths.json in the data
 /// folder), so a day opened before shows its full length at once. Each is
 /// kept with the file's size and modification time and used only while
@@ -618,6 +610,12 @@ fn length_clip(s: &Segment) -> Option<&PathBuf> {
     s.files.get(&Camera::Front).or_else(|| s.files.values().next())
 }
 
+/// Reads the length of every segment's clip (front camera, or the first
+/// one there is), one at a time, and sends `(segment, seconds)`. Stops
+/// early when the receiver is dropped (another collection was loaded).
+/// It runs alongside playback on the same share, so it stays out of the
+/// way: one file at a time, and none at all while `busy` is set (a clip
+/// opening, a seek, or a camera waiting for data).
 fn read_lengths(segments: &[Segment], tx: Sender<(usize, f64)>, busy: Arc<std::sync::atomic::AtomicBool>, cancel: Arc<std::sync::atomic::AtomicBool>) {
     let paths: Vec<(usize, PathBuf)> = segments
         .iter()
@@ -1071,7 +1069,6 @@ impl Player {
         self.tiles.get(slot).and_then(|t| t.shared.0.lock().unwrap_or_else(|e| e.into_inner()).error.clone())
     }
 
-    /// Seconds from the start of the collection.
     /// Logs the cameras' formats in one line when they change (grouped:
     /// "H264 1448x938, 36 fps: Back, LeftPillar, …"), once they have held
     /// for a second.
@@ -1142,6 +1139,7 @@ impl Player {
         out
     }
 
+    /// Seconds from the start of the collection.
     pub fn position(&self) -> f64 {
         if let Some(t) = self.queued_seek {
             return t;

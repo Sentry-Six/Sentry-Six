@@ -603,14 +603,14 @@ mod tests {
 
     #[test]
     fn private_parts_of_paths_are_removed() {
-        assert_eq!(redact("/Users/scott/Movies/TeslaCam"), "/Users/[user]/Movies/TeslaCam");
-        assert_eq!(redact(r"C:\Users\Scott Vandereems\Videos"), r"C:\Users\[user]\Videos");
-        assert_eq!(redact(r"C:\\Users\\scott\\x"), r"C:\\Users\\[user]\\x");
-        assert_eq!(redact("/Volumes/Scott's NAS/TeslaCam"), "/Volumes/[volume]/TeslaCam");
-        assert_eq!(redact("/run/media/scott/USB/TeslaCam"), "/run/media/[user]/[volume]/TeslaCam");
-        assert_eq!(redact(r"\\nas-scott\teslacam\RecentClips"), r"\\[server]\teslacam\RecentClips");
+        assert_eq!(redact("/Users/alice/Movies/TeslaCam"), "/Users/[user]/Movies/TeslaCam");
+        assert_eq!(redact(r"C:\Users\Alice Example\Videos"), r"C:\Users\[user]\Videos");
+        assert_eq!(redact(r"C:\\Users\\alice\\x"), r"C:\\Users\\[user]\\x");
+        assert_eq!(redact("/Volumes/Alice's NAS/TeslaCam"), "/Volumes/[volume]/TeslaCam");
+        assert_eq!(redact("/run/media/alice/USB/TeslaCam"), "/run/media/[user]/[volume]/TeslaCam");
+        assert_eq!(redact(r"\\nas-home\teslacam\RecentClips"), r"\\[server]\teslacam\RecentClips");
         assert_eq!(redact("smb://nas.local/share"), "smb://[server]/share");
-        assert_eq!(redact("near 53.5461, -113.4938 at 10:00"), "near [coordinates] at 10:00");
+        assert_eq!(redact("near 40.1234, -100.4321 at 10:00"), "near [coordinates] at 10:00");
         // Times, versions and sizes stay.
         assert_eq!(redact("2026-11-07_10-12-00-front.mp4 2896x1876 v2026.45.40 12.5 ms"), "2026-11-07_10-12-00-front.mp4 2896x1876 v2026.45.40 12.5 ms");
     }

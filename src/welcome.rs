@@ -5,8 +5,7 @@
 //! What this version sends differs from earlier versions of Sentry Studio
 //! (place names are on by default), so its acceptance is kept in its own
 //! settings file and its summary is app.privacySummary (the title, links
-//! and button keep the earlier translations). Version 2 added the update
-//! checks.
+//! and button keep the earlier translations).
 
 use crate::i18n::t;
 use crate::theme;

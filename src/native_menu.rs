@@ -2,8 +2,9 @@
 //! choices), like a macOS pop-up button: system font, checkmark on the
 //! current item, the current item placed under the pointer.
 //!
-//! `popup` runs the menu modally and returns the chosen index. It must be
-//! called on the main thread (iced runs `update` there).
+//! `popup` opens the menu from the main queue, just after the current
+//! update, and gives back the chosen index as a task, so the app keeps
+//! drawing (and the video playing) while the menu is open.
 
 #[cfg(target_os = "macos")]
 mod imp {
@@ -38,7 +39,7 @@ mod imp {
         }
     }
 
-    pub fn popup(items: &[String], selected: Option<usize>) -> Option<usize> {
+    pub fn run(items: &[String], selected: Option<usize>) -> Option<usize> {
         let mtm = MainThreadMarker::new()?;
         let target = MenuTarget::new(mtm);
         let target_obj: &AnyObject = &target;
@@ -69,14 +70,30 @@ mod imp {
     }
 }
 
+/// Opens the menu (`items`, the current one ticked) at the pointer; the
+/// task ends with the chosen index, or None when it's closed.
 #[cfg(target_os = "macos")]
-pub use imp::popup;
+pub fn popup(items: Vec<String>, selected: Option<usize>) -> iced::Task<Option<usize>> {
+    let (tx, rx) = iced::futures::channel::oneshot::channel();
+    dispatch2::DispatchQueue::main().exec_async(move || {
+        let _ = tx.send(imp::run(&items, selected));
+    });
+    iced::Task::future(async move { rx.await.ok().flatten() })
+}
 
 /// Whether this OS has the popup (macOS). Elsewhere a click on a select
 /// moves to its next choice.
 pub const AVAILABLE: bool = cfg!(target_os = "macos");
 
 #[cfg(not(target_os = "macos"))]
-pub fn popup(_items: &[String], _selected: Option<usize>) -> Option<usize> {
-    None
+pub fn popup(_items: Vec<String>, _selected: Option<usize>) -> iced::Task<Option<usize>> {
+    iced::Task::none()
+}
+
+/// The task for a menu whose choice becomes `message`.
+pub fn choose<M: Send + 'static>(items: Vec<String>, selected: Option<usize>, message: impl Fn(usize) -> M + Send + 'static) -> iced::Task<M> {
+    popup(items, selected).then(move |chosen| match chosen {
+        Some(i) => iced::Task::done(message(i)),
+        None => iced::Task::none(),
+    })
 }

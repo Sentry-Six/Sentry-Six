@@ -15,7 +15,7 @@ path = "src/main.rs"
 
 [dependencies]
 anyhow = "1"
-iced = { version = "0.14", features = ["wgpu", "advanced", "image", "svg", "canvas"] }
+iced = { version = "0.14", features = ["wgpu", "advanced", "image-without-codecs", "svg", "canvas"] }
 # Export overlays: the app's own widgets drawn offscreen (UserInterface).
 iced_runtime = "0.14"
 serde = { version = "1", features = ["derive"] }
@@ -27,9 +27,8 @@ base64 = "0.22"
 libm = "0.2"
 ureq = "3"
 regex = "1"
-url = "2"
 image = { version = "0.25", default-features = false, features = ["png", "webp"] }
-bytemuck = { version = "1", features = ["derive"] }
+bytemuck = "1"
 rfd = "0.17"
 # Deleting a clip moves it to the Trash / Recycle Bin first.
 trash = "5"
@@ -60,6 +59,9 @@ metal = "0.32"
 objc2-video-toolbox = "0.3"
 objc2-app-kit = "0.3"
 objc2-foundation = "0.3"
+# The selects' menus open from the main queue, outside iced's update, so
+# the video keeps playing while one is open (src/native_menu.rs).
+dispatch2 = "0.3"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 windows = { version = "0.61", features = [

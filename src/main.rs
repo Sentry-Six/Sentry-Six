@@ -151,10 +151,9 @@ fn open_licences() {
     }
 }
 
-/// Runs blocking work (file reads, sleeps, waits) on a thread of its own.
+/// Runs blocking work (file reads, sleeps, waits) on a thread of its own:
 /// iced's executor threads also drive the frame clock and event streams,
-/// so blocking them (a zoom badge timer per wheel step was enough) froze
-/// playback.
+/// and blocking them freezes playback.
 fn off_thread<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> impl std::future::Future<Output = T> {
     let (tx, rx) = iced::futures::channel::oneshot::channel();
     std::thread::spawn(move || {
@@ -178,13 +177,6 @@ fn main() -> iced::Result {
     let args: Vec<std::ffi::OsString> = std::env::args_os().collect();
     let arg = |i: usize| args.get(i).and_then(|a| a.to_str());
     match arg(1) {
-        // Decode every frame of one clip without a window.
-        Some("--route-check") => {
-            if let Some(p) = arg(2) {
-                checks::route_check(std::path::Path::new(p));
-            }
-            return Ok(());
-        }
         // An update check without the server ping, optionally as another
         // version and with the download.
         Some("--update-check") => {
@@ -197,24 +189,6 @@ fn main() -> iced::Result {
             applog::start_in_memory();
             let snap = diagnostics::Snapshot { settings: Some(settings::load()), ..Default::default() };
             print!("{}", diagnostics::report(&snap));
-            return Ok(());
-        }
-        Some("--tiles-check") => {
-            if let (Some(lat), Some(lon), Some(z)) = (arg(2), arg(3), arg(4)) {
-                checks::tiles_check(lat.parse().unwrap_or(0.0), lon.parse().unwrap_or(0.0), z.parse().unwrap_or(14));
-            }
-            return Ok(());
-        }
-        Some("--order-check") => {
-            if let Some(p) = arg(2) {
-                checks::order_check(std::path::Path::new(p));
-            }
-            return Ok(());
-        }
-        Some("--keyframe-check") => {
-            if let Some(p) = arg(2) {
-                checks::keyframe_check(std::path::Path::new(p));
-            }
             return Ok(());
         }
         #[cfg(unix)]
@@ -252,12 +226,6 @@ fn main() -> iced::Result {
             return Ok(());
         }
         // Load drive-data.json and match the newest drive to its clips.
-        Some("--drives-compare") => {
-            if let Some(f) = arg(2) {
-                checks::drives_compare(std::path::Path::new(f));
-            }
-            return Ok(());
-        }
         Some("--drives-check") => {
             if let (Some(f), Some(r)) = (arg(2), arg(3)) {
                 checks::drives_check(std::path::Path::new(f), std::path::Path::new(r));
@@ -297,7 +265,13 @@ fn main() -> iced::Result {
             icon: if cfg!(any(target_os = "macos", windows)) {
                 None
             } else {
-                iced::window::icon::from_file_data(include_bytes!("../assets/icons/256x256.png"), None).ok()
+                image::load_from_memory_with_format(include_bytes!("../assets/icons/256x256.png"), image::ImageFormat::Png)
+                    .ok()
+                    .and_then(|img| {
+                        let rgba = img.into_rgba8();
+                        let (w, h) = rgba.dimensions();
+                        iced::window::icon::from_rgba(rgba.into_raw(), w, h).ok()
+                    })
             },
             // Linux: matches the .desktop file (tools/package-linux.sh), so
             // the desktop shows the launcher's name and icon for the window.
@@ -445,8 +419,7 @@ impl std::fmt::Display for Speed {
 const SPEEDS: [Speed; 5] = [Speed(0.5), Speed(1.0), Speed(2.0), Speed(3.0), Speed(4.0)];
 /// Where the floating clip browser sits (logical pixels from the window's
 /// top left), and the glass: saturate(185%), 24 px corners. The blur comes
-/// from the settings (13 px when none is set; earlier versions of Sentry
-/// Studio defaulted to 7 px).
+/// from the settings (13 px when none is set).
 const PANEL_X: f32 = 18.0;
 const PANEL_Y: f32 = 44.0;
 const GLASS_SATURATE: f32 = 1.85;
@@ -1093,8 +1066,7 @@ impl App {
                     Change::CheckUpdates => return Task::done(Message::UpdateCheck(true)),
                     Change::Open(menu) => {
                         let (labels, current) = settings_view::choices(&self.settings, menu);
-                        let Some(i) = native_menu::popup(&labels, current) else { return Task::none() };
-                        self.choose(menu, i);
+                        return native_menu::choose(labels, current, move |i| Message::Setting(Change::Choose(menu, i)));
                     }
                     Change::Choose(menu, i) => self.choose(menu, i),
                     Change::ResetCameraOrder => self.settings.camera_order = settings::Settings::default().camera_order,
@@ -1385,16 +1357,13 @@ impl App {
             Message::SpeedMenu => {
                 let labels: Vec<String> = SPEEDS.iter().map(|s| s.to_string()).collect();
                 let current = SPEEDS.iter().position(|s| s.0 == self.player.rate());
-                if let Some(i) = native_menu::popup(&labels, current) {
-                    self.player.set_rate(SPEEDS[i].0);
-                }
+                return native_menu::choose(labels, current, |i| Message::Rate(SPEEDS[i]));
             }
             Message::DayMenu => {
                 let current = self.day.as_ref().and_then(|d| self.days.iter().position(|x| x == d));
                 let labels: Vec<String> = self.days.iter().map(|d| self.settings.date_format.show(d)).collect();
-                if let Some(i) = native_menu::popup(&labels, current) {
-                    return Task::done(Message::PickDay(self.days[i].clone()));
-                }
+                let days = self.days.clone();
+                return native_menu::choose(labels, current, move |i| Message::PickDay(days[i].clone()));
             }
         }
         Task::none()
@@ -1419,7 +1388,6 @@ impl App {
         }
     }
 
-    /// Where the Settings dialog is (centred in the window), while open.
     /// Where the open support chat panel is (window coordinates): top
     /// right at first, then wherever it was dragged and resized to, always
     /// inside the window and above the controls.
@@ -2996,9 +2964,9 @@ mod tests {
     #[test]
     fn only_event_folders_can_be_deleted() {
         let root = std::env::temp_dir().join(format!("sentry-studio-delete-test-{}", std::process::id()));
-        let saved = root.join("SavedClips/2026-07-08_10-46-52");
-        let sentry = root.join("SentryClips/2026-07-08_11-00-00");
-        let recent = root.join("RecentClips/2026-07-08");
+        let saved = root.join("SavedClips/2026-01-14_10-46-52");
+        let sentry = root.join("SentryClips/2026-01-14_11-00-00");
+        let recent = root.join("RecentClips/2026-01-14");
         for d in [&saved, &sentry, &recent] {
             std::fs::create_dir_all(d).unwrap();
         }

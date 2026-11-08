@@ -5,14 +5,13 @@
 //! after the minute's front clip it starts; playback and the export show
 //! each camera that much later.
 //!
-//! The counter isn't quite the same moment on every camera, though: the
-//! telemetry each camera stamps on its frames (the turn signals, the
-//! brake, speed and steering) shows the back camera's counter 13 frames
-//! ahead of the front's and the repeaters' 1, minute after minute (and the
-//! brake lights' glow in the pictures agrees). That lag is taken off; it's
-//! measured for each car from a minute of driving (`measure`), with those
-//! numbers until then. A camera whose counter isn't comparable at all (an
-//! HW3 car's back camera) isn't moved.
+//! The counter isn't quite the same moment on every camera: the telemetry
+//! each camera stamps on its frames (speed, steering, signals) shows each
+//! camera's counter running a few frames from the front's (the back
+//! camera 13 on an HW4 car). That lag is measured for each car from a
+//! minute of driving (`measure`) and taken off. A camera whose counter
+//! can't be compared at all (an HW3 car's back camera) is lined up by the
+//! telemetry's timing instead (`measure_times`).
 
 use crate::library::Camera;
 use crate::mp4::VideoTrack;
@@ -331,23 +330,8 @@ mod tests {
         assert_eq!(offset_with(Some(Start { seq: 10.0, interval: 1.0 / 36.0 }), front, 0.0), 0.0);
     }
 
-    /// Each minute's offsets (SENTRY_SYNC_DIR: a folder of clips).
-    #[test]
-    #[ignore]
-    fn minute_offsets() {
-        let Some(dir) = std::env::var_os("SENTRY_SYNC_DIR") else { return };
-        let mut files: Vec<_> = std::fs::read_dir(&dir).unwrap().flatten().map(|e| e.path()).filter(|p| p.extension().is_some_and(|x| x == "mp4")).collect();
-        files.sort();
-        let name = |p: &PathBuf| p.file_name().unwrap().to_string_lossy().into_owned();
-        for p in &files {
-            let minute = &name(p)[..19];
-            let front = files.iter().find(|f| name(f) == format!("{minute}-front.mp4")).unwrap();
-            println!("{:<44} {:+.3} s", name(p), offset_with(start(p), start(front), 0.0));
-        }
-    }
-
     /// Each camera's measured lag in a minute of driving (SENTRY_SYNC_DIR,
-    /// SENTRY_SYNC_MINUTE: "2026-11-07_08-24-23").
+    /// SENTRY_SYNC_MINUTE: "2026-01-15_08-00-00").
     #[test]
     #[ignore]
     fn measured_lags() {

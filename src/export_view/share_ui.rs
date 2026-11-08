@@ -139,9 +139,7 @@ impl App {
             ShareMsg::HoursMenu => {
                 let labels: Vec<String> = share::HOURS.iter().map(|h| share::hours_label(*h)).collect();
                 let current = share::HOURS.iter().position(|h| *h == s.hours);
-                if let Some(i) = crate::native_menu::popup(&labels, current) {
-                    return self.share_step(ShareMsg::Hours(i));
-                }
+                return crate::native_menu::choose(labels, current, |i| crate::export_view::wrap(ExportMsg::Share(ShareMsg::Hours(i))));
             }
             ShareMsg::Hours(i) => {
                 if let Some(h) = share::HOURS.get(i).filter(|_| !s.uploading()) {

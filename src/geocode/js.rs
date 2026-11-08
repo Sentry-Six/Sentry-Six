@@ -1,4 +1,4 @@
-//! From Sentry Drive (src-tauri/src/geocode/js.rs), unchanged.
+//! From Sentry Drive, unchanged.
 //! JavaScript coercion helpers, so provider JSON and renderer input are read
 //! exactly the way the JavaScript version read them.
 

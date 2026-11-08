@@ -3,7 +3,7 @@
 //! and a data bar at the bottom or top, dark grey across the whole width.
 //! The data bar: brake and gear in circles at the left, steering wheel
 //! and accelerator at the right, and blinkers, speed and the Autopilot
-//! state in the middle, laid out exactly where Electron's put them.
+//! state in the middle.
 
 use super::overlay::{DashState, Painter, Picture};
 use crate::dashboard::{autopilot_words, gear_letter, icon_set, BLUE};
@@ -104,7 +104,6 @@ impl<M> canvas::Program<M> for DataBar {
             text(&mut f, crate::i18n::t("app.parked").to_string(), w / 2.0, h * 0.45, Color::WHITE, Center, true);
             return vec![f.into_geometry()];
         };
-        // Electron's layout.
         let r = (h * 0.38).round();
         let diam = r * 2.0;
         let gap = (r * 0.5).round();
@@ -134,8 +133,8 @@ impl<M> canvas::Program<M> for DataBar {
         for (on, x, handle) in [(m.blinker_on_left, left_x, &icons.blink_left), (m.blinker_on_right, right_x, &icons.blink_right)] {
             let lit = on && blink;
             let size = diam * 0.9;
-            // The icons are 200 x 175: drawn in a box that shape (in a
-            // square one their tips were cut off).
+            // The icons are 200 x 175: drawn in a box that shape, so their
+            // tips aren't cut off.
             let width = size * 200.0 / 175.0;
             f.draw_svg(
                 Rectangle::new(Point::new(x - width / 2.0, y - size / 2.0), Size::new(width, size)),
@@ -177,7 +176,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn bars_and_date_as_electron() {
+    fn bars_and_date_line() {
         // A 6-camera High export (3258 wide): 72 and 86 px bars.
         assert_eq!(bar_heights(3258), (72, 86));
         let t = crate::library::parse_stamp("2026-11-07_13-05-09").unwrap();

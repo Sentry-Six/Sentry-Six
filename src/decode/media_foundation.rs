@@ -2,10 +2,10 @@
 //! (Microsoft's H.264 Video Decoder MFT, part of Windows, and its H.265 one,
 //! which comes with the HEVC Video Extensions).
 //!
-//! Decoding is synchronous, like the macOS decoder: `decode` hands the MFT
-//! one sample and returns its picture. Low-latency mode makes the decoder
-//! return each picture as soon as its sample is in, which holds for Tesla
-//! clips (no B-frames). The decoder wants Annex B input, so each sample's
+//! `decode_at` hands the MFT one sample and returns a picture if one is
+//! ready (low-latency mode gives back each picture as soon as its sample
+//! is in; with B-frames it can be an earlier sample's), and `drain` takes
+//! what's left at the end of a clip. The decoder wants Annex B input, so each sample's
 //! length-prefixed NAL units get start codes, and keyframes carry the SPS
 //! and PPS in front (so a seek to any keyframe decodes on its own).
 //!
@@ -307,7 +307,6 @@ impl Decoder {
     }
 
     /// Decodes one sample (made-up moments one frame apart).
-    #[allow(dead_code)]
     pub fn decode(&mut self, data: &[u8]) -> Result<Option<Frame>> {
         self.timestamp += 277_778;
         self.decode_at(data, self.timestamp as f64 / 1e7)

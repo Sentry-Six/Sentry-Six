@@ -3,9 +3,7 @@
 //!
 //! The handle's centre moves between `HANDLE_R` and `width - HANDLE_R`,
 //! and a click or drag maps onto that same span, so the handle lands right
-//! under the pointer. (iced's slider maps clicks over the full width but
-//! draws the handle over the width minus the handle, which put it up to
-//! 7 px off.) The pointer stays an arrow.
+//! under the pointer. The pointer stays an arrow.
 
 use iced::advanced::layout::{self, Layout};
 use iced::advanced::widget::{tree, Tree, Widget};

@@ -41,7 +41,6 @@ pub struct Plane<'a> {
 pub const MAX_OUTPUT_WIDTH: u32 = 4096;
 
 /// The track's parameter sets (VPS, SPS, PPS), each with a start code.
-#[cfg_attr(target_os = "macos", allow(dead_code))]
 pub(crate) fn parameter_sets(track: &crate::mp4::VideoTrack) -> Vec<u8> {
     let mut out = Vec::new();
     for set in track.vps.iter().chain(track.sps.iter()).chain(track.pps.iter()) {
@@ -54,7 +53,6 @@ pub(crate) fn parameter_sets(track: &crate::mp4::VideoTrack) -> Vec<u8> {
 /// A sample as Annex B: start codes instead of length prefixes, with the
 /// parameter sets in front of a keyframe (so a seek to any keyframe
 /// decodes on its own). For decoders that want a byte stream.
-#[cfg_attr(target_os = "macos", allow(dead_code))]
 pub(crate) fn annex_b(data: &[u8], nal_length_size: usize, codec: crate::mp4::Codec, parameter_sets: &[u8]) -> anyhow::Result<Vec<u8>> {
     use anyhow::Context;
     let n = nal_length_size;
@@ -87,7 +85,6 @@ pub(crate) fn annex_b(data: &[u8], nal_length_size: usize, codec: crate::mp4::Co
 
 /// Halves a packed NV12 picture (each output sample is the average of a
 /// 2x2 block), keeping both sizes even.
-#[cfg_attr(target_os = "macos", allow(dead_code))]
 pub(crate) fn half_nv12(src: &[u8], w: usize, h: usize) -> (Vec<u8>, u32, u32) {
     let (w2, h2) = ((w / 2) & !1, (h / 2) & !1);
     let mut out = vec![0u8; w2 * h2 + w2 * h2 / 2];

@@ -33,10 +33,10 @@ pub const SPEEDS: [f64; 7] = [0.5, 2.0, 4.0, 8.0, 16.0, 32.0, 64.0];
 const CHEVRON_DOWN_SVG: &str = r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>"#;
 const CHEVRON_UP_SVG: &str = r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 15 12 9 18 15"/></svg>"#;
 
-/// A play triangle (the finished screen's play button).
 /// The editor's video tiles use the player's slots plus this, so they
 /// don't share the playback grid's (each slot has one place and picture).
 const EDITOR_SLOTS: usize = 100;
+/// A play triangle (the finished screen's play button).
 const PLAY_SVG: &str = r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="white"><path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.5-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z"/></svg>"#;
 const POLL: Duration = Duration::from_millis(250);
 /// The preview's width in pixels (twice the dialog's, for sharp screens).
@@ -385,7 +385,6 @@ fn quality_label(q: Quality) -> &'static str {
     }
 }
 
-/// "1:05" or "1:02:05".
 /// The next time-left estimate. The raw one (frames left at the average
 /// rate so far) wobbles from poll to poll; the shown one counts down by
 /// itself and moves a tenth of the way to the raw one each poll, and only
@@ -420,6 +419,7 @@ fn file_name(what: Option<&str>, when: Option<&str>) -> String {
     format!("{name}.mp4")
 }
 
+/// "1:05" or "1:02:05".
 fn clock(secs: f64) -> String {
     let s = secs.max(0.0).round() as u64;
     if s >= 3600 {
@@ -486,7 +486,6 @@ impl App {
         seen
     }
 
-    /// The chosen cameras that have footage here.
     /// The chosen cameras' tiles: in their grid, or where they were moved
     /// in the preview (drawn after the others, the last moved last).
     fn export_tiles(&self) -> Vec<Tile> {
@@ -518,8 +517,8 @@ impl App {
 
     /// The export as the dialog has it set up, to `output`.
     fn export_request(&self, start: Position, end: Position, output: PathBuf) -> Option<job::Request> {
-        // Cameras keep playback's layout: their slots in the 3x2
-        // grid, packed into Electron's grid shape.
+        // Cameras keep playback's layout: their slots in the 3x2 grid,
+        // packed into the plain grid's shape (job::grid).
         let tiles = self.export_tiles();
         Some(job::Request {
             segments: self.player.segments().to_vec(),
@@ -696,12 +695,11 @@ impl App {
         Format::ALL.into_iter().find(|x| self.format_fits(*x, q)).unwrap_or(Format::Hevc)
     }
 
-    /// "Tesla 2026-11-07 08-23-55.mp4": the footage's own date and time
+    /// "Tesla 2026-01-15 08-23-55.mp4": the footage's own date and time
     /// at the start of the range, to the second (several short exports from
     /// one minute don't collide), with "Sentry", "Saved" or the folder's
     /// name for those. In English whatever the language, so it reads the
-    /// same everywhere (earlier versions' "tesla_Recent_Clips_..." turned
-    /// other languages' titles into underscores).
+    /// same everywhere.
     fn export_filename(&self, start: Position) -> String {
         let collection = self.selected.and_then(|i| self.items.get(i)).map(|i| &i.collection);
         let what = match collection.map(|c| (c.kind, c.name.as_str())) {
@@ -973,9 +971,7 @@ impl App {
                 let cams = self.available_cameras();
                 let items: Vec<String> = cams.iter().map(|c| c.label().to_string()).collect();
                 let current = cams.iter().position(|c| *c == self.export.zone_camera);
-                if let Some(i) = crate::native_menu::popup(&items, current) {
-                    return self.export_update(ExportMsg::ZoneCamera(i));
-                }
+                return crate::native_menu::choose(items, current, |i| wrap(ExportMsg::ZoneCamera(i)));
             }
             ExportMsg::ZoneCamera(i) => {
                 if let Some(c) = self.available_cameras().get(i) {
@@ -2086,7 +2082,6 @@ fn reveal_label() -> String {
     }
 }
 
-/// Shows the file in Finder / Explorer / the file manager.
 /// Opens a file in its usual app (the video player).
 fn open_file(path: &std::path::Path) {
     #[cfg(target_os = "macos")]
@@ -2640,7 +2635,7 @@ mod tests {
             app.export.playing = true;
         }
         if std::env::var_os("SENTRY_DIALOG_DONE").is_some() {
-            app.export.state = super::State::Done { output: "/Users/me/Movies/Tesla 2026-11-07 08-24-23.mp4".into(), bytes: 168_800_000, length: 179.0, format: super::Format::H264, quality: super::Quality::High };
+            app.export.state = super::State::Done { output: "/Users/me/Movies/Tesla 2026-01-15 08-24-23.mp4".into(), bytes: 168_800_000, length: 179.0, format: super::Format::H264, quality: super::Quality::High };
         }
         if let Ok(which) = std::env::var("SENTRY_DIALOG_SHARE") {
             let clip = |code: &str, name: &str, hours: i64| crate::share::SharedClip {
@@ -2652,7 +2647,7 @@ mod tests {
                 file_name: name.into(),
                 uploaded_at: String::new(),
             };
-            app.settings.shared_clips = vec![clip("AbCd2345", "Tesla 2026-11-07 08-24-23.mp4", 70), clip("Xy9Kp3Mn", "Tesla Sentry 2026-11-05 14-02-11.mp4", -5)];
+            app.settings.shared_clips = vec![clip("AbCd2345", "Tesla 2026-01-15 08-24-23.mp4", 70), clip("Xy9Kp3Mn", "Tesla Sentry 2026-11-05 14-02-11.mp4", -5)];
             match which.as_str() {
                 "list" => app.export.share.list_open = true,
                 "intent" => app.export.share.intent = true,
@@ -3059,9 +3054,9 @@ mod tests {
     #[test]
     fn export_names() {
         use super::file_name;
-        assert_eq!(file_name(None, Some("2026-11-07 08:23:55")), "Tesla 2026-11-07 08-23-55.mp4");
-        assert_eq!(file_name(Some("Sentry"), Some("2026-11-07 08:23:55")), "Tesla Sentry 2026-11-07 08-23-55.mp4");
-        assert_eq!(file_name(Some("Road trip: day 2/3"), Some("2026-11-07 08:23:55")), "Tesla Road trip day 2 3 2026-11-07 08-23-55.mp4");
+        assert_eq!(file_name(None, Some("2026-01-15 08:23:55")), "Tesla 2026-01-15 08-23-55.mp4");
+        assert_eq!(file_name(Some("Sentry"), Some("2026-01-15 08:23:55")), "Tesla Sentry 2026-01-15 08-23-55.mp4");
+        assert_eq!(file_name(Some("Road trip: day 2/3"), Some("2026-01-15 08:23:55")), "Tesla Road trip day 2 3 2026-01-15 08-23-55.mp4");
         assert_eq!(file_name(None, None), "Tesla.mp4");
     }
 }

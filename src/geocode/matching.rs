@@ -1,4 +1,4 @@
-//! From Sentry Drive (src-tauri/src/geocode/matching.rs), unchanged apart from
+//! From Sentry Drive, unchanged apart from
 //! imports: how a reverse-geocoding result becomes a trustworthy label.
 //! Pure label selection, provider settings normalization, and cache-record
 //! rules.
@@ -7,7 +7,6 @@ use std::sync::OnceLock;
 
 use regex::Regex;
 use serde_json::{json, Value};
-use url::Url;
 
 use super::js;
 use super::calc::{geodesic_m, js_round};
@@ -38,18 +37,27 @@ pub fn normalize_endpoint(value: Option<&Value>) -> String {
         Some(Value::String(s)) if !s.trim().is_empty() => s.trim(),
         _ => DEFAULT_ENDPOINT,
     };
-    let Ok(mut url) = Url::parse(raw) else { return DEFAULT_ENDPOINT.into() };
-    if !matches!(url.scheme(), "https" | "http") {
+    // An http(s) address with a host; its query and fragment dropped, and
+    // a trailing "/reverse" or "/" off its path.
+    let Some((scheme, rest)) = raw.split_once("://") else { return DEFAULT_ENDPOINT.into() };
+    let scheme = scheme.to_ascii_lowercase();
+    if !matches!(scheme.as_str(), "https" | "http") {
         return DEFAULT_ENDPOINT.into();
     }
-    url.set_fragment(None);
-    url.set_query(None);
+    let rest = rest.split(['?', '#']).next().unwrap_or("");
+    let (host, path) = rest.split_once('/').map_or((rest, ""), |(h, p)| (h, p));
+    if host.is_empty() || host.contains(char::is_whitespace) {
+        return DEFAULT_ENDPOINT.into();
+    }
     static TRAILING: OnceLock<Regex> = OnceLock::new();
-    let re = TRAILING.get_or_init(|| Regex::new(r"/(?:reverse)?/?$").expect("valid regex"));
-    let path = re.replace(url.path(), "").into_owned();
-    url.set_path(if path.is_empty() { "/" } else { &path });
-    let s = url.to_string();
-    s.strip_suffix('/').map(str::to_owned).unwrap_or(s)
+    let re = TRAILING.get_or_init(|| Regex::new(r"/?(?:reverse)?/?$").expect("valid regex"));
+    let path = re.replace(path, "").into_owned();
+    let host = host.to_ascii_lowercase();
+    if path.is_empty() {
+        format!("{scheme}://{host}")
+    } else {
+        format!("{scheme}://{host}/{path}")
+    }
 }
 
 pub fn normalize_endpoint_str(value: &str) -> String {
@@ -72,24 +80,36 @@ pub fn key_for(lat: f64, lng: f64) -> String {
     format!("{},{}", js::to_fixed(lat, KEY_DECIMALS), js::to_fixed(lng, KEY_DECIMALS))
 }
 
-pub fn build_reverse_url(endpoint: &str, lat: f64, lng: f64, zoom: u8, layer: Option<&str>) -> Option<Url> {
-    let mut url = Url::parse(&format!("{endpoint}/reverse")).ok()?;
-    {
-        let mut q = url.query_pairs_mut();
-        q.append_pair("format", "jsonv2");
-        q.append_pair("lat", &js::number_to_string(lat));
-        q.append_pair("lon", &js::number_to_string(lng));
-        q.append_pair("zoom", &zoom.to_string());
-        q.append_pair("addressdetails", "1");
-        q.append_pair("entrances", "1");
-        if zoom == 18 {
-            q.append_pair("polygon_geojson", "1");
-        }
-        if let Some(layer) = layer.filter(|l| !l.is_empty()) {
-            q.append_pair("layer", layer);
-        }
+pub fn build_reverse_url(endpoint: &str, lat: f64, lng: f64, zoom: u8, layer: Option<&str>) -> Option<String> {
+    // Query values percent-encoded as forms encode them.
+    let encode = |s: &str| -> String {
+        s.bytes()
+            .map(|b| match b {
+                b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'*' => (b as char).to_string(),
+                b' ' => "+".to_string(),
+                _ => format!("%{b:02X}"),
+            })
+            .collect()
+    };
+    if !endpoint.starts_with("https://") && !endpoint.starts_with("http://") {
+        return None;
     }
-    Some(url)
+    let mut pairs = vec![
+        ("format", "jsonv2".to_string()),
+        ("lat", js::number_to_string(lat)),
+        ("lon", js::number_to_string(lng)),
+        ("zoom", zoom.to_string()),
+        ("addressdetails", "1".to_string()),
+        ("entrances", "1".to_string()),
+    ];
+    if zoom == 18 {
+        pairs.push(("polygon_geojson", "1".to_string()));
+    }
+    if let Some(layer) = layer.filter(|l| !l.is_empty()) {
+        pairs.push(("layer", layer.to_string()));
+    }
+    let query: Vec<String> = pairs.iter().map(|(k, v)| format!("{k}={}", encode(v))).collect();
+    Some(format!("{endpoint}/reverse?{}", query.join("&")))
 }
 
 // ------------------------------------------------------------ feature tests
@@ -405,18 +425,6 @@ pub fn choose_better_match(first: Option<Match>, second: Option<Match>) -> Optio
     Some(if d(&second) < d(&first) { second } else { first })
 }
 
-pub fn known_place_match(label: &str, distance_m: f64, source: &str, query_accuracy_m: f64) -> Value {
-    json!({
-        "label": label,
-        "featureType": "known-place",
-        "confidence": confidence_for_accuracy("high", query_accuracy_m),
-        "distanceM": js::num(distance_m),
-        "osmId": null,
-        "queryAccuracyM": round1_finite(query_accuracy_m).map(js::num),
-        "source": source,
-    })
-}
-
 // ----------------------------------------------------------- cache records
 
 pub fn cache_record(m: Option<&Match>, resolved_at: i64, provider: &str) -> Value {
@@ -597,8 +605,9 @@ mod tests {
         assert_eq!(endpoint, "https://geo.example/base");
         assert_eq!(normalize_language(Some(&json!("fr")), ""), "fr");
         let url = build_reverse_url(&endpoint, 1.0, 2.0, 18, Some("poi")).unwrap();
-        assert_eq!(format!("{}{}", url.origin().ascii_serialization(), url.path()), "https://geo.example/base/reverse");
-        let q: std::collections::HashMap<_, _> = url.query_pairs().into_owned().collect();
+        let (base, query) = url.split_once('?').unwrap();
+        assert_eq!(base, "https://geo.example/base/reverse");
+        let q: std::collections::HashMap<_, _> = query.split('&').filter_map(|p| p.split_once('=')).collect();
         assert_eq!(q["entrances"], "1");
         assert_eq!(q["polygon_geojson"], "1");
         assert_eq!(q["layer"], "poi");
@@ -606,7 +615,7 @@ mod tests {
         assert_eq!(q["lon"], "2");
         let city = build_reverse_url(DEFAULT_ENDPOINT, 1.5, 2.0, 10, None).unwrap();
         assert_eq!(
-            city.as_str(),
+            city,
             "https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=1.5&lon=2&zoom=10&addressdetails=1&entrances=1"
         );
     }

@@ -2,9 +2,8 @@
 //! a thread per camera decoding ahead, each output frame drawn on the GPU
 //! straight into the encoder's frame, and the samples written to the MP4.
 //!
-//! Sizes, quality and time-lapse follow Electron Studio's export (see
-//! docs/native-studio/export-spec.md); unlike it, a camera missing for a
-//! minute shows black for that minute and stays in step with the others.
+//! A camera missing for a minute shows black for that minute and stays in
+//! step with the others.
 
 use super::compose::{Compositor, Placement};
 use super::encode::{EncodeSettings, FrameSink};
@@ -22,10 +21,9 @@ use std::time::Instant;
 /// (GStreamer) and Windows (Media Foundation).
 pub const AVAILABLE: bool = cfg!(any(target_os = "macos", target_os = "linux", windows));
 
-/// Output frames per second, whatever the footage (as Electron).
+/// Output frames per second, whatever the footage.
 pub const FPS: u32 = 36;
 /// Ticks per second in the output file: one frame is 1000.
-#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 const TIMESCALE: u32 = FPS * 1000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -37,8 +35,8 @@ pub enum Quality {
 }
 
 impl Quality {
-    /// Each camera's size as a share of the footage's, and Electron's
-    /// quality number (CRF) for it.
+    /// Each camera's size as a share of the footage's, and a quality
+    /// number (CRF) for it.
     fn factor_and_crf(self, front_only: bool) -> (f64, u32) {
         match (self, front_only) {
             (Quality::Mobile, false) => (0.40, 27),
@@ -91,7 +89,7 @@ impl Tile {
     }
 }
 
-/// Electron's plain grid: 1 → 1×1, 2 → 2×1, 3 → 3×1, 4 → 2×2, 5–6 → 3×2,
+/// The plain grid: 1 → 1×1, 2 → 2×1, 3 → 3×1, 4 → 2×2, 5–6 → 3×2,
 /// cameras in the given order.
 pub fn grid(cameras: &[Camera]) -> Vec<Tile> {
     let cols = match cameras.len() {
@@ -269,7 +267,7 @@ pub fn plan(req: &Request) -> Result<Plan> {
     }
 
     // The footage's sizes: a side camera's and the front's, from their
-    // first clip in the range (Electron's defaults when there is none).
+    // first clip in the range (HW4's sizes when there is none).
     let size_of = |front: bool| {
         req.tiles
             .iter()
@@ -301,8 +299,7 @@ pub fn plan(req: &Request) -> Result<Plan> {
         None if widest <= Format::Hevc.max_side() => Format::Hevc,
         None => bail!("The layout is too big to export ({width}×{height}); the most is 8192 on a side."),
     };
-    // SENTRY_EXPORT_KBPS: a rate of its own (for comparing quality).
-    let rate = std::env::var("SENTRY_EXPORT_KBPS").ok().and_then(|k| k.parse::<u64>().ok()).map(|k| k * 1000).unwrap_or_else(|| bitrate(req.quality, front_only, codec, width, height));
+    let rate = bitrate(req.quality, front_only, codec, width, height);
     Ok(Plan { cell, width, height, codec, bitrate: rate, video_top, date_bar, data_bar, frames })
 }
 
@@ -395,7 +392,6 @@ fn clip_route(path: &Path) -> Arc<Vec<crate::map::RoutePoint>> {
 /// The range's route for the minimap: each minute's GPS points (every
 /// sixth frame of its front clip), kept within the range. Read a few
 /// minutes at a time.
-#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 fn route_points(req: &Request, plan: &Plan) -> Vec<crate::map::RoutePoint> {
     // Each minute's span in the range (seconds into it).
     let mut spans: Vec<(usize, f64, f64)> = Vec::new();
@@ -450,12 +446,11 @@ pub enum PieceKind {
     Watermark,
 }
 
-/// A movable piece of a preview: where it is in the export (its pixels),
-/// and its picture at the preview's scale (RGBA, not premultiplied).
+/// A movable piece of a preview: its picture at the preview's scale (RGBA,
+/// not premultiplied).
 #[derive(Debug)]
 pub struct Piece {
     pub kind: PieceKind,
-    pub at: (f32, f32),
     pub shown: (u32, u32),
     pub rgba: Vec<u8>,
 }
@@ -468,7 +463,7 @@ struct Capture {
     with_pieces: bool,
     full: Vec<u8>,
     base: Vec<u8>,
-    pieces: Vec<(PieceKind, super::overlay::Picture, f32, f32)>,
+    pieces: Vec<(PieceKind, super::overlay::Picture)>,
 }
 
 /// One frame of an export as it will look, for the dialog's preview.
@@ -544,7 +539,7 @@ pub fn preview(req: &Request, at: Position, max_width: u32, with_pieces: bool) -
     let pieces = capture
         .pieces
         .into_iter()
-        .filter_map(|(kind, pic, x, y)| {
+        .filter_map(|(kind, pic)| {
             let img = image::RgbaImage::from_raw(pic.width, pic.height, pic.rgba)?;
             let size = (((pic.width as f64 * scale).round() as u32).max(1), ((pic.height as f64 * scale).round() as u32).max(1));
             let mut img = image::imageops::resize(&img, size.0, size.1, image::imageops::FilterType::Triangle);
@@ -556,7 +551,7 @@ pub fn preview(req: &Request, at: Position, max_width: u32, with_pieces: bool) -
                     }
                 }
             }
-            Some(Piece { kind, at: (x, y), shown: size, rgba: img.into_raw() })
+            Some(Piece { kind, shown: size, rgba: img.into_raw() })
         })
         .collect();
     Ok(Preview { width: w, height: h, shown, rgba, base, pieces })
@@ -959,12 +954,12 @@ fn encode_all(
                     let rects: Vec<_> = req.tiles.iter().map(|t| (t.camera, t.rect(plan.cell, plan.width, plan.height, plan.video_top, plan.area_height()))).collect();
                     for (camera, (x, y, w, h)) in &rects {
                         let picture = crop_bgra(&c.base, plan.width, (*x as u32, *y as u32, *w as u32, *h as u32));
-                        c.pieces.push((PieceKind::Camera(*camera), picture, *x, *y));
+                        c.pieces.push((PieceKind::Camera(*camera), picture));
                     }
                     for (_, (x, y, w, h)) in &rects {
                         clear_bgra(&mut c.base, plan.width, (*x as u32, *y as u32, *w as u32, *h as u32));
                     }
-                    for (kind, x, y) in kinds.iter().flatten() {
+                    for (kind, x, _) in kinds.iter().flatten() {
                         let picture = match kind {
                             PieceKind::Dashboard => dash_picture.take(),
                             PieceKind::Map if x.is_finite() => map_picture.take(),
@@ -972,7 +967,7 @@ fn encode_all(
                             _ => None,
                         };
                         if let Some(p) = picture {
-                            c.pieces.push((*kind, p, *x, *y));
+                            c.pieces.push((*kind, p));
                         }
                     }
                 }
@@ -1228,7 +1223,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// A front clip driving north through Vancouver, exported with the
+    /// A front clip driving north-east, exported with the
     /// minimap (real tiles: needs the network). Writes the export to
     /// SENTRY_DUMP_OVERLAY to look at (cargo test --release
     /// minimap_burns_in -- --ignored).
@@ -1240,7 +1235,7 @@ mod tests {
         let (w, h, n) = (960usize, 720usize, 72usize);
         let front = dir.join("front.mp4");
         crate::export::testing::clip_with_telemetry(&front, w, h, n, |_, x, y| [(x / 4) as u8, (y / 3) as u8, 90, 255], |k| {
-            Some(crate::sei::SeiMetadata { gear_state: 1, vehicle_speed_mps: 15.0, latitude_deg: 49.2800 + k as f64 * 0.00012, longitude_deg: -123.1200 + k as f64 * 0.00005, heading_deg: 20.0, ..Default::default() })
+            Some(crate::sei::SeiMetadata { gear_state: 1, vehicle_speed_mps: 15.0, latitude_deg: 40.0000 + k as f64 * 0.00012, longitude_deg: -100.0000 + k as f64 * 0.00005, heading_deg: 20.0, ..Default::default() })
         });
         let out = std::env::var_os("SENTRY_DUMP_OVERLAY").map(std::path::PathBuf::from).unwrap_or_else(|| dir.join("out.mp4"));
         let req = Request {
@@ -1273,7 +1268,7 @@ mod tests {
     }
 
     #[test]
-    fn grids_match_electron() {
+    fn grids_have_their_shapes() {
         let cams = [Camera::Front, Camera::Back, Camera::LeftRepeater, Camera::RightRepeater, Camera::LeftPillar, Camera::RightPillar];
         let size = |n: usize| {
             let t = grid(&cams[..n]);

@@ -554,7 +554,7 @@ mod tests {
 
     #[test]
     fn event_camera_from_event_json() {
-        let text = r#"{"timestamp":"2026-07-08T10:46:52","reason":"sentry_aware_object_detection","camera":"5"}"#;
+        let text = r#"{"timestamp":"2026-01-14T10:46:52","reason":"sentry_aware_object_detection","camera":"5"}"#;
         assert_eq!(json_value(text, "camera").and_then(|v| event_camera(&v)), Some(Camera::LeftRepeater));
         let number = r#"{"camera": 0, "reason":"user_interaction_honk"}"#;
         assert_eq!(json_value(number, "camera").and_then(|v| event_camera(&v)), Some(Camera::Front));
@@ -565,18 +565,18 @@ mod tests {
 
     #[test]
     fn stamps_round_trip() {
-        let t = parse_stamp("2026-10-16_10-02-50").unwrap();
-        assert_eq!(format_local(t), "2026-10-16 10:02:50");
-        assert_eq!(parse_iso_local("2026-10-16T10:03:34").unwrap() - t, 44);
+        let t = parse_stamp("2026-01-15_10-02-50").unwrap();
+        assert_eq!(format_local(t), "2026-01-15 10:02:50");
+        assert_eq!(parse_iso_local("2026-01-15T10:03:34").unwrap() - t, 44);
         assert_eq!(format_local(parse_stamp("2024-02-29_23-59-59").unwrap() + 1), "2024-03-01 00:00:00");
-        assert_eq!(stamp_key(t), "2026-10-16_10-02-50");
+        assert_eq!(stamp_key(t), "2026-01-15_10-02-50");
     }
 
     #[test]
     fn event_json_fields() {
-        let j = r#"{ "camera": "0", "reason": "trick_or_treat", "timestamp": "2026-10-16T10:03:34" }"#;
+        let j = r#"{ "camera": "0", "reason": "trick_or_treat", "timestamp": "2026-01-15T10:03:34" }"#;
         assert_eq!(json_str(j, "reason").as_deref(), Some("trick_or_treat"));
-        assert_eq!(json_str(j, "timestamp").as_deref(), Some("2026-10-16T10:03:34"));
+        assert_eq!(json_str(j, "timestamp").as_deref(), Some("2026-01-15T10:03:34"));
         assert_eq!(json_str(j, "street"), None);
         assert_eq!(reason_label("trick_or_treat"), ("Trick Or Treat".to_string(), false));
         assert_eq!(reason_label("vehicle_auto_emergency_braking"), ("Emergency Braking".to_string(), true));
@@ -585,8 +585,8 @@ mod tests {
     #[test]
     fn days_and_titles() {
         let c = |kind, name: &str| Collection { kind, name: name.into(), dir: PathBuf::new(), date_filter: None };
-        let all = vec![c(Kind::Recent, "2026-10-16"), c(Kind::Saved, "2026-10-16_10-02-50"), c(Kind::Recent, "2026-10-17")];
-        assert_eq!(days(&all), vec!["2026-10-17", "2026-10-16"]);
+        let all = vec![c(Kind::Recent, "2026-01-15"), c(Kind::Saved, "2026-01-15_10-02-50"), c(Kind::Recent, "2026-01-16")];
+        assert_eq!(days(&all), vec!["2026-01-16", "2026-01-15"]);
         assert_eq!(all[1].list_title(), "Saved · 10:02:50");
         assert_eq!(all[0].list_title(), "Recent Clips");
     }
@@ -624,8 +624,8 @@ mod tests {
 
     #[test]
     fn clip_names() {
-        assert_eq!(clip_name("2026-10-16_10-02-50-left_pillar.mp4").map(|c| c.1), Some(Camera::LeftPillar));
-        assert!(clip_name("2026-10-16_10-02-50-thumb.mp4").is_none());
+        assert_eq!(clip_name("2026-01-15_10-02-50-left_pillar.mp4").map(|c| c.1), Some(Camera::LeftPillar));
+        assert!(clip_name("2026-01-15_10-02-50-thumb.mp4").is_none());
         assert!(clip_name("event.json").is_none());
     }
 }

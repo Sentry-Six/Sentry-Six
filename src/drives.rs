@@ -117,7 +117,8 @@ fn from_light(m: &Map<String, Value>) -> DriveInfo {
 ///    read and then dropping its GPS points.
 ///
 /// Routes are mostly stored in time order, so few drives wait in memory.
-/// If the file changes between the two reads, it is loaded the old way.
+/// If the file changes between the two reads, it's loaded whole
+/// (`load_whole`).
 pub fn load(path: &Path) -> Result<Vec<DriveInfo>> {
     let mut drives = match load_streaming(path)? {
         Some(d) => d,
@@ -391,7 +392,7 @@ pub fn distance(d: &DriveInfo, metric: bool) -> String {
     }
 }
 
-/// Coordinates until a place name is known ("53.5461, -113.4938").
+/// Coordinates until a place name is known ("40.1234, -100.4321").
 pub fn gps_label(p: Option<(f64, f64)>) -> String {
     p.map(|(lat, lon)| format!("{lat:.4}, {lon:.4}")).unwrap_or_default()
 }
@@ -428,7 +429,7 @@ mod tests {
         assert_eq!(journey_duration(17.9 * 60000.0), "17 min");
         assert_eq!(journey_duration(62.0 * 60000.0), "1h 2m");
         assert_eq!(date_header("2026-11-06"), "FRI, NOV 6, 2026");
-        assert_eq!(gps_label(Some((53.54612, -113.49381))), "53.5461, -113.4938");
+        assert_eq!(gps_label(Some((40.12341, -100.43211))), "40.1234, -100.4321");
     }
 
     #[test]
@@ -436,15 +437,15 @@ mod tests {
         // Two drives on one day and one on another, with a route of the
         // first drive written last (out of order) and tags by date and id.
         let route = |file: &str, lat: f64| {
-            serde_json::json!({ "File": file, "Points": [[lat, -113.5], [lat + 0.001, -113.5]], "Speeds": [10.0, 12.0] })
+            serde_json::json!({ "File": file, "Points": [[lat, -100.4], [lat + 0.001, -100.4]], "Speeds": [10.0, 12.0] })
         };
         let json = serde_json::json!({
             "routes": [
-                route("2026-07-08_10-00-00-front.mp4", 53.50),
-                route("2026-07-08_10-02-00-front.mp4", 53.52),
-                route("2026-07-08_14-00-00-front.mp4", 53.60),
+                route("2026-01-14_10-00-00-front.mp4", 40.50),
+                route("2026-01-14_10-02-00-front.mp4", 40.52),
+                route("2026-01-14_14-00-00-front.mp4", 40.60),
                 route("2026-07-09_09-00-00-front.mp4", 53.70),
-                route("2026-07-08_10-01-00-front.mp4", 53.51),
+                route("2026-01-14_10-01-00-front.mp4", 40.51),
                 route("no-timestamp.mp4", 53.0),
             ],
             "driveTags": { "2026-07-09": ["Work"], "2": ["Errand"] },

@@ -158,8 +158,7 @@ pub fn backdrop(_: &Theme) -> container::Style {
     container::Style { background: Some(black(0.35).into()), ..Default::default() }
 }
 
-/// A dialog: glass, 24 px corners, deep shadow.
-/// The support chat panel, as earlier versions styled it: glass (the video
+/// The support chat panel: glass (the video
 /// under it is frosted, see video::Glass) with a faint accent border.
 pub fn chat_panel(_: &Theme) -> container::Style {
     container::Style {

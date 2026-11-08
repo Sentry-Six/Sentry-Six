@@ -1,12 +1,7 @@
-//! Correctly rounded `sin`, `cos` and `atan2` for the drive distance sums.
-//!
-//! Earlier versions of Sentry Studio computed haversine distances with
-//! JavaScript's `Math.sin`, `Math.cos` and `Math.atan2`, which in V8 15.6
-//! return the correctly rounded result (checked against 300-bit mpmath on
-//! 100,000 inputs and against V8 on 2,000,000). fdlibm (the `libm` crate) and
-//! the platform libraries differ in the last bit for 1-25% of inputs, so
-//! drive distances match those versions bit for bit only by rounding
-//! correctly here too.
+//! Correctly rounded `sin`, `cos` and `atan2` for the drive distance sums,
+//! so distances come out the same on every platform and match the ones
+//! earlier versions computed (the platform libraries differ in the last
+//! bit for some inputs).
 //!
 //! Method: double-double arithmetic (Dekker products, no FMA, so every target
 //! computes the same bits), reduction by pi/2 split in four parts, then

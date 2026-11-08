@@ -5,10 +5,9 @@
 //!     ! length-prefixed access units ! appsink
 //!
 //! The encoder is the best one the machine has: VA-API (Intel, AMD), NVENC,
-//! Quick Sync, V4L2 (ARM boards), then x264 or OpenH264 in software (AV1:
-//! the GPU's only). Its
-//! frames go into our own MP4 writer, like VideoToolbox's on macOS.
-//! `SENTRY_STUDIO_GST_ENCODER` forces one element (for comparing).
+//! Quick Sync, V4L2 (ARM boards), then x264, x265 or OpenH264 in software
+//! (AV1 on the GPU only). Its frames go into our own MP4 writer, like
+//! VideoToolbox's on macOS. `SENTRY_STUDIO_GST_ENCODER` forces one element.
 
 use super::{EncodeSettings, FrameSink, Packet};
 use crate::decode::gstreamer::{self as g, Gst, MapInfo, BUFFER_FLAG_DELTA_UNIT, MAP_READ, MESSAGE_ERROR, STATE_NULL, STATE_PLAYING};
@@ -21,8 +20,8 @@ type Ptr = *mut c_void;
 
 /// Encoder elements by preference, with their settings for a bitrate
 /// (kbit/s) and keyframe interval (frames). B-frames only in x265 (the
-/// software HEVC encoder, tested; the MP4 writer orders them by their
-/// times); the hardware encoders without, until tested.
+/// software HEVC encoder; the MP4 writer orders them by their times); the
+/// hardware encoders without.
 fn encoders(codec: Format, kbps: u64, gop: u32) -> Vec<(&'static str, String)> {
     match codec {
         Format::H264 => vec![

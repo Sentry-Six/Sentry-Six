@@ -512,8 +512,7 @@ fn split_clip_at_park_gaps(clip: &Route, runs: &[GearRun]) -> Vec<(Option<Route>
     out
 }
 
-/// A grouped drive. `points` holds `[lat, lng, 0, speed, ap]` tuples (what
-/// earlier versions passed between threads as a Float64Array).
+/// A grouped drive. `points` holds `[lat, lng, 0, speed, ap]` tuples.
 pub struct Drive {
     pub light: Map<String, Value>,
     pub points: Vec<[f64; 5]>,

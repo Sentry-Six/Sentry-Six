@@ -417,8 +417,7 @@ fn bytes(n: u64) -> String {
 
 // ---- View ------------------------------------------------------------------
 //
-// Laid out as earlier versions styled it (style.css, .support-chat-*): a
-// glass panel with an accent border, a tinted header with icon buttons, "You"
+// Laid out as a glass panel with an accent border, a tinted header with icon buttons, "You"
 // and "AI" avatars beside rounded bubbles, the notice in a bordered box, an
 // amber card for a diagnostics request and a violet one for Discord, and the
 // composer with its send button and footer.

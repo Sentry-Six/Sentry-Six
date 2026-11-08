@@ -47,11 +47,9 @@ impl Format {
         }
     }
 
-    /// Its bitrate against H.264's. Without B-frames HEVC is no smaller
-    /// than H.264 for the same picture (measured on a drive with Apple's
-    /// encoder: equal rates, equal quality); with them (`HEVC_B_FRAMES`)
-    /// it matches H.264's picture at about 90% of the rate. AV1's share is
-    /// the usual one, untested on hardware that encodes it.
+    /// Its bitrate against H.264's: HEVC with B-frames (`HEVC_B_FRAMES`)
+    /// gives H.264's picture at about 90% of the rate, without them at the
+    /// same rate; AV1 at about half.
     pub fn rate_share(self) -> f64 {
         match self {
             Format::H264 => 1.0,
@@ -62,8 +60,8 @@ impl Format {
     }
 }
 
-/// Whether HEVC exports use B-frames: with Apple's encoder (measured);
-/// the other systems' encoders still export without them.
+/// Whether HEVC exports use B-frames at a lower rate: with Apple's
+/// encoder. (x265 on Linux uses them too, at H.264's rate.)
 pub const HEVC_B_FRAMES: bool = cfg!(target_os = "macos");
 
 /// How this computer encodes a format.
@@ -118,10 +116,11 @@ pub mod videotoolbox;
 pub mod gstreamer;
 #[cfg(windows)]
 pub mod media_foundation;
-// Used once the export pipeline lands (see export/mod.rs).
 #[cfg(target_os = "macos")]
-#[allow(unused_imports)]
-pub use videotoolbox::{Encoder, Frame};
+pub use videotoolbox::Frame;
+// The tests drive Apple's encoder directly.
+#[cfg(all(test, target_os = "macos"))]
+pub use videotoolbox::Encoder;
 
 /// What to encode.
 #[derive(Debug, Clone)]
@@ -135,7 +134,9 @@ pub struct EncodeSettings {
     pub timescale: u32,
     /// Average bits per second.
     pub bitrate: u64,
-    /// Encoding speed over quality (where the encoder offers the choice).
+    /// Encoding speed over quality (where the encoder offers the choice:
+    /// Apple's; Media Foundation's and GStreamer's don't use it).
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     pub fast: bool,
 }
 
@@ -168,9 +169,12 @@ pub trait FrameSink {
 
 /// What a finished encoder leaves.
 pub enum Finished {
-    /// The last frames, and the codec's configuration for our MP4 writer.
+    /// The last frames, and the codec's configuration for our MP4 writer
+    /// (macOS and Linux).
+    #[cfg_attr(target_os = "windows", allow(dead_code))]
     Packets(Vec<Packet>, super::mp4_writer::CodecConfig),
-    /// It wrote the file itself.
+    /// It wrote the file itself (Media Foundation's writer, on Windows).
+    #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
     File,
 }
 

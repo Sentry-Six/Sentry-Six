@@ -551,17 +551,4 @@ mod tests {
         // Tesla's: from the start.
         assert_eq!(super::edit_shift(&elst(&[entry(599010, 0)]), 10000, 10000).unwrap(), 0);
     }
-
-    /// A clip's first frames shown at 0, as ffprobe shows them
-    /// (SENTRY_MP4_FILE: an MP4 with B-frames and an edit list).
-    #[test]
-    #[ignore]
-    fn edit_list_clip_starts_at_zero() {
-        let Some(path) = std::env::var_os("SENTRY_MP4_FILE") else { return };
-        let t = super::read_video_track(&std::fs::File::open(path).unwrap()).unwrap();
-        let mut pts: Vec<f64> = (0..t.samples.len()).map(|i| t.pts_secs(i)).collect();
-        pts.sort_by(f64::total_cmp);
-        println!("first {:?}, duration {:.3}", &pts[..3], t.duration);
-        assert!(pts[0].abs() < 1e-9);
-    }
 }

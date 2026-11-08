@@ -26,7 +26,8 @@ pub struct CodecConfig {
 }
 
 /// An `avcC` (AVCDecoderConfigurationRecord) from H.264 parameter sets
-/// (without start codes), with 4-byte NAL lengths.
+/// (without start codes), with 4-byte NAL lengths (the tests' clips).
+#[cfg(test)]
 pub fn avcc(sps: &[Vec<u8>], pps: &[Vec<u8>]) -> CodecConfig {
     let first = sps.first().map(Vec::as_slice).unwrap_or(&[]);
     let at = |i: usize| first.get(i).copied().unwrap_or(0);
@@ -95,7 +96,8 @@ const MATRIX: [u32; 9] = [0x0001_0000, 0, 0, 0, 0x0001_0000, 0, 0, 0, 0x4000_000
 
 impl Mp4Writer {
     /// Starts the file: `timescale` ticks per second for sample durations.
-    /// The index goes at the end.
+    /// The index goes at the end (the tests' clips).
+    #[cfg(test)]
     pub fn create(path: &Path, width: u32, height: u32, timescale: u32) -> std::io::Result<Self> {
         Self::create_with_index_space(path, width, height, timescale, 0)
     }

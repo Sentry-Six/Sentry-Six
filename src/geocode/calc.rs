@@ -1,4 +1,4 @@
-//! From Sentry Drive (src-tauri/src/loader/calc.rs): the WGS-84 distance
+//! From Sentry Drive: the WGS-84 distance
 //! and JavaScript's Math.round, used by the place-name matching.
 
 const WGS84_A: f64 = 6378137.0;
