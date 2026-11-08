@@ -74,5 +74,5 @@ pub fn view<'a>(elapsed: f32) -> Element<'a, Message> {
     .style(theme::modal);
 
     // Nothing behind it can be clicked, and clicks outside do nothing.
-    opaque(container(opaque(dialog)).center(Length::Fill).style(theme::backdrop))
+    opaque(container(crate::measured(dialog)).center(Length::Fill).style(theme::backdrop))
 }

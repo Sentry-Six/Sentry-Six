@@ -173,48 +173,26 @@ pub fn chat_panel(_: &Theme) -> container::Style {
     }
 }
 
-/// Test only: which look `modal` draws (0 as shipped), for comparing
-/// looks side by side (export_view's modal_looks test).
-#[cfg(test)]
-pub static MODAL_LOOK: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+/// Dialogs on a solid surface (the Dialog Style setting) instead of
+/// frosted glass.
+static SOLID_DIALOGS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
+pub fn set_solid_dialogs(solid: bool) {
+    SOLID_DIALOGS.store(solid, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// A dialog: frosted glass (the video under it blurred, see video::Glass),
+/// or with the Dialog Style setting, a solid graphite surface; 24 px
+/// corners, deep shadow.
 pub fn modal(_: &Theme) -> container::Style {
-    #[cfg(test)]
-    {
-        let look = MODAL_LOOK.load(std::sync::atomic::Ordering::Relaxed);
-        let (background, border): (Background, Color) = match look {
-            // Frosted: light glass, the frosted video showing through.
-            1 => (
-                Background::Gradient(iced::gradient::Linear::new(iced::Degrees(180.0)).add_stop(0.0, rgba(70, 78, 92, 0.42)).add_stop(1.0, rgba(30, 34, 42, 0.50)).into()),
-                white(0.22),
-            ),
-            // Graphite: a solid, lighter dark-grey surface.
-            2 => (Background::Gradient(iced::gradient::Linear::new(iced::Degrees(180.0)).add_stop(0.0, rgba(36, 39, 45, 1.0)).add_stop(1.0, rgba(26, 28, 33, 1.0)).into()), white(0.10)),
-            // Tinted: dark, with the accent's green glowing in from the top.
-            3 => (
-                Background::Gradient(iced::gradient::Linear::new(iced::Degrees(170.0)).add_stop(0.0, rgba(22, 70, 48, 0.92)).add_stop(0.35, rgba(12, 28, 24, 0.94)).add_stop(1.0, rgba(8, 12, 14, 0.95)).into()),
-                Color { a: 0.30, ..ACCENT },
-            ),
-            _ => (Background::Color(Color::TRANSPARENT), Color::TRANSPARENT),
-        };
-        if look != 0 {
-            return container::Style {
-                background: Some(background),
-                border: Border { color: border, width: 1.0, radius: 24.0.into() },
-                shadow: Shadow { color: black(0.5), offset: Vector::new(0.0, 32.0), blur_radius: 100.0 },
-                text_color: Some(TEXT),
-                ..Default::default()
-            };
-        }
-    }
+    let (background, border) = if SOLID_DIALOGS.load(std::sync::atomic::Ordering::Relaxed) {
+        (iced::gradient::Linear::new(iced::Degrees(180.0)).add_stop(0.0, rgba(36, 39, 45, 1.0)).add_stop(1.0, rgba(26, 28, 33, 1.0)), white(0.10))
+    } else {
+        (iced::gradient::Linear::new(iced::Degrees(180.0)).add_stop(0.0, rgba(70, 78, 92, 0.42)).add_stop(1.0, rgba(30, 34, 42, 0.50)), white(0.22))
+    };
     container::Style {
-        background: Some(Background::Gradient(
-            iced::gradient::Linear::new(iced::Degrees(180.0))
-                .add_stop(0.0, rgba(16, 20, 27, 0.85))
-                .add_stop(1.0, rgba(7, 9, 12, 0.88))
-                .into(),
-        )),
-        border: Border { color: white(0.12), width: 1.0, radius: 24.0.into() },
+        background: Some(Background::Gradient(background.into())),
+        border: Border { color: border, width: 1.0, radius: 24.0.into() },
         shadow: Shadow { color: black(0.5), offset: Vector::new(0.0, 32.0), blur_radius: 100.0 },
         text_color: Some(TEXT),
         ..Default::default()

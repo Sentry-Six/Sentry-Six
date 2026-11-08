@@ -13,7 +13,7 @@ const MAP_CORNERS: [Corner; 4] = [Corner::TopRight, Corner::TopLeft, Corner::Bot
 use crate::i18n::{t, tf};
 use crate::library::{Camera, GRID};
 use crate::theme;
-use crate::{off_thread, off_thread_or, svg_icon, App, Message};
+use crate::{measured, off_thread, off_thread_or, svg_icon, App, Message};
 use iced::widget::{button, column, container, mouse_area, opaque, pick_list, row, space, stack, text, toggler, Column};
 use iced::{Alignment, Background, Border, Color, Element, Length, Task};
 use std::path::PathBuf;
@@ -1507,12 +1507,6 @@ impl App {
     }
 }
 
-/// The dialog, reporting its size so the video under it is frosted, as
-/// under Settings.
-fn measured<'a>(dialog: impl Into<Element<'a, Message>>) -> Element<'a, Message> {
-    iced::widget::sensor(opaque(dialog)).on_show(Message::DialogSized).on_resize(Message::DialogSized).into()
-}
-
 /// A select: the macOS menu on a Mac, a dropdown elsewhere.
 fn select<'a>(labels: Vec<String>, current: usize, enabled: bool, menu: ExportMsg, choose: fn(usize) -> ExportMsg) -> Element<'a, Message> {
     let value = labels.get(current).cloned().unwrap_or_default();
@@ -2075,7 +2069,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&home);
     }
 
-    /// The Export dialog in each modal look over the footage, side by side
+    /// The Export dialog in both dialog looks (frosted, solid) over the footage, side by side
     /// in one picture (SENTRY_DIALOG_CLIPS, SENTRY_DUMP_LOOKS=out.png).
     #[test]
     #[ignore]
@@ -2117,9 +2111,9 @@ mod tests {
             }
         }
         let mut painter = crate::export::overlay::Painter::new().unwrap();
-        let mut grid = ::image::RgbaImage::new(bw * 2, bh * 2);
-        for look in 0..4u8 {
-            crate::theme::MODAL_LOOK.store(look, std::sync::atomic::Ordering::Relaxed);
+        let mut grid = ::image::RgbaImage::new(bw * 2, bh);
+        for look in 0..2u8 {
+            crate::theme::set_solid_dialogs(look == 1);
             let pic = painter.paint_scaled(app.export_dialog(), iced::Size::new(bw, bh), 2.0);
             let mut shot = back.clone();
             for (i, px) in shot.pixels_mut().enumerate() {
@@ -2129,10 +2123,10 @@ mod tests {
                     px[c] = (s[c] as f32 + px[c] as f32 * (1.0 - a)).min(255.0) as u8;
                 }
             }
-            ::image::imageops::replace(&mut grid, &shot, (look as u32 % 2 * bw) as i64, (look as u32 / 2 * bh) as i64);
+            ::image::imageops::replace(&mut grid, &shot, (look as u32 * bw) as i64, 0);
         }
-        crate::theme::MODAL_LOOK.store(0, std::sync::atomic::Ordering::Relaxed);
-        let small = ::image::imageops::resize(&grid, bw, bh, ::image::imageops::FilterType::Triangle);
+        crate::theme::set_solid_dialogs(false);
+        let small = ::image::imageops::resize(&grid, bw, bh / 2, ::image::imageops::FilterType::Triangle);
         small.save(out).unwrap();
         let _ = std::fs::remove_dir_all(&home);
     }

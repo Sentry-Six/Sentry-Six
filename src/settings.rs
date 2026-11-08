@@ -20,6 +20,10 @@ pub struct Settings {
     pub date_format: DateFormat,
     /// Glass blur in px (`glassBlur`).
     pub glass_blur: f32,
+    /// Dialogs on a solid dark surface instead of frosted glass
+    /// (`dialogStyle`: "frosted", the default, or "solid"). New in this
+    /// version.
+    pub solid_dialogs: bool,
     /// Mirror the back and repeater cameras (`mirrorCameras`, default on).
     pub mirror_cameras: bool,
     /// Shortcuts (`keybinds`): action name -> key identifier.
@@ -116,6 +120,7 @@ impl Default for Settings {
             time_24h: false,
             date_format: DateFormat::Ymd,
             glass_blur: 13.0,
+            solid_dialogs: false,
             mirror_cameras: true,
             keybinds: Default::default(),
             skip_seconds: 5.0,
@@ -315,6 +320,7 @@ pub fn to_json(s: &Settings) -> Value {
         "timeFormat": if s.time_24h { "24h" } else { "12h" },
         "dateFormat": s.date_format.key(),
         "glassBlur": s.glass_blur,
+        "dialogStyle": if s.solid_dialogs { "solid" } else { "frosted" },
         "mirrorCameras": s.mirror_cameras,
         "skipDuration": s.skip_seconds,
         "placeNameLookup": s.place_names,
@@ -391,6 +397,9 @@ fn apply(s: &mut Settings, v: &Value) {
     }
     if let Some(f) = v.get("timeFormat").and_then(Value::as_str) {
         s.time_24h = f == "24h";
+    }
+    if let Some(style) = v.get("dialogStyle").and_then(Value::as_str) {
+        s.solid_dialogs = style == "solid";
     }
     if let Some(px) = v.get("glassBlur").and_then(Value::as_f64) {
         // The Settings slider's range.

@@ -665,6 +665,7 @@ impl App {
         let mut app = app;
         app.shortcuts = shortcuts::Shortcuts::new(&app.settings.keybinds);
         i18n::set_language(&app.settings.language);
+        theme::set_solid_dialogs(app.settings.solid_dialogs);
         // A folder on the command line opens straight away; otherwise
         // the default folder from the settings.
         let folder = std::env::args_os()
@@ -1429,11 +1430,17 @@ impl App {
         })
     }
 
+    /// Whether a dialog is up (they all sit centred over the video).
+    fn dialog_open(&self) -> bool {
+        self.settings_open || self.export.open || self.delete_confirm.is_some() || self.privacy_pending() || self.update.is_some() || self.prerelease_question || self.changelog.is_some()
+    }
+
+    /// The open dialog's rectangle, for frosting the video under it.
     fn dialog_rect(&self) -> Option<Rectangle> {
-        if !self.settings_open && !self.export.open {
+        if !self.dialog_open() {
             return None;
         }
-        let (w, d) = (self.overlay_size?, self.dialog_size?);
+        let (w, d) = (self.overlay_size.or(self.window_size)?, self.dialog_size?);
         Some(Rectangle { x: (w.width - d.width) / 2.0, y: (w.height - d.height) / 2.0, width: d.width, height: d.height })
     }
 
@@ -1499,6 +1506,10 @@ impl App {
                 }
             }
             Menu::TimeFormat => self.settings.time_24h = i == 1,
+            Menu::DialogStyle => {
+                self.settings.solid_dialogs = i == 1;
+                theme::set_solid_dialogs(self.settings.solid_dialogs);
+            }
             Menu::DateFormat => {
                 if let Some(f) = settings::DateFormat::ALL.get(i) {
                     self.settings.date_format = *f;
@@ -2135,8 +2146,7 @@ impl App {
         let mut app = stack![sensor(app).on_show(Message::WindowSized).on_resize(Message::WindowSized)];
         // A dialog should blur the panels behind it, but iced can only frost
         // the video, so the floating map and dashboard step aside instead.
-        let dialog_open =
-            self.settings_open || self.export.open || self.delete_confirm.is_some() || self.privacy_pending() || self.update.is_some() || self.prerelease_question || self.changelog.is_some();
+        let dialog_open = self.dialog_open();
         if !dialog_open {
             if let Some(map) = self.map_panel() {
                 app = app.push(map);
@@ -2245,10 +2255,7 @@ impl App {
         .width(420)
         .clip(true)
         .style(theme::modal);
-        iced::widget::opaque(
-            mouse_area(container(iced::widget::opaque(dialog)).center(Length::Fill).style(theme::backdrop))
-                .on_press(Message::DeleteCancel),
-        )
+        iced::widget::opaque(mouse_area(container(measured(dialog)).center(Length::Fill).style(theme::backdrop)).on_press(Message::DeleteCancel))
     }
 
     // ---------------------------------------------------------------------
@@ -2790,6 +2797,11 @@ fn input_event(event: iced::Event, status: iced::event::Status, _window: iced::w
         iced::Event::Window(iced::window::Event::FileDropped(path)) => Some(Message::FileDropped(path)),
         _ => None,
     }
+}
+
+/// A dialog that reports its size, so the video under it is frosted.
+pub(crate) fn measured<'a>(dialog: impl Into<Element<'a, Message>>) -> Element<'a, Message> {
+    sensor(iced::widget::opaque(dialog)).on_show(Message::DialogSized).on_resize(Message::DialogSized).into()
 }
 
 fn placeholder<'a>(message: &'a str) -> Element<'a, Message> {

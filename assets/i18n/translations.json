@@ -360,7 +360,11 @@
     "ui.export.customPosition": "Dragged in the preview",
     "ui.export.previewDragHint": "Drag the dashboard or map in the preview to move it; it snaps to the usual places.",
     "ui.export.blurZoneDraw": "To draw a new zone, click its corners one by one and click the first again to finish, or drag across the picture for a rectangle.",
-    "ui.export.playVideo": "Play"
+    "ui.export.playVideo": "Play",
+    "ui.settings.dialogStyle": "Dialog Style",
+    "ui.settings.dialogFrosted": "Frosted",
+    "ui.settings.dialogSolid": "Solid",
+    "ui.settings.dialogStyleDesc": "Solid dialogs are easier to read over bright or busy video."
   },
   "es": {
     "app.arrived": "Llegada",
@@ -723,7 +727,11 @@
     "ui.export.customPosition": "Movido en la vista previa",
     "ui.export.previewDragHint": "Arrastra el tablero o el mapa en la vista previa para moverlo; se ajusta a las posiciones habituales.",
     "ui.export.blurZoneDraw": "Para dibujar una zona nueva, haz clic en sus esquinas una a una y vuelve a hacer clic en la primera para terminar, o arrastra sobre la imagen para un rectángulo.",
-    "ui.export.playVideo": "Reproducir"
+    "ui.export.playVideo": "Reproducir",
+    "ui.settings.dialogStyle": "Estilo de los diálogos",
+    "ui.settings.dialogFrosted": "Esmerilado",
+    "ui.settings.dialogSolid": "Sólido",
+    "ui.settings.dialogStyleDesc": "Los diálogos sólidos se leen mejor sobre vídeo brillante o con mucho movimiento."
   },
   "fr": {
     "app.arrived": "Arrivée",
@@ -1086,7 +1094,11 @@
     "ui.export.customPosition": "Déplacé dans l'aperçu",
     "ui.export.previewDragHint": "Faites glisser le tableau de bord ou la carte dans l'aperçu pour les déplacer ; ils s'aimantent aux emplacements habituels.",
     "ui.export.blurZoneDraw": "Pour dessiner une nouvelle zone, cliquez sur ses coins un par un puis à nouveau sur le premier pour terminer, ou faites glisser sur l'image pour un rectangle.",
-    "ui.export.playVideo": "Lire"
+    "ui.export.playVideo": "Lire",
+    "ui.settings.dialogStyle": "Style des fenêtres",
+    "ui.settings.dialogFrosted": "Givré",
+    "ui.settings.dialogSolid": "Opaque",
+    "ui.settings.dialogStyleDesc": "Les fenêtres opaques sont plus lisibles sur une vidéo claire ou chargée."
   },
   "de": {
     "app.arrived": "Ankunft",
@@ -1449,7 +1461,11 @@
     "ui.export.customPosition": "In der Vorschau verschoben",
     "ui.export.previewDragHint": "Ziehe das Dashboard oder die Karte in der Vorschau, um sie zu verschieben; sie rasten an den üblichen Stellen ein.",
     "ui.export.blurZoneDraw": "Für einen neuen Bereich klicke nacheinander auf seine Ecken und zum Abschluss erneut auf die erste, oder ziehe über das Bild für ein Rechteck.",
-    "ui.export.playVideo": "Abspielen"
+    "ui.export.playVideo": "Abspielen",
+    "ui.settings.dialogStyle": "Dialogstil",
+    "ui.settings.dialogFrosted": "Milchglas",
+    "ui.settings.dialogSolid": "Deckend",
+    "ui.settings.dialogStyleDesc": "Deckende Dialoge sind über hellem oder unruhigem Video leichter zu lesen."
   },
   "zh": {
     "app.arrived": "到达",
@@ -1812,7 +1828,11 @@
     "ui.export.customPosition": "已在预览中拖动",
     "ui.export.previewDragHint": "在预览中拖动仪表板或地图即可移动；靠近常用位置时会自动对齐。",
     "ui.export.blurZoneDraw": "要绘制新区域，请依次点击各个角点，再次点击第一个角点完成；或在画面上拖动绘制矩形。",
-    "ui.export.playVideo": "播放"
+    "ui.export.playVideo": "播放",
+    "ui.settings.dialogStyle": "对话框样式",
+    "ui.settings.dialogFrosted": "磨砂",
+    "ui.settings.dialogSolid": "实色",
+    "ui.settings.dialogStyleDesc": "实色对话框在明亮或画面繁杂的视频上更易阅读。"
   },
   "ja": {
     "app.arrived": "到着",
@@ -2175,7 +2195,11 @@
     "ui.export.customPosition": "プレビューで移動済み",
     "ui.export.previewDragHint": "プレビューでダッシュボードや地図をドラッグして移動できます。いつもの位置の近くではそこに合わせます。",
     "ui.export.blurZoneDraw": "新しいゾーンを描くには、角を順にクリックし、最初の角をもう一度クリックして完了します。画像の上をドラッグすると長方形になります。",
-    "ui.export.playVideo": "再生"
+    "ui.export.playVideo": "再生",
+    "ui.settings.dialogStyle": "ダイアログのスタイル",
+    "ui.settings.dialogFrosted": "すりガラス",
+    "ui.settings.dialogSolid": "不透明",
+    "ui.settings.dialogStyleDesc": "不透明なダイアログは、明るい映像や動きの多い映像の上でも読みやすくなります。"
   },
   "ko": {
     "app.arrived": "도착",
@@ -2538,7 +2562,11 @@
     "ui.export.customPosition": "미리보기에서 이동함",
     "ui.export.previewDragHint": "미리보기에서 대시보드나 지도를 끌어 옮길 수 있으며, 기본 위치 근처에서는 그 위치에 맞춰집니다.",
     "ui.export.blurZoneDraw": "새 영역을 그리려면 모서리를 차례로 클릭하고 첫 모서리를 다시 클릭해 마치세요. 그림 위를 끌면 사각형이 그려집니다.",
-    "ui.export.playVideo": "재생"
+    "ui.export.playVideo": "재생",
+    "ui.settings.dialogStyle": "대화 상자 스타일",
+    "ui.settings.dialogFrosted": "반투명",
+    "ui.settings.dialogSolid": "불투명",
+    "ui.settings.dialogStyleDesc": "불투명한 대화 상자는 밝거나 복잡한 영상 위에서 더 읽기 쉽습니다."
   },
   "pt": {
     "app.arrived": "Chegada",
@@ -2901,7 +2929,11 @@
     "ui.export.customPosition": "Movido na pré-visualização",
     "ui.export.previewDragHint": "Arraste o painel ou o mapa na pré-visualização para o mover; encaixa nas posições habituais.",
     "ui.export.blurZoneDraw": "Para desenhar uma nova zona, clique nos cantos um a um e clique de novo no primeiro para terminar, ou arraste sobre a imagem para um retângulo.",
-    "ui.export.playVideo": "Reproduzir"
+    "ui.export.playVideo": "Reproduzir",
+    "ui.settings.dialogStyle": "Estilo das caixas de diálogo",
+    "ui.settings.dialogFrosted": "Fosco",
+    "ui.settings.dialogSolid": "Sólido",
+    "ui.settings.dialogStyleDesc": "As caixas sólidas leem-se melhor sobre vídeo claro ou com muito movimento."
   },
   "ru": {
     "app.arrived": "Прибытие",
@@ -3264,7 +3296,11 @@
     "ui.export.customPosition": "Перемещено в предпросмотре",
     "ui.export.previewDragHint": "Перетащите панель или карту в предпросмотре, чтобы переместить их; рядом со стандартными местами они примагничиваются.",
     "ui.export.blurZoneDraw": "Чтобы нарисовать новую зону, щёлкайте по её углам по очереди и снова по первому, чтобы закончить, или проведите по изображению для прямоугольника.",
-    "ui.export.playVideo": "Воспроизвести"
+    "ui.export.playVideo": "Воспроизвести",
+    "ui.settings.dialogStyle": "Стиль окон",
+    "ui.settings.dialogFrosted": "Матовое стекло",
+    "ui.settings.dialogSolid": "Сплошной",
+    "ui.settings.dialogStyleDesc": "Сплошные окна легче читать поверх яркого или пёстрого видео."
   },
   "it": {
     "app.arrived": "Arrivo",
@@ -3627,7 +3663,11 @@
     "ui.export.customPosition": "Spostato nell'anteprima",
     "ui.export.previewDragHint": "Trascina il cruscotto o la mappa nell'anteprima per spostarli; si agganciano alle posizioni consuete.",
     "ui.export.blurZoneDraw": "Per disegnare una nuova zona, fai clic sui suoi angoli uno alla volta e di nuovo sul primo per finire, oppure trascina sull'immagine per un rettangolo.",
-    "ui.export.playVideo": "Riproduci"
+    "ui.export.playVideo": "Riproduci",
+    "ui.settings.dialogStyle": "Stile delle finestre",
+    "ui.settings.dialogFrosted": "Satinato",
+    "ui.settings.dialogSolid": "Pieno",
+    "ui.settings.dialogStyleDesc": "Le finestre piene si leggono meglio sopra video luminosi o movimentati."
   },
   "nl": {
     "app.arrived": "Aankomst",
@@ -3990,7 +4030,11 @@
     "ui.export.customPosition": "Verplaatst in het voorbeeld",
     "ui.export.previewDragHint": "Sleep het dashboard of de kaart in het voorbeeld om ze te verplaatsen; ze klikken vast op de gebruikelijke plekken.",
     "ui.export.blurZoneDraw": "Klik voor een nieuw gebied één voor één op de hoeken en klik nogmaals op de eerste om af te ronden, of sleep over het beeld voor een rechthoek.",
-    "ui.export.playVideo": "Afspelen"
+    "ui.export.playVideo": "Afspelen",
+    "ui.settings.dialogStyle": "Stijl van vensters",
+    "ui.settings.dialogFrosted": "Mat glas",
+    "ui.settings.dialogSolid": "Effen",
+    "ui.settings.dialogStyleDesc": "Effen vensters zijn beter leesbaar boven felle of drukke video."
   },
   "pl": {
     "app.arrived": "Przyjazd",
@@ -4353,7 +4397,11 @@
     "ui.export.customPosition": "Przesunięto w podglądzie",
     "ui.export.previewDragHint": "Przeciągnij kokpit lub mapę w podglądzie, aby je przesunąć; przyciągają się do zwykłych miejsc.",
     "ui.export.blurZoneDraw": "Aby narysować nową strefę, klikaj kolejno jej narożniki i kliknij ponownie pierwszy, aby zakończyć, albo przeciągnij po obrazie, aby zrobić prostokąt.",
-    "ui.export.playVideo": "Odtwórz"
+    "ui.export.playVideo": "Odtwórz",
+    "ui.settings.dialogStyle": "Styl okien",
+    "ui.settings.dialogFrosted": "Matowe szkło",
+    "ui.settings.dialogSolid": "Jednolity",
+    "ui.settings.dialogStyleDesc": "Jednolite okna łatwiej czytać na jasnym lub ruchliwym obrazie."
   },
   "tr": {
     "app.arrived": "Varış",
@@ -4716,6 +4764,10 @@
     "ui.export.customPosition": "Önizlemede taşındı",
     "ui.export.previewDragHint": "Gösterge panelini veya haritayı önizlemede sürükleyerek taşıyın; olağan konumlara yaklaşınca oraya oturur.",
     "ui.export.blurZoneDraw": "Yeni bir bölge çizmek için köşelerine sırayla tıklayın ve bitirmek için ilkine yeniden tıklayın ya da dikdörtgen için resmin üzerinde sürükleyin.",
-    "ui.export.playVideo": "Oynat"
+    "ui.export.playVideo": "Oynat",
+    "ui.settings.dialogStyle": "İletişim kutusu stili",
+    "ui.settings.dialogFrosted": "Buzlu",
+    "ui.settings.dialogSolid": "Düz",
+    "ui.settings.dialogStyleDesc": "Düz iletişim kutuları parlak veya hareketli videonun üzerinde daha kolay okunur."
   }
 }

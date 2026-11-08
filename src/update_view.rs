@@ -110,7 +110,7 @@ fn frame<'a>(title: String, glyph: Element<'a, Message>, body: Element<'a, Messa
     .width(460)
     .clip(true)
     .style(theme::modal);
-    let backdrop = mouse_area(container(opaque(dialog)).center(Length::Fill).style(theme::backdrop));
+    let backdrop = mouse_area(container(crate::measured(dialog)).center(Length::Fill).style(theme::backdrop));
     opaque(match close {
         Some(m) => backdrop.on_press(m),
         None => backdrop,

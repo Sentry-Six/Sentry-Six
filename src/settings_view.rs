@@ -153,6 +153,7 @@ pub enum Menu {
     Accel,
     MapStyle,
     Skip,
+    DialogStyle,
 }
 
 /// A select's choices, and which is the current one.
@@ -174,6 +175,7 @@ pub fn choices(s: &Settings, menu: Menu) -> (Vec<String>, Option<usize>) {
             AccelMode::ALL.iter().position(|m| *m == s.accel_mode),
         ),
         Menu::MapStyle => (words(&["ui.settings.mapStyleLight", "ui.settings.mapStyleDark"]), Some(s.map_dark as usize)),
+        Menu::DialogStyle => (words(&["ui.settings.dialogFrosted", "ui.settings.dialogSolid"]), Some(s.solid_dialogs as usize)),
         Menu::Skip => (
             SKIP_CHOICES.iter().map(|c| format!("{}s", *c as u32)).collect(),
             SKIP_CHOICES.iter().position(|c| *c == s.skip_seconds),
@@ -430,6 +432,7 @@ fn rows<'a>(s: &'a Settings, ui: &'a Ui, keys: &'a Shortcuts) -> Vec<Row<'a>> {
             select(s, Menu::TimeFormat),
         ),
         setting(Display, None, t("ui.settings.dateFormat"), None, select(s, Menu::DateFormat)),
+        setting(Display, None, t("ui.settings.dialogStyle"), Some(t("ui.settings.dialogStyleDesc")), select(s, Menu::DialogStyle)),
         setting(
             Display,
             None,
