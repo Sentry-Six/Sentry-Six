@@ -3112,7 +3112,7 @@ checksum = "8a7852d02fc848982e0c167ef163aaff9cd91dc640ba85e263cb1ce46fae51cd"
 
 [[package]]
 name = "sentry-studio"
-version = "2026.45.43"
+version = "2026.46.1"
 dependencies = [
  "anyhow",
  "base64 0.22.1",

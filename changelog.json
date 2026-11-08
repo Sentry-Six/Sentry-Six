@@ -1,6 +1,45 @@
 {
   "versions": [
     {
+      "version": "2026.46.1",
+      "date": "2026-11-09",
+      "title": "The New Sentry Studio",
+      "changes": [
+        {
+          "type": "feature",
+          "description": "Sentry Studio is now a native app, rebuilt from the ground up: the download is about 20× smaller, and it uses up to 3× less memory."
+        },
+        {
+          "type": "improvement",
+          "description": "All cameras stay perfectly in sync, lined up frame by frame using your car's own data."
+        },
+        {
+          "type": "improvement",
+          "description": "Smoother playback: video plays on your graphics card, seeking is faster, and footage on a network drive no longer stutters."
+        },
+        {
+          "type": "improvement",
+          "description": "Export opens straight into the full-window editor, with a live preview and snapping guides."
+        },
+        {
+          "type": "improvement",
+          "description": "Exports are faster and sharper, in H.264 or HEVC (and AV1 on computers that support it)."
+        },
+        {
+          "type": "improvement",
+          "description": "Windows downloads are code-signed, so Windows no longer warns about an unknown publisher."
+        },
+        {
+          "type": "improvement",
+          "description": "Your settings, shortcuts and folders carry over."
+        },
+        {
+          "type": "note",
+          "description": "The Footage Converter isn't in this version yet and will return in a later update. Macs on macOS 12 stay on the previous version."
+        }
+      ]
+    },
+    {
       "version": "2026.45.43",
       "date": "2026-11-08",
       "title": "Editor and Sharing",
