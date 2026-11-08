@@ -46,6 +46,10 @@ pub struct Chat {
     /// A message being sent (kept for a retry with the same ID).
     pending: Option<(String, String)>,
     composer: text_editor::Content,
+    /// Where the panel was dragged to (top left) and resized to; while the
+    /// app runs, as in earlier versions.
+    pub pos: Option<iced::Point>,
+    pub size: Option<iced::Size>,
     /// Bumped to cancel polls from an earlier conversation.
     poll_gen: u64,
 }
@@ -78,6 +82,9 @@ pub enum ChatMsg {
     Decided { message_id: String, index: usize, approve: bool, result: Result<Option<(String, u64)>, ApiError> },
     Uploaded { message_id: String, index: usize, result: Result<(String, u64), ApiError> },
     Link(&'static str),
+    /// The header dragged, the corner grip dragged.
+    Drag(f32, f32),
+    Resize(f32, f32),
 }
 
 fn now_ms() -> i64 {
@@ -383,6 +390,18 @@ impl App {
                 }
             },
             ChatMsg::Link(url) => crate::open_url(url),
+            ChatMsg::Drag(dx, dy) => {
+                if let Some(r) = self.chat_rect() {
+                    self.chat.pos = Some(iced::Point::new(r.x + dx, r.y + dy));
+                }
+            }
+            ChatMsg::Resize(dx, dy) => {
+                if let Some(r) = self.chat_rect() {
+                    // The top left stays; the bottom right follows the grip.
+                    self.chat.pos = Some(iced::Point::new(r.x, r.y));
+                    self.chat.size = Some(iced::Size::new((r.width + dx).max(MIN_WIDTH), (r.height + dy).max(MIN_HEIGHT)));
+                }
+            }
         }
         Task::none()
     }
@@ -408,9 +427,14 @@ fn bytes(n: u64) -> String {
 /// last section rounds its own).
 const BOTTOM_ROUNDED: iced::border::Radius = iced::border::Radius { top_left: 0.0, top_right: 0.0, bottom_right: 15.0, bottom_left: 15.0 };
 
-/// The panel's size (as earlier versions: 400 wide, up to 600 tall).
+/// The panel's size (as earlier versions: 400 wide, up to 600 tall), and
+/// the smallest it can be resized to.
 pub const WIDTH: f32 = 400.0;
 pub const MAX_HEIGHT: f32 = 600.0;
+pub const MIN_WIDTH: f32 = 340.0;
+pub const MIN_HEIGHT: f32 = 360.0;
+
+const GRIP_SVG: &str = r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 12" stroke="white" stroke-width="1.2" stroke-linecap="round"><path d="M11 5 5 11M11 8.5 8.5 11"/></svg>"#;
 
 const VIOLET: Color = Color::from_rgb(0xc4 as f32 / 255.0, 0xb5 as f32 / 255.0, 0xfd as f32 / 255.0);
 const VIOLET_DEEP: Color = Color::from_rgb(0x6d as f32 / 255.0, 0x28 as f32 / 255.0, 0xd9 as f32 / 255.0);
@@ -750,14 +774,16 @@ fn welcome<'a>() -> Element<'a, Message> {
     .into()
 }
 
-/// The panel (when open), `height` tall.
-pub fn view<'a>(chat: &'a Chat, h24: bool, height: f32) -> Element<'a, Message> {
+/// The panel (when open), `size` big.
+pub fn view<'a>(chat: &'a Chat, h24: bool, size: iced::Size) -> Element<'a, Message> {
+    let (width, height) = (size.width, size.height);
     let mut actions = row![icon_button(PEOPLE_SVG, ChatMsg::Link(support::DISCORD_URL))].spacing(6);
     if chat.conversation.is_some() && !chat.needs_new_notice {
         actions = actions.push(icon_button(RESTART_SVG, ChatMsg::NewChat));
     }
     actions = actions.push(icon_button(CLOSE_SVG, ChatMsg::Close));
-    let header = container(
+    // Dragging the header moves the panel (its buttons still click).
+    let header = crate::tile_input::tile_input(container(
         row![
             crate::svg_icon(BOT_SVG, 18.0, theme::ACCENT),
             text("AI Support").size(14).font(theme::semibold(theme::INTER)).color(Color::WHITE),
@@ -772,7 +798,9 @@ pub fn view<'a>(chat: &'a Chat, h24: bool, height: f32) -> Element<'a, Message> 
     .style(|_: &iced::Theme| container::Style {
         background: Some(gradient(alpha(theme::ACCENT, 0.08), Color::from_rgba(0.0, 0.0, 0.0, 0.2), 180.0)),
         ..Default::default()
-    });
+    }))
+    .on_drag(|dx, dy| wrap(ChatMsg::Drag(dx, dy)))
+    .grab(true);
 
     let mut body = Column::new().spacing(16);
     if chat.conversation.is_some() && chat.needs_new_notice {
@@ -783,7 +811,7 @@ pub fn view<'a>(chat: &'a Chat, h24: bool, height: f32) -> Element<'a, Message> 
         body = body.push(welcome());
     } else {
         for m in &chat.messages {
-            body = body.push(message_row(chat, m, h24, WIDTH));
+            body = body.push(message_row(chat, m, h24, width));
         }
     }
     if !chat.gated() && chat.status() == Status::Generating {
@@ -877,8 +905,16 @@ pub fn view<'a>(chat: &'a Chat, h24: bool, height: f32) -> Element<'a, Message> 
                 }),
         );
     }
+    // The grip in the bottom right corner resizes it.
+    let grip = crate::tile_input::tile_input(container(crate::svg_icon(GRIP_SVG, 12.0, theme::TEXT_FAINT)).padding(4))
+        .on_drag(|dx, dy| wrap(ChatMsg::Resize(dx, dy)))
+        .grab(true);
+    let panel = iced::widget::stack![
+        container(panel).width(width).height(height).clip(true).style(theme::chat_panel),
+        container(grip).width(width).height(height).align_right(width).align_bottom(height).padding(2),
+    ];
     // Opaque: clicks and scrolls on the panel never reach the video below.
-    iced::widget::opaque(container(panel).width(WIDTH).height(height).clip(true).style(theme::chat_panel))
+    iced::widget::opaque(panel)
 }
 
 #[cfg(test)]

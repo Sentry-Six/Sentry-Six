@@ -1384,15 +1384,28 @@ impl App {
     }
 
     /// Where the Settings dialog is (centred in the window), while open.
-    /// Where the open support chat panel is (window coordinates).
-    fn chat_rect(&self) -> Option<Rectangle> {
+    /// Where the open support chat panel is (window coordinates): top
+    /// right at first, then wherever it was dragged and resized to, always
+    /// inside the window and above the controls.
+    pub(crate) fn chat_rect(&self) -> Option<Rectangle> {
         if !self.chat.open {
             return None;
         }
         let w = self.window_size?;
-        // Below the top bar and above the controls.
-        let height = (w.height - CHAT_TOP - 76.0).clamp(240.0, support_view::MAX_HEIGHT);
-        Some(Rectangle { x: w.width - CHAT_RIGHT - support_view::WIDTH, y: CHAT_TOP, width: support_view::WIDTH, height })
+        let bottom = w.height - 76.0;
+        let (width, height) = match self.chat.size {
+            Some(s) => (s.width, s.height),
+            None => (support_view::WIDTH, (bottom - CHAT_TOP).min(support_view::MAX_HEIGHT)),
+        };
+        let width = width.min(w.width - 16.0).max(support_view::MIN_WIDTH.min(w.width));
+        let height = height.min(bottom - 8.0).max(support_view::MIN_HEIGHT.min(bottom));
+        let pos = self.chat.pos.unwrap_or(iced::Point::new(w.width - CHAT_RIGHT - width, CHAT_TOP));
+        Some(Rectangle {
+            x: pos.x.clamp(0.0, (w.width - width).max(0.0)),
+            y: pos.y.clamp(0.0, (bottom - height).max(0.0)),
+            width,
+            height,
+        })
     }
 
     fn dialog_rect(&self) -> Option<Rectangle> {
@@ -2120,11 +2133,11 @@ impl App {
         // The support chat floats at the top right, as in earlier versions.
         if let Some(rect) = self.chat_rect() {
             app = app.push(
-                container(support_view::view(&self.chat, self.settings.time_24h, rect.height))
-                    .padding(Padding { top: rect.y, right: CHAT_RIGHT, bottom: 0.0, left: 0.0 })
+                container(support_view::view(&self.chat, self.settings.time_24h, rect.size()))
+                    .padding(Padding { top: rect.y, right: 0.0, bottom: 0.0, left: rect.x })
                     .width(Length::Fill)
                     .height(Length::Fill)
-                    .align_x(Horizontal::Right)
+                    .align_x(Horizontal::Left)
                     .align_y(Vertical::Top),
             );
         }
