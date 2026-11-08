@@ -65,20 +65,42 @@ impl Cache {
 
     /// The picture's two planes as textures, or None (then it is copied).
     pub fn import(&self, device: &wgpu::Device, frame: &Arc<Frame>) -> Option<Imported> {
-        let (y, y_cv) = self.plane(device, frame, 0, MTLPixelFormat::R8Unorm, wgpu::TextureFormat::R8Unorm)?;
-        let (uv, uv_cv) = self.plane(device, frame, 1, MTLPixelFormat::RG8Unorm, wgpu::TextureFormat::Rg8Unorm)?;
+        let buffer = frame.pixel_buffer();
+        let read = wgpu::TextureUsages::TEXTURE_BINDING;
+        let (y, y_cv) = self.plane(device, buffer, 0, MTLPixelFormat::R8Unorm, wgpu::TextureFormat::R8Unorm, read, None)?;
+        let (uv, uv_cv) = self.plane(device, buffer, 1, MTLPixelFormat::RG8Unorm, wgpu::TextureFormat::Rg8Unorm, read, None)?;
         Some(Imported { y, uv, _planes: [y_cv, uv_cv], _frame: frame.clone() })
     }
 
+    /// A BGRA pixel buffer (an encoder's frame) as a texture to render into
+    /// (export draws straight into the encoder's memory).
+    pub fn import_target(&self, device: &wgpu::Device, buffer: &objc2_core_video::CVPixelBuffer) -> Option<(wgpu::Texture, CFRetained<CVMetalTexture>)> {
+        use objc2_core_foundation::{CFDictionary, CFNumber, CFString, CFType};
+        // ShaderRead | RenderTarget.
+        let usage = CFNumber::new_i32(1 | 4);
+        let attrs = unsafe { CFDictionary::<CFString, CFType>::from_slices(&[objc2_core_video::kCVMetalTextureUsage], &[usage.as_ref()]) };
+        self.plane(
+            device,
+            buffer,
+            0,
+            MTLPixelFormat::BGRA8Unorm,
+            wgpu::TextureFormat::Bgra8Unorm,
+            wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            Some((*attrs).as_ref()),
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
     fn plane(
         &self,
         device: &wgpu::Device,
-        frame: &Frame,
+        buffer: &objc2_core_video::CVPixelBuffer,
         index: usize,
         mtl_format: MTLPixelFormat,
         format: wgpu::TextureFormat,
+        usage: wgpu::TextureUsages,
+        attrs: Option<&objc2_core_foundation::CFDictionary>,
     ) -> Option<(wgpu::Texture, CFRetained<CVMetalTexture>)> {
-        let buffer = frame.pixel_buffer();
         let width = CVPixelBufferGetWidthOfPlane(buffer, index);
         let height = CVPixelBufferGetHeightOfPlane(buffer, index);
         if width == 0 || height == 0 {
@@ -91,7 +113,7 @@ impl Cache {
                 None,
                 &self.0,
                 buffer,
-                None,
+                attrs,
                 mtl_format,
                 width,
                 height,
@@ -129,7 +151,7 @@ impl Cache {
                     sample_count: 1,
                     dimension: wgpu::TextureDimension::D2,
                     format,
-                    usage: wgpu::TextureUsages::TEXTURE_BINDING,
+                    usage,
                     view_formats: &[],
                 },
             )

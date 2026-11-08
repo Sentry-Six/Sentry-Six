@@ -614,6 +614,22 @@ impl Player {
         !self.segments.is_empty()
     }
 
+    /// The collection's minutes.
+    pub fn segments(&self) -> &[Segment] {
+        &self.segments
+    }
+
+    /// The minute at collection seconds `t`, and the seconds into it.
+    pub fn locate_at(&self, t: f64) -> (usize, f64) {
+        self.locate(t)
+    }
+
+    /// Collection seconds of `secs` into minute `segment` (the end of the
+    /// last minute for `segment == len`).
+    pub fn position_at(&self, segment: usize, secs: f64) -> f64 {
+        self.durations.iter().take(segment).sum::<f64>() + secs
+    }
+
     fn locate(&self, t: f64) -> (usize, f64) {
         let mut acc = 0.0;
         for (i, d) in self.durations.iter().enumerate() {

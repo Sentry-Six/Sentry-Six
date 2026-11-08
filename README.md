@@ -160,6 +160,7 @@ These run without a window (see `src/main.rs`):
 | Check | What it does |
 | --- | --- |
 | `--decode-check <clip>` | decodes every frame |
+| `--export-check <folder> [mobile\|medium\|high\|max] [speed] [out.mp4]` | exports a Sentry/Saved event or a day of clips with every camera, lists the video formats this computer can encode and prints how fast it went; `SENTRY_EXPORT_FORMAT=h264\|hevc\|av1` picks the format |
 | `--seek-check`, `--skip-check`, `--hold-check` | exercise the player |
 | `--drives-check` | loads drive data |
 | `--place-check` | tests place-name lookups |

@@ -7,12 +7,15 @@
 //! 3×2 grid, and the control bar along the bottom.
 
 mod applog;
+mod blur_editor;
 mod checks;
 mod dashboard;
 mod diagnostics;
 mod decode;
 mod drive_list;
 mod drives;
+mod export;
+mod export_view;
 mod geocode;
 mod i18n;
 mod library;
@@ -232,6 +235,13 @@ fn main() -> iced::Result {
             }
             return Ok(());
         }
+        // Export a clip folder with every camera and time it.
+        Some("--export-check") => {
+            if let Some(d) = arg(2) {
+                checks::export_check(std::path::Path::new(d), arg(3), arg(4).and_then(|s| s.parse().ok()), arg(5).map(std::path::Path::new));
+            }
+            return Ok(());
+        }
         // Hold the skip key while playing and measure camera spread.
         Some("--hold-check") => {
             if let Some(d) = arg(2) {
@@ -371,6 +381,7 @@ pub(crate) enum Message {
     ChangelogClose,
     /// The AI support chat.
     Chat(support_view::ChatMsg),
+    Export(export_view::ExportMsg),
     /// Dragging a floating dashboard.
     DashDrag(f32, f32),
     /// The map: panned, zoomed, re-centred, turned, its panel dragged or
@@ -554,6 +565,8 @@ struct App {
     changelog: Option<Vec<update::Note>>,
     /// The AI support chat panel.
     chat: support_view::Chat,
+    /// Export markers, the Export Video dialog and a running export.
+    export: export_view::Export,
     /// Which Check Now answer a reset is for.
     update_check_id: u64,
     /// The folder being scanned (a newer pick replaces it).
@@ -637,6 +650,7 @@ impl App {
             prerelease_question: false,
             changelog: None,
             chat: Default::default(),
+            export: Default::default(),
             update_check_id: 0,
             scanning_path: None,
             drives_path: None,
@@ -700,6 +714,7 @@ impl App {
                     self.selected = None;
                     self.hovered_clip = None;
                     self.player.load(Vec::new(), 0.0);
+                    self.export.clear_markers();
                 }
                 let toast = if self.days.is_empty() {
                     self.notify(i18n::t("ui.notifications.noDashcamClipsFound").to_string(), false)
@@ -784,6 +799,7 @@ impl App {
                 // Events open 15 s before the event.
                 let start = event.map(|e| (e - 15.0).max(0.0)).unwrap_or(0.0);
                 self.player.load(item.segments.clone(), start);
+                self.export.clear_markers();
                 self.player.set_playing(true);
             }
             Message::TogglePlay => {
@@ -920,6 +936,8 @@ impl App {
                     }
                 } else if self.settings_ui.recording.is_some() {
                     self.settings_ui.recording = None;
+                } else if self.export.open {
+                    return self.export_update(export_view::ExportMsg::Close);
                 } else if self.settings_open {
                     self.settings_open = false;
                 } else if self.focus.is_some() {
@@ -1130,6 +1148,7 @@ impl App {
                         self.selected = None;
                         self.event_offset = None;
                         self.player.load(segments, 0.0);
+                        self.export.clear_markers();
                         self.player.set_playing(true);
                     }
                     Err(e) => self.error = Some(e),
@@ -1248,6 +1267,7 @@ impl App {
             }
             Message::ChangelogClose => self.changelog = None,
             Message::Chat(m) => return self.chat_update(m),
+            Message::Export(m) => return self.export_update(m),
             Message::PrereleaseAnswer(yes) => {
                 self.prerelease_question = false;
                 if yes {
@@ -1291,6 +1311,7 @@ impl App {
                 let playing = self.selected == Some(i);
                 if playing {
                     self.player.load(Vec::new(), 0.0);
+                    self.export.clear_markers();
                     self.selected = None;
                 }
                 let failed = Err((dir.clone(), i18n::t("app.unreadable").to_string()));
@@ -1409,7 +1430,7 @@ impl App {
     }
 
     fn dialog_rect(&self) -> Option<Rectangle> {
-        if !self.settings_open {
+        if !self.settings_open && !self.export.open {
             return None;
         }
         let (w, d) = (self.overlay_size?, self.dialog_size?);
@@ -2115,7 +2136,7 @@ impl App {
         // A dialog should blur the panels behind it, but iced can only frost
         // the video, so the floating map and dashboard step aside instead.
         let dialog_open =
-            self.settings_open || self.delete_confirm.is_some() || self.privacy_pending() || self.update.is_some() || self.prerelease_question || self.changelog.is_some();
+            self.settings_open || self.export.open || self.delete_confirm.is_some() || self.privacy_pending() || self.update.is_some() || self.prerelease_question || self.changelog.is_some();
         if !dialog_open {
             if let Some(map) = self.map_panel() {
                 app = app.push(map);
@@ -2140,6 +2161,10 @@ impl App {
                     .align_x(Horizontal::Left)
                     .align_y(Vertical::Top),
             );
+        }
+        if self.export.open {
+            let overlay = sensor(self.export_dialog()).on_show(Message::OverlaySized).on_resize(Message::OverlaySized);
+            app = app.push(overlay);
         }
         if self.settings_open {
             let overlay = sensor(settings_view::view(&self.settings, &self.settings_ui, &self.shortcuts, Message::DialogSized))
@@ -2689,13 +2714,35 @@ impl App {
         let timeline: Element<'_, Message> = timeline::Timeline::new(total, position, Message::Seek)
             .on_release(Message::SeekDone)
             .markers(self.event_offset.filter(|_| has_media).into_iter().collect())
+            .range(if has_media { self.export_markers() } else { (None, None) })
             .into();
+
+        // Export: Start and End markers at the playhead, and the dialog
+        // (with the progress on the button while an export runs).
+        let marker = |label: &'static str, tip: Message| glass(text(label).size(11).font(semibold(INTER)), [7, 10], 10.0).on_press_maybe(has_media.then_some(tip));
+        let export_face: Element<'_, Message> = match self.export.fraction() {
+            Some(f) => text(format!("{}%", (f * 100.0).floor() as u32)).size(11).font(semibold(INTER)).color(theme::ACCENT).into(),
+            None => svg_icon(export_view::DOWNLOAD_SVG, 18.0, theme::TEXT),
+        };
+        let export_open = has_media || self.export.running();
+        let export_controls: Element<'_, Message> = if export::job::AVAILABLE {
+            row![
+                marker(i18n::t("ui.export.start"), Message::Export(export_view::ExportMsg::SetStart)),
+                marker(i18n::t("ui.export.end"), Message::Export(export_view::ExportMsg::SetEnd)),
+                glass(container(export_face).center(24), 6, 10.0).on_press_maybe(export_open.then_some(Message::Export(export_view::ExportMsg::Open))),
+            ]
+            .spacing(6)
+            .align_y(Alignment::Center)
+            .into()
+        } else {
+            space().width(0).into()
+        };
 
         // Support chat and settings at the right end.
         let chat = glass(container(svg_icon(CHAT_SVG, 18.0, theme::TEXT)).center(24), 6, 10.0).on_press(Message::Chat(support_view::ChatMsg::Toggle));
         let gear = glass(container(icon(theme::icon::SETTINGS, 20.0)).center(24), 6, 10.0).on_press(Message::OpenSettings);
         let bar = container(
-            row![time, speed, playback, timeline, chat, gear]
+            row![time, speed, playback, timeline, export_controls, chat, gear]
                 .spacing(14)
                 .align_y(Alignment::Center),
         )

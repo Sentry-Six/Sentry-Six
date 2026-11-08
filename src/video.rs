@@ -12,7 +12,7 @@
 use crate::decode::Frame;
 
 #[cfg(target_os = "macos")]
-mod metal_import;
+pub(crate) mod metal_import;
 
 /// Decoded pictures kept alive after they are replaced (see metal_import).
 #[cfg(target_os = "macos")]

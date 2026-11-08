@@ -21,17 +21,26 @@ pub struct Timeline<'a, Message> {
     max: f64,
     value: f64,
     markers: Vec<f64>,
+    /// Export start and end markers.
+    range: (Option<f64>, Option<f64>),
     on_change: Box<dyn Fn(f64) -> Message + 'a>,
     on_release: Option<Message>,
 }
 
 impl<'a, Message> Timeline<'a, Message> {
     pub fn new(max: f64, value: f64, on_change: impl Fn(f64) -> Message + 'a) -> Self {
-        Self { max, value, markers: Vec::new(), on_change: Box::new(on_change), on_release: None }
+        Self { max, value, markers: Vec::new(), range: (None, None), on_change: Box::new(on_change), on_release: None }
     }
 
     pub fn on_release(mut self, message: Message) -> Self {
         self.on_release = Some(message);
+        self
+    }
+
+    /// The export range: a green start bar, a red end bar, and a band
+    /// between them when both are set.
+    pub fn range(mut self, range: (Option<f64>, Option<f64>)) -> Self {
+        self.range = range;
         self
     }
 
@@ -151,6 +160,29 @@ where
                     Shadow { color: Color::from_rgba(1.0, 0.0, 0.0, 0.35), offset: Vector::ZERO, blur_radius: 10.0 },
                 ),
                 Background::Color(Color::from_rgba(1.0, 0.0, 0.0, 0.9)),
+            );
+        }
+
+        // Export range, as earlier versions drew it: a green band between
+        // a green start bar and a red end bar (4 x 22 px, glowing).
+        let (start, end) = self.range;
+        if let (Some(a), Some(z)) = (start, end) {
+            let (x0, x1) = (x_of(a.min(z), b, self.max), x_of(a.max(z), b, self.max));
+            renderer.fill_quad(
+                quad(Rectangle { x: x0, y: mid - 5.0, width: (x1 - x0).max(0.0), height: 10.0 }, Border { radius: 5.0.into(), ..Default::default() }, Shadow::default()),
+                Background::Color(Color::from_rgba(0.36, 0.89, 0.51, 0.3)),
+            );
+        }
+        for (m, color) in [(start, Color::from_rgb8(0x34, 0xd3, 0x99)), (end, Color::from_rgb8(0xf8, 0x71, 0x71))] {
+            let Some(m) = m else { continue };
+            let cx = x_of(m, b, self.max);
+            renderer.fill_quad(
+                quad(
+                    Rectangle { x: cx - 2.0, y: mid - 11.0, width: 4.0, height: 22.0 },
+                    Border { radius: 2.0.into(), ..Default::default() },
+                    Shadow { color: Color { a: 0.5, ..color }, offset: Vector::ZERO, blur_radius: 8.0 },
+                ),
+                Background::Color(color),
             );
         }
 

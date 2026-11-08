@@ -16,6 +16,8 @@ path = "src/main.rs"
 [dependencies]
 anyhow = "1"
 iced = { version = "0.14", features = ["wgpu", "advanced", "image", "svg", "canvas"] }
+# Export overlays: the app's own widgets drawn offscreen (UserInterface).
+iced_runtime = "0.14"
 serde = { version = "1", features = ["derive"] }
 # Drive data (src/drive_data.rs): serde_json parses numbers exactly as
 # JavaScript does, so drives measure the same as in earlier versions.

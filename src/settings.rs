@@ -70,6 +70,43 @@ pub struct Settings {
     /// (`customCameraOrdersByProfile.tesla`, changed by dragging a camera
     /// onto another).
     pub camera_order: [Camera; 6],
+    /// Where the last export was saved (`lastExportFolder`), and its
+    /// quality (`exportLastQuality`: mobile, medium, high, max).
+    pub last_export_folder: Option<PathBuf>,
+    pub export_quality: String,
+    /// The export's video format (`exportFormat`: h264, hevc, av1). New in
+    /// this version; earlier ones always wrote H.264 (HEVC past 4096).
+    pub export_format: String,
+    /// The export's timestamp (`exportIncludeTimestamp`, on by default) and
+    /// time-lapse (`exportEnableTimelapse`, `exportTimelapseSpeed` "8").
+    pub export_timestamp: bool,
+    pub export_timelapse: bool,
+    pub export_speed: f64,
+    /// The export's dashboard (`exportIncludeDashboard`, off by default),
+    /// its place (`exportDashboardPosition`) and size (`exportDashboardSize`).
+    pub export_dashboard: bool,
+    pub export_dash_position: String,
+    pub export_dash_size: String,
+    /// `exportDashboardStyle` ("compact", "tesla-mobile") and Tesla
+    /// Mobile's bar (`exportDashboardPositionTeslaMobile`: bottom or top).
+    pub export_dash_style: String,
+    pub export_dash_tm_top: bool,
+    /// The export's GPS minimap (`exportIncludeMinimap`, off by default),
+    /// its corner (`exportMinimapPosition`) and size (`exportMinimapSize`).
+    pub export_minimap: bool,
+    pub export_minimap_position: String,
+    pub export_minimap_size: String,
+    /// `exportMinimapRenderMode`: "ass" (Static Map) or "leaflet" (Live Map).
+    pub export_minimap_live: bool,
+    /// The compact dashboard and the map dragged to a place of their own in
+    /// the export preview (`exportDashboardFree`, `exportMinimapFree`: the
+    /// top-left as shares of the frame, [x, y]; null for the corner). New
+    /// in this version.
+    pub export_dash_free: Option<(f32, f32)>,
+    pub export_map_free: Option<(f32, f32)>,
+    /// The last export's blur zones (`exportLastBlurZones`: camera and
+    /// coordinates, as earlier versions saved them), offered again.
+    pub export_blur_zones: Vec<crate::export::blur::BlurZone>,
 }
 
 impl Default for Settings {
@@ -101,6 +138,24 @@ impl Default for Settings {
             dashboard_compact: false,
             compact_fixed: true,
             accel_mode: crate::dashboard::AccelMode::IconBar,
+            last_export_folder: None,
+            export_quality: "high".into(),
+            export_format: "h264".into(),
+            export_timestamp: true,
+            export_timelapse: false,
+            export_speed: 8.0,
+            export_dashboard: false,
+            export_dash_position: "bottom-center".into(),
+            export_dash_size: "medium".into(),
+            export_dash_style: "compact".into(),
+            export_dash_tm_top: false,
+            export_minimap: false,
+            export_minimap_position: "top-right".into(),
+            export_minimap_size: "small".into(),
+            export_minimap_live: false,
+            export_dash_free: None,
+            export_map_free: None,
+            export_blur_zones: Vec::new(),
         }
     }
 }
@@ -255,7 +310,7 @@ pub fn save(s: &Settings) {
 
 /// The settings as saved (studio-settings.json's keys).
 pub fn to_json(s: &Settings) -> Value {
-    serde_json::json!({
+    let mut v = serde_json::json!({
         "useMetric": s.metric,
         "timeFormat": if s.time_24h { "24h" } else { "12h" },
         "dateFormat": s.date_format.key(),
@@ -282,11 +337,49 @@ pub fn to_json(s: &Settings) -> Value {
         "savedCameraHighlight": s.saved_glow,
         "defaultFolder": s.default_folder.as_ref().map(|p| p.to_string_lossy().into_owned()).unwrap_or_default(),
         "sentryUsbDataPath": s.drive_data.as_ref().map(|p| p.to_string_lossy().into_owned()).unwrap_or_default(),
+        // Saved as text, as earlier versions did ("8", "0.5").
         // As earlier versions saved it: action -> { display, identifier }.
         "keybinds": s.keybinds.iter().map(|(action, id)| {
             (action.clone(), serde_json::json!({ "display": crate::shortcuts::display(id), "identifier": id }))
         }).collect::<serde_json::Map<_, _>>(),
-    })
+    });
+    // (Outside the json! above, which is at the macro's depth limit.)
+    let zones: Vec<Value> = s
+        .export_blur_zones
+        .iter()
+        .map(|z| {
+            let points: Vec<Value> = z.points.iter().map(|(x, y)| serde_json::json!({ "x": x, "y": y })).collect();
+            serde_json::json!({ "camera": z.camera.key(), "coordinates": points })
+        })
+        .collect();
+    v["exportLastBlurZones"] = Value::Array(zones);
+    // The export's choices.
+    v["lastExportFolder"] = serde_json::json!(s.last_export_folder.as_ref().map(|p| p.to_string_lossy().into_owned()).unwrap_or_default());
+    v["exportLastQuality"] = serde_json::json!(s.export_quality);
+    v["exportFormat"] = serde_json::json!(s.export_format);
+    v["exportIncludeTimestamp"] = serde_json::json!(s.export_timestamp);
+    v["exportEnableTimelapse"] = serde_json::json!(s.export_timelapse);
+    v["exportTimelapseSpeed"] = serde_json::json!(s.export_speed.to_string());
+    v["exportIncludeDashboard"] = serde_json::json!(s.export_dashboard);
+    v["exportDashboardPosition"] = serde_json::json!(s.export_dash_position);
+    v["exportDashboardSize"] = serde_json::json!(s.export_dash_size);
+    v["exportDashboardStyle"] = serde_json::json!(s.export_dash_style);
+    v["exportDashboardPositionTeslaMobile"] = serde_json::json!(if s.export_dash_tm_top { "top-center" } else { "bottom-center" });
+    v["exportIncludeMinimap"] = serde_json::json!(s.export_minimap);
+    v["exportMinimapPosition"] = serde_json::json!(s.export_minimap_position);
+    v["exportMinimapSize"] = serde_json::json!(s.export_minimap_size);
+    v["exportMinimapRenderMode"] = serde_json::json!(if s.export_minimap_live { "leaflet" } else { "ass" });
+    let pair = |p: Option<(f32, f32)>| p.map(|(x, y)| serde_json::json!([x, y])).unwrap_or(Value::Null);
+    v["exportDashboardFree"] = pair(s.export_dash_free);
+    v["exportMinimapFree"] = pair(s.export_map_free);
+    v
+}
+
+/// A dragged overlay's place: [x, y], each 0-1.
+fn free_pair(v: Option<&Value>) -> Option<(f32, f32)> {
+    let a = v?.as_array()?;
+    let (x, y) = (a.first()?.as_f64()? as f32, a.get(1)?.as_f64()? as f32);
+    ((0.0..=1.0).contains(&x) && (0.0..=1.0).contains(&y)).then_some((x, y))
 }
 
 fn apply(s: &mut Settings, v: &Value) {
@@ -318,6 +411,74 @@ fn apply(s: &mut Settings, v: &Value) {
     }
     if v.get("sentryUsbDataPath").is_some() {
         s.drive_data = path("sentryUsbDataPath");
+    }
+    if v.get("lastExportFolder").is_some() {
+        s.last_export_folder = path("lastExportFolder");
+    }
+    if let Some(b) = v.get("exportIncludeTimestamp").and_then(Value::as_bool) {
+        s.export_timestamp = b;
+    }
+    if let Some(st) = v.get("exportDashboardStyle").and_then(Value::as_str).filter(|k| crate::export::overlay::DashStyle::from_key(k).is_some()) {
+        s.export_dash_style = st.to_string();
+    }
+    if let Some(p) = v.get("exportDashboardPositionTeslaMobile").and_then(Value::as_str) {
+        s.export_dash_tm_top = p.starts_with("top");
+    }
+    if let Some(b) = v.get("exportIncludeDashboard").and_then(Value::as_bool) {
+        s.export_dashboard = b;
+    }
+    if let Some(p) = v.get("exportDashboardPosition").and_then(Value::as_str).filter(|p| crate::export::overlay::Corner::from_key(p).is_some()) {
+        s.export_dash_position = p.to_string();
+    }
+    if let Some(z) = v.get("exportDashboardSize").and_then(Value::as_str).filter(|z| crate::export::overlay::DashSize::from_key(z).is_some()) {
+        s.export_dash_size = z.to_string();
+    }
+    if let Some(zones) = v.get("exportLastBlurZones").and_then(Value::as_array) {
+        s.export_blur_zones = zones
+            .iter()
+            .filter_map(|z| {
+                let camera = Camera::from_suffix(z.get("camera")?.as_str()?)?;
+                let points: Vec<(f32, f32)> = z
+                    .get("coordinates")?
+                    .as_array()?
+                    .iter()
+                    .filter_map(|p| Some((p.get("x")?.as_f64()? as f32, p.get("y")?.as_f64()? as f32)))
+                    .filter(|(x, y)| (0.0..=1.0).contains(x) && (0.0..=1.0).contains(y))
+                    .collect();
+                (points.len() >= 3).then_some(crate::export::blur::BlurZone { camera, points })
+            })
+            .collect();
+    }
+    if let Some(m) = v.get("exportMinimapRenderMode").and_then(Value::as_str) {
+        s.export_minimap_live = m == "leaflet";
+    }
+    if v.get("exportDashboardFree").is_some() {
+        s.export_dash_free = free_pair(v.get("exportDashboardFree"));
+    }
+    if v.get("exportMinimapFree").is_some() {
+        s.export_map_free = free_pair(v.get("exportMinimapFree"));
+    }
+    if let Some(b) = v.get("exportIncludeMinimap").and_then(Value::as_bool) {
+        s.export_minimap = b;
+    }
+    if let Some(p) = v.get("exportMinimapPosition").and_then(Value::as_str).filter(|p| crate::export::overlay::Corner::from_key(p).is_some()) {
+        s.export_minimap_position = p.to_string();
+    }
+    if let Some(z) = v.get("exportMinimapSize").and_then(Value::as_str).filter(|z| crate::export::overlay::DashSize::from_key(z).is_some()) {
+        s.export_minimap_size = z.to_string();
+    }
+    if let Some(b) = v.get("exportEnableTimelapse").and_then(Value::as_bool) {
+        s.export_timelapse = b;
+    }
+    let speed = v.get("exportTimelapseSpeed").and_then(|x| x.as_f64().or_else(|| x.as_str().and_then(|t| t.parse().ok())));
+    if let Some(n) = speed.filter(|n| [0.5, 2.0, 4.0, 8.0, 16.0, 32.0, 64.0].contains(n)) {
+        s.export_speed = n;
+    }
+    if let Some(f) = v.get("exportFormat").and_then(Value::as_str).filter(|f| ["h264", "hevc", "av1"].contains(f)) {
+        s.export_format = f.to_string();
+    }
+    if let Some(q) = v.get("exportLastQuality").and_then(Value::as_str).filter(|q| ["mobile", "medium", "high", "max"].contains(q)) {
+        s.export_quality = q.to_string();
     }
     if let Some(order) = v.pointer("/customCameraOrdersByProfile/tesla").and_then(parse_order) {
         s.camera_order = order;
@@ -410,6 +571,26 @@ fn order_json(order: &[Camera; 6]) -> Value {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn export_choices_round_trip() {
+        let mut s = Settings::default();
+        // As earlier versions saved them (with the mask image, ignored here).
+        apply(&mut s, &serde_json::json!({
+            "exportLastBlurZones": [{ "camera": "back", "coordinates": [{ "x": 0.1, "y": 0.2 }, { "x": 0.5, "y": 0.2 }, { "x": 0.3, "y": 0.6 }], "maskImageBase64": "...", "maskWidth": 640 }],
+            "exportTimelapseSpeed": "16",
+            "exportDashboardSize": "large",
+            "exportMinimapPosition": "bottom-left",
+        }));
+        assert_eq!(s.export_blur_zones.len(), 1);
+        assert_eq!(s.export_blur_zones[0].camera, Camera::Back);
+        assert_eq!(s.export_speed, 16.0);
+        let mut again = Settings::default();
+        apply(&mut again, &to_json(&s));
+        assert_eq!(again.export_blur_zones, s.export_blur_zones);
+        assert_eq!((again.export_speed, again.export_dash_size.as_str(), again.export_minimap_position.as_str()), (16.0, "large", "bottom-left"));
+    }
+
     use super::*;
 
     #[test]

@@ -173,7 +173,40 @@ pub fn chat_panel(_: &Theme) -> container::Style {
     }
 }
 
+/// Test only: which look `modal` draws (0 as shipped), for comparing
+/// looks side by side (export_view's modal_looks test).
+#[cfg(test)]
+pub static MODAL_LOOK: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+
 pub fn modal(_: &Theme) -> container::Style {
+    #[cfg(test)]
+    {
+        let look = MODAL_LOOK.load(std::sync::atomic::Ordering::Relaxed);
+        let (background, border): (Background, Color) = match look {
+            // Frosted: light glass, the frosted video showing through.
+            1 => (
+                Background::Gradient(iced::gradient::Linear::new(iced::Degrees(180.0)).add_stop(0.0, rgba(70, 78, 92, 0.42)).add_stop(1.0, rgba(30, 34, 42, 0.50)).into()),
+                white(0.22),
+            ),
+            // Graphite: a solid, lighter dark-grey surface.
+            2 => (Background::Gradient(iced::gradient::Linear::new(iced::Degrees(180.0)).add_stop(0.0, rgba(36, 39, 45, 1.0)).add_stop(1.0, rgba(26, 28, 33, 1.0)).into()), white(0.10)),
+            // Tinted: dark, with the accent's green glowing in from the top.
+            3 => (
+                Background::Gradient(iced::gradient::Linear::new(iced::Degrees(170.0)).add_stop(0.0, rgba(22, 70, 48, 0.92)).add_stop(0.35, rgba(12, 28, 24, 0.94)).add_stop(1.0, rgba(8, 12, 14, 0.95)).into()),
+                Color { a: 0.30, ..ACCENT },
+            ),
+            _ => (Background::Color(Color::TRANSPARENT), Color::TRANSPARENT),
+        };
+        if look != 0 {
+            return container::Style {
+                background: Some(background),
+                border: Border { color: border, width: 1.0, radius: 24.0.into() },
+                shadow: Shadow { color: black(0.5), offset: Vector::new(0.0, 32.0), blur_radius: 100.0 },
+                text_color: Some(TEXT),
+                ..Default::default()
+            };
+        }
+    }
     container::Style {
         background: Some(Background::Gradient(
             iced::gradient::Linear::new(iced::Degrees(180.0))
@@ -548,7 +581,9 @@ pub fn subtle_line(_: &Theme) -> container::Style {
 /// knob when on.
 pub fn toggle(_: &Theme, status: iced::widget::toggler::Status) -> iced::widget::toggler::Style {
     use iced::widget::toggler::{Status, Style};
-    let on = matches!(status, Status::Active { is_toggled: true } | Status::Hovered { is_toggled: true });
+    // Disabled (while an export runs) keeps its colours, so a switch
+    // that's on still reads as on.
+    let on = matches!(status, Status::Active { is_toggled: true } | Status::Hovered { is_toggled: true } | Status::Disabled { is_toggled: true });
     Style {
         background: (if on { Color { a: 0.35, ..ACCENT } } else { white(0.10) }).into(),
         background_border_width: 0.0,

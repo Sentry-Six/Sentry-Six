@@ -607,3 +607,114 @@ pub fn update_check(prerelease: bool, as_version: Option<&str>, download: bool) 
         other => println!("  {other:?}"),
     }
 }
+
+/// Exports a clip folder (a Sentry or Saved event, or a day of Recent
+/// clips) with all its cameras and times it: `--export-check <folder>
+/// [mobile|medium|high|max] [speed] [out.mp4]`.
+pub fn export_check(dir: &std::path::Path, quality: Option<&str>, speed: Option<f64>, out: Option<&std::path::Path>) {
+    use crate::export::job;
+    let dashboard = std::env::var_os("SENTRY_EXPORT_DASHBOARD").is_some();
+    let run = || -> anyhow::Result<()> {
+        let collections = library::scan(dir)?;
+        let Some(c) = collections.first() else { anyhow::bail!("no clips found in {}", dir.display()) };
+        let segments = library::load_segments(c)?;
+        anyhow::ensure!(!segments.is_empty(), "no clips found in {}", dir.display());
+        let mut cameras: Vec<library::Camera> = library::GRID.iter().copied().filter(|cam| segments.iter().any(|s| s.files.contains_key(cam))).collect();
+        cameras.dedup();
+        let output = out.map(std::path::Path::to_path_buf).unwrap_or_else(|| std::env::temp_dir().join("sentry-studio-export-check.mp4"));
+        let last = segments.len() - 1;
+        let request = job::Request {
+            segments,
+            start: job::Position { segment: 0, secs: 0.0 },
+            end: job::Position { segment: last, secs: f64::MAX },
+            tiles: job::grid(&cameras),
+            quality: crate::export_view::quality_from_key(quality.unwrap_or("high")).unwrap_or(job::Quality::High),
+            format: std::env::var("SENTRY_EXPORT_FORMAT").ok().and_then(|f| crate::export::encode::Format::from_key(&f)),
+            speed: speed.unwrap_or(1.0),
+            mirror: true,
+            fast: true,
+            // The dashboard with SENTRY_EXPORT_DASHBOARD=1, else the timestamp.
+            timestamp: (!dashboard).then_some(crate::export::overlay::Timestamp {
+                corner: crate::export::overlay::Corner::BottomCenter,
+                date_format: crate::settings::DateFormat::Ymd,
+                h24: false,
+            }),
+            dashboard: dashboard.then_some(crate::export::overlay::Dashboard {
+                // SENTRY_EXPORT_DASHBOARD=tesla-mobile for that style.
+                style: crate::export::overlay::DashStyle::from_key(&std::env::var("SENTRY_EXPORT_DASHBOARD").unwrap_or_default()).unwrap_or(crate::export::overlay::DashStyle::Compact),
+                corner: std::env::var("SENTRY_EXPORT_DASH_CORNER").ok().and_then(|c| crate::export::overlay::Corner::from_key(&c)).unwrap_or(crate::export::overlay::Corner::BottomCenter),
+                size: crate::export::overlay::DashSize::Medium,
+                metric: false,
+                h24: false,
+                accel: crate::dashboard::AccelMode::IconBar,
+                // Playback's glass (SENTRY_EXPORT_GLASS=0 for the dark bar).
+                glass: std::env::var("SENTRY_EXPORT_GLASS").ok().and_then(|v| v.parse().ok()).unwrap_or(13.0),
+                free: None,
+            }),
+            // The minimap with SENTRY_EXPORT_MINIMAP=1.
+            minimap: std::env::var_os("SENTRY_EXPORT_MINIMAP").map(|_| crate::export::overlay::Minimap {
+                corner: crate::export::overlay::Corner::TopRight,
+                size: crate::export::overlay::DashSize::Small,
+                dark: false,
+                tiles: crate::export::overlay::MapTiles(crate::map::tiles::Tiles::new(crate::settings::data_dir().map(|d| d.join("map")))),
+                // SENTRY_EXPORT_MINIMAP=live: the map follows the car.
+                live: std::env::var("SENTRY_EXPORT_MINIMAP").is_ok_and(|v| v == "live"),
+                free: None,
+            }),
+            // A zone over the middle of every camera with SENTRY_EXPORT_BLUR=1.
+            blur_zones: if std::env::var_os("SENTRY_EXPORT_BLUR").is_some() { cameras.iter().map(|c| crate::export::blur::BlurZone::starting(*c)).collect() } else { Vec::new() },
+            output: output.clone(),
+        };
+        use crate::export::encode::{support, Format};
+        println!("formats this computer encodes: {}", Format::ALL.iter().map(|f| format!("{} {:?}", f.label(), support(*f))).collect::<Vec<_>>().join(", "));
+        let plan = job::plan(&request)?;
+        // SENTRY_EXPORT_PREVIEW=out.png: the dialog's preview of the frame
+        // 10 s in, instead of exporting.
+        if let Some(path) = std::env::var_os("SENTRY_EXPORT_PREVIEW") {
+            for _ in 0..2 {
+                let started = std::time::Instant::now();
+                let width = std::env::var("SENTRY_EXPORT_PREVIEW_WIDTH").ok().and_then(|w| w.parse().ok()).unwrap_or(960);
+                let p = job::preview(&request, job::Position { segment: 0, secs: 10.0 }, width)?;
+                println!("preview of {}x{} in {} ms ({}x{})", p.width, p.height, started.elapsed().as_millis(), p.shown.0, p.shown.1);
+                // The PNG encoder itself: image's save() would link every
+                // format's encoder (AVIF's alone is over 1 MB).
+                let file = std::io::BufWriter::new(std::fs::File::create(&path)?);
+                image::ImageEncoder::write_image(image::codecs::png::PngEncoder::new(file), &p.rgba, p.shown.0, p.shown.1, image::ExtendedColorType::Rgba8)?;
+            }
+            return Ok(());
+        }
+        println!(
+            "{} ({} minute(s)): {} camera(s), {:?}, {}x{} {:?} at {} kbit/s, {} frames",
+            c.name,
+            last + 1,
+            cameras.len(),
+            request.quality,
+            plan.width,
+            plan.height,
+            plan.codec,
+            plan.bitrate / 1000,
+            plan.frames.len()
+        );
+        let cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let source_secs = plan.seconds() * request.speed;
+        match job::run(&request, &cancel, |_| {})? {
+            job::Outcome::Done { bytes, seconds, warnings, .. } => {
+                println!(
+                    "{:.0} s of footage in {seconds:.1} s = {:.1}x real time, {:.1} MB: {}",
+                    source_secs,
+                    source_secs / seconds,
+                    bytes as f64 / 1e6,
+                    output.display()
+                );
+                for w in warnings {
+                    println!("note: {}", crate::i18n::t(w));
+                }
+            }
+            job::Outcome::Cancelled => println!("cancelled"),
+        }
+        Ok(())
+    };
+    if let Err(e) = run() {
+        println!("export failed: {e:#}");
+    }
+}

@@ -31,11 +31,11 @@ type Ptr = *mut c_void;
 
 // Public GStreamer structures read or written here (stable ABI).
 #[repr(C)]
-struct MiniObject {
+pub(crate) struct MiniObject {
     type_: usize,
     refcount: c_int,
     lockstate: c_int,
-    flags: u32,
+    pub(crate) flags: u32,
     copy: Ptr,
     dispose: Ptr,
     free: Ptr,
@@ -44,22 +44,22 @@ struct MiniObject {
 }
 
 #[repr(C)]
-struct Buffer {
-    mini_object: MiniObject,
+pub(crate) struct Buffer {
+    pub(crate) mini_object: MiniObject,
     pool: Ptr,
-    pts: u64,
-    dts: u64,
-    duration: u64,
+    pub(crate) pts: u64,
+    pub(crate) dts: u64,
+    pub(crate) duration: u64,
     offset: u64,
     offset_end: u64,
 }
 
 #[repr(C)]
-struct MapInfo {
+pub(crate) struct MapInfo {
     memory: Ptr,
     flags: u32,
-    data: *mut u8,
-    size: usize,
+    pub(crate) data: *mut u8,
+    pub(crate) size: usize,
     maxsize: usize,
     user_data: [Ptr; 4],
     reserved: [Ptr; 4],
@@ -81,47 +81,53 @@ struct VideoMeta {
 }
 
 #[repr(C)]
-struct GError {
+pub(crate) struct GError {
     domain: u32,
     code: c_int,
     message: *mut c_char,
 }
 
-const STATE_NULL: c_int = 1;
-const STATE_PLAYING: c_int = 4;
-const MAP_READ: u32 = 1;
-const MESSAGE_ERROR: u32 = 1 << 1;
-const MESSAGE_EOS: u32 = 1 << 0;
+pub(crate) const STATE_NULL: c_int = 1;
+pub(crate) const STATE_PLAYING: c_int = 4;
+pub(crate) const MAP_READ: u32 = 1;
+pub(crate) const MESSAGE_ERROR: u32 = 1 << 1;
+pub(crate) const MESSAGE_EOS: u32 = 1 << 0;
 const CLOCK_TIME_NONE: u64 = u64::MAX;
+/// GST_BUFFER_FLAG_DELTA_UNIT: not a keyframe.
+pub(crate) const BUFFER_FLAG_DELTA_UNIT: u32 = 1 << 13;
 
-/// The GStreamer functions used, looked up once.
-struct Gst {
+/// The GStreamer functions used, looked up once (the export's encoder
+/// uses them too).
+pub(crate) struct Gst {
     _libs: Vec<libloading::Library>,
     init_check: unsafe extern "C" fn(*mut c_int, *mut *mut *mut c_char, *mut *mut GError) -> c_int,
-    parse_launch: unsafe extern "C" fn(*const c_char, *mut *mut GError) -> Ptr,
-    bin_get_by_name: unsafe extern "C" fn(Ptr, *const c_char) -> Ptr,
-    element_set_state: unsafe extern "C" fn(Ptr, c_int) -> c_int,
-    element_get_bus: unsafe extern "C" fn(Ptr) -> Ptr,
+    pub(crate) parse_launch: unsafe extern "C" fn(*const c_char, *mut *mut GError) -> Ptr,
+    pub(crate) bin_get_by_name: unsafe extern "C" fn(Ptr, *const c_char) -> Ptr,
+    pub(crate) element_set_state: unsafe extern "C" fn(Ptr, c_int) -> c_int,
+    pub(crate) element_get_bus: unsafe extern "C" fn(Ptr) -> Ptr,
     element_factory_find: unsafe extern "C" fn(*const c_char) -> Ptr,
-    object_unref: unsafe extern "C" fn(Ptr),
-    buffer_new_allocate: unsafe extern "C" fn(Ptr, usize, Ptr) -> *mut Buffer,
-    buffer_fill: unsafe extern "C" fn(*mut Buffer, usize, *const c_void, usize) -> usize,
-    buffer_map: unsafe extern "C" fn(*mut Buffer, *mut MapInfo, u32) -> c_int,
-    buffer_unmap: unsafe extern "C" fn(*mut Buffer, *mut MapInfo),
+    pub(crate) object_unref: unsafe extern "C" fn(Ptr),
+    pub(crate) buffer_new_allocate: unsafe extern "C" fn(Ptr, usize, Ptr) -> *mut Buffer,
+    pub(crate) buffer_fill: unsafe extern "C" fn(*mut Buffer, usize, *const c_void, usize) -> usize,
+    pub(crate) buffer_map: unsafe extern "C" fn(*mut Buffer, *mut MapInfo, u32) -> c_int,
+    pub(crate) buffer_unmap: unsafe extern "C" fn(*mut Buffer, *mut MapInfo),
     buffer_get_meta: unsafe extern "C" fn(*mut Buffer, usize) -> Ptr,
-    sample_get_buffer: unsafe extern "C" fn(Ptr) -> *mut Buffer,
-    sample_get_caps: unsafe extern "C" fn(Ptr) -> Ptr,
-    caps_get_structure: unsafe extern "C" fn(Ptr, u32) -> Ptr,
+    pub(crate) sample_get_buffer: unsafe extern "C" fn(Ptr) -> *mut Buffer,
+    pub(crate) sample_get_caps: unsafe extern "C" fn(Ptr) -> Ptr,
+    pub(crate) caps_get_structure: unsafe extern "C" fn(Ptr, u32) -> Ptr,
     structure_get_int: unsafe extern "C" fn(Ptr, *const c_char, *mut c_int) -> c_int,
-    mini_object_unref: unsafe extern "C" fn(Ptr),
-    bus_pop_filtered: unsafe extern "C" fn(Ptr, u32) -> Ptr,
-    message_parse_error: unsafe extern "C" fn(Ptr, *mut *mut GError, *mut *mut c_char),
-    app_src_push_buffer: unsafe extern "C" fn(Ptr, *mut Buffer) -> c_int,
-    app_src_end_of_stream: unsafe extern "C" fn(Ptr) -> c_int,
-    app_sink_try_pull_sample: unsafe extern "C" fn(Ptr, u64) -> Ptr,
+    pub(crate) structure_get_value: unsafe extern "C" fn(Ptr, *const c_char) -> Ptr,
+    /// g_value_get_boxed (gst_value_get_buffer is a macro over it).
+    pub(crate) value_get_buffer: unsafe extern "C" fn(Ptr) -> *mut Buffer,
+    pub(crate) mini_object_unref: unsafe extern "C" fn(Ptr),
+    pub(crate) bus_pop_filtered: unsafe extern "C" fn(Ptr, u32) -> Ptr,
+    pub(crate) message_parse_error: unsafe extern "C" fn(Ptr, *mut *mut GError, *mut *mut c_char),
+    pub(crate) app_src_push_buffer: unsafe extern "C" fn(Ptr, *mut Buffer) -> c_int,
+    pub(crate) app_src_end_of_stream: unsafe extern "C" fn(Ptr) -> c_int,
+    pub(crate) app_sink_try_pull_sample: unsafe extern "C" fn(Ptr, u64) -> Ptr,
     video_meta_api_get_type: unsafe extern "C" fn() -> usize,
     error_free: unsafe extern "C" fn(*mut GError),
-    g_free: unsafe extern "C" fn(Ptr),
+    pub(crate) g_free: unsafe extern "C" fn(Ptr),
 }
 
 // The function pointers are plain C entry points, callable from any thread.
@@ -158,6 +164,7 @@ impl Gst {
             open_lib(&list.iter().map(String::as_str).collect::<Vec<_>>())
         };
         let glib = lib("glib-2.0")?;
+        let gobject = lib("gobject-2.0")?;
         let core = lib("gstreamer-1.0")?;
         let app = lib("gstapp-1.0")?;
         let video = lib("gstvideo-1.0")?;
@@ -183,6 +190,8 @@ impl Gst {
             sample_get_caps: sym!(core, b"gst_sample_get_caps\0"),
             caps_get_structure: sym!(core, b"gst_caps_get_structure\0"),
             structure_get_int: sym!(core, b"gst_structure_get_int\0"),
+            structure_get_value: sym!(core, b"gst_structure_get_value\0"),
+            value_get_buffer: sym!(gobject, b"g_value_get_boxed\0"),
             mini_object_unref: sym!(core, b"gst_mini_object_unref\0"),
             bus_pop_filtered: sym!(core, b"gst_bus_pop_filtered\0"),
             message_parse_error: sym!(core, b"gst_message_parse_error\0"),
@@ -192,7 +201,7 @@ impl Gst {
             video_meta_api_get_type: sym!(video, b"gst_video_meta_api_get_type\0"),
             error_free: sym!(glib, b"g_error_free\0"),
             g_free: sym!(glib, b"g_free\0"),
-            _libs: vec![glib, core, app, video],
+            _libs: vec![glib, gobject, core, app, video],
         };
         let mut err: *mut GError = std::ptr::null_mut();
         if unsafe { (gst.init_check)(std::ptr::null_mut(), std::ptr::null_mut(), &mut err) } == 0 {
@@ -201,7 +210,7 @@ impl Gst {
         Ok(gst)
     }
 
-    unsafe fn take_error(&self, err: *mut GError) -> String {
+    pub(crate) unsafe fn take_error(&self, err: *mut GError) -> String {
         if err.is_null() {
             return "unknown error".into();
         }
@@ -211,7 +220,7 @@ impl Gst {
         text
     }
 
-    fn has_element(&self, name: &str) -> bool {
+    pub(crate) fn has_element(&self, name: &str) -> bool {
         let Ok(c) = CString::new(name) else { return false };
         let factory = unsafe { (self.element_factory_find)(c.as_ptr()) };
         if factory.is_null() {
@@ -224,7 +233,7 @@ impl Gst {
 
 static GST: OnceLock<Result<Gst, String>> = OnceLock::new();
 
-fn gst() -> Result<&'static Gst> {
+pub(crate) fn gst() -> Result<&'static Gst> {
     GST.get_or_init(|| Gst::load().map_err(|e| format!("{e:#}")))
         .as_ref()
         .map_err(|e| anyhow!("video decoding needs GStreamer 1.x with its base, good and libav plugins ({e})"))

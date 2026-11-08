@@ -3770,6 +3770,7 @@ dependencies = [
  "bytemuck",
  "chrono",
  "iced",
+ "iced_runtime",
  "image",
  "libc",
  "libloading",
