@@ -446,10 +446,13 @@ jobs:
         with:
           tool: cargo-zigbuild
       - name: Set up Rust
-        run: rustup target add x86_64-unknown-linux-gnu
+        run: rustup target add x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu
 
+      # Both architectures, cross-compiled here (zig links either).
       - name: Build and package
-        run: tools/package-linux.sh
+        run: |
+          ARCH=x64 tools/package-linux.sh
+          ARCH=arm64 tools/package-linux.sh
 
       - uses: actions/upload-artifact@v7
         with:
@@ -458,10 +461,10 @@ jobs:
           path: |
             target/linux/*.deb
             target/linux/*.tar.gz
-            target/linux/latest-linux.yml
+            target/linux/latest-linux*.yml
 
-      # No latest-linux-arm64.yml: Electron Studio's arm64 .deb reads that one,
-      # and this build is x86_64 only.
+      # Each manifest after its .deb: Electron Studio's .deb updater reads
+      # latest-linux.yml (x64) or latest-linux-arm64.yml (arm64).
       - name: Attach to the GitHub release
         if: github.event_name == 'release'
         env:
@@ -469,4 +472,4 @@ jobs:
           TAG: ${{ github.event.release.tag_name }}
         run: |
           gh release upload "$TAG" target/linux/*.deb target/linux/*.tar.gz --clobber
-          gh release upload "$TAG" target/linux/latest-linux.yml --clobber
+          gh release upload "$TAG" target/linux/latest-linux.yml target/linux/latest-linux-arm64.yml --clobber

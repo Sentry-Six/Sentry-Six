@@ -200,6 +200,7 @@ fn manifest_name() -> Option<&'static str> {
         ("macos", _) => Some("latest-mac.yml"),
         ("windows", _) => Some("latest.yml"),
         ("linux", "x86_64") => Some("latest-linux.yml"),
+        ("linux", "aarch64") => Some("latest-linux-arm64.yml"),
         _ => None,
     }
 }
@@ -209,7 +210,7 @@ fn wanted(file: &str, version: &str) -> bool {
     match std::env::consts::OS {
         "macos" => file.ends_with(".zip"),
         "windows" => file.ends_with(".exe"),
-        _ => file == format!("SentryStudio-{version}-linux-amd64.deb"),
+        _ => file == format!("SentryStudio-{version}-linux-{}.deb", if std::env::consts::ARCH == "aarch64" { "arm64" } else { "amd64" }),
     }
 }
 

@@ -24,7 +24,7 @@ import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(ROOT, "THIRD-PARTY-NOTICES.txt")
-TARGETS = ["aarch64-apple-darwin", "x86_64-apple-darwin", "x86_64-pc-windows-gnu", "x86_64-unknown-linux-gnu"]
+TARGETS = ["aarch64-apple-darwin", "x86_64-apple-darwin", "x86_64-pc-windows-gnu", "x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu"]
 LICENCE_PREFIXES = ("license", "licence", "copying", "notice", "unlicense", "copyright")
 # The Apache-2.0 terms' words, from the copy shipped with Material Symbols.
 with open(os.path.join(ROOT, "assets/fonts/licenses/MaterialSymbols-Apache-2.0.txt"), encoding="utf-8") as _f:

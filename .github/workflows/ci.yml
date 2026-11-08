@@ -2,7 +2,7 @@ name: CI
 
 # Every push and pull request: the tests on macOS, and release builds for
 # Windows (cross-compiled with mingw-w64, and its NSIS installer) and Linux
-# (zig, glibc 2.28), the same way they're packaged. Compiled dependencies
+# x86_64 and arm64 (zig, glibc 2.28), the same way they're packaged. Compiled dependencies
 # are cached between runs (Build Release always builds from scratch).
 
 on:
@@ -71,7 +71,8 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-zigbuild
-      - name: Build
+      - name: Build (x86_64 and arm64)
         run: |
-          rustup target add x86_64-unknown-linux-gnu
+          rustup target add x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu
           RUSTFLAGS="-D warnings" cargo zigbuild --release --target x86_64-unknown-linux-gnu.2.28
+          RUSTFLAGS="-D warnings" cargo zigbuild --release --target aarch64-unknown-linux-gnu.2.28

@@ -80,9 +80,9 @@ Download the build for your system from [Releases](https://github.com/Sentry-Six
 
 - **macOS 13 or newer:** the .dmg. It's a universal app for Apple Silicon and Intel, signed and notarized by Apple.
 - **Windows 10 or 11, 64-bit:** `SentryStudioSetup<version>.exe`, the installer. It installs for your user only, so it doesn't need administrator rights. For a portable copy, unzip the .zip and run `sentry-studio.exe`.
-- **Linux, x86_64:**
-  - **Debian, Ubuntu, Mint:** the .deb. Install it with `sudo apt install ./<file>.deb`, which also installs GStreamer for video.
-  - **Other distributions:** the .tar.gz. Unzip it and run `./sentry-studio`. Its READ-ME lists the GStreamer packages to install.
+- **Linux, x86_64 (`amd64` / `x64`) or ARM (`arm64`):**
+  - **Debian, Ubuntu, Mint, Raspberry Pi OS:** the .deb for your architecture. Install it with `sudo apt install ./<file>.deb`, which also installs GStreamer for video.
+  - **Other distributions:** the .tar.gz for your architecture. Unzip it and run `./sentry-studio`. Its READ-ME lists the GStreamer packages to install.
 
 ## Usage
 
@@ -126,7 +126,7 @@ Install).
 | --- | --- | --- | --- |
 | macOS | `tools/package-macos.sh` | `macos/`: universal .app, .dmg, .zip and `latest-mac.yml` | Rust targets `aarch64-apple-darwin` and `x86_64-apple-darwin` |
 | Windows | `tools/package-windows.sh` | `windows/`: installer (`SentryStudioSetup<version>.exe`), `latest.yml` and portable .zip | mingw-w64 (`brew install mingw-w64` or `apt install mingw-w64`); for the installer, NSIS 3.08 or newer (`brew install makensis` or `apt install nsis`) |
-| Linux | `tools/package-linux.sh` | `linux/`: .deb, .tar.gz and `latest-linux.yml` | [zig](https://ziglang.org) and `cargo install cargo-zigbuild` |
+| Linux | `tools/package-linux.sh` (`ARCH=arm64` for ARM) | `linux/`: .deb, .tar.gz and `latest-linux.yml` / `latest-linux-arm64.yml` | [zig](https://ziglang.org) and `cargo install cargo-zigbuild` |
 
 The `latest*.yml` files are update manifests in electron-builder's format,
 written by `tools/update-manifest.py`. Installed copies update from them:
