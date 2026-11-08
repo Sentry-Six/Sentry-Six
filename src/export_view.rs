@@ -80,6 +80,8 @@ pub enum ExportMsg {
     EditZone(usize),
     RemoveZone(usize),
     ZonePoints(Vec<(f32, f32)>),
+    /// The corners of a zone being placed, so far.
+    ZonePlacing(Vec<(f32, f32)>),
     SaveZone,
     CancelZone,
     RestoreZones,
@@ -87,7 +89,6 @@ pub enum ExportMsg {
     Minimap(bool),
     MapCorner(usize),
     MapSize(usize),
-    MapMode(usize),
     Format(Format),
     Formats([Support; 3]),
     Preview(Arc<Result<job::Preview, String>>),
@@ -124,6 +125,8 @@ pub struct Editing {
     pub points: Vec<(f32, f32)>,
     pub index: Option<usize>,
     pub snapshot: Option<crate::blur_editor::Snapshot>,
+    /// A new zone being placed corner by corner (shares of the picture).
+    pub placing: Vec<(f32, f32)>,
 }
 
 pub struct Export {
@@ -154,7 +157,6 @@ pub struct Export {
     pub minimap: bool,
     pub map_corner: Corner,
     pub map_size: DashSize,
-    pub map_live: bool,
     /// The dashboard (compact) and map dragged to a place of their own in
     /// the preview: top-left as shares of the frame.
     pub dash_free: Option<(f32, f32)>,
@@ -206,7 +208,6 @@ impl Default for Export {
             minimap: false,
             map_corner: Corner::TopRight,
             map_size: DashSize::Small,
-            map_live: false,
             dash_free: None,
             map_free: None,
             eta: None,
@@ -452,7 +453,8 @@ impl App {
             size: e.map_size,
             dark: self.settings.map_dark,
             tiles: MapTiles(self.tiles.clone()),
-            live: e.map_live,
+            // Only the Live Map: it follows the car.
+            live: true,
             free: e.map_free,
         })
     }
@@ -497,6 +499,13 @@ impl App {
     /// The export's size at quality `q` with the cameras chosen (Tesla
     /// Mobile's bars included): its longer side.
     fn export_widest(&self, q: Quality) -> u32 {
+        let (w, h) = self.export_size(q);
+        w.max(h)
+    }
+
+    /// The export's width and height at quality `q` with the cameras chosen
+    /// (Tesla Mobile's bars included).
+    fn export_size(&self, q: Quality) -> (u32, u32) {
         let chosen = self.export_cameras();
         let multi = !(chosen.len() == 1 && chosen[0] == Camera::Front);
         let e = &self.export;
@@ -512,7 +521,7 @@ impl App {
             let (date, data) = crate::export::tesla_mobile::bar_heights(width);
             height += date + data;
         }
-        width.max(height)
+        (width, height)
     }
 
     /// How this computer encodes `f` (before it's been looked up: H.264
@@ -577,7 +586,6 @@ impl App {
                 | ExportMsg::MapCorner(_)
                 | ExportMsg::Drag(..)
                 | ExportMsg::MapSize(_)
-                | ExportMsg::MapMode(_)
                 | ExportMsg::SaveZone
                 | ExportMsg::RemoveZone(_)
                 | ExportMsg::RestoreZones
@@ -639,7 +647,6 @@ impl App {
                     self.export.minimap = self.settings.export_minimap;
                     self.export.map_corner = Corner::from_key(&self.settings.export_minimap_position).filter(|c| MAP_CORNERS.contains(c)).unwrap_or(Corner::TopRight);
                     self.export.map_size = DashSize::from_key(&self.settings.export_minimap_size).unwrap_or(DashSize::Small);
-                    self.export.map_live = self.settings.export_minimap_live;
                     self.export.dash_free = self.settings.export_dash_free;
                     self.export.map_free = self.settings.export_map_free;
                     self.export.timelapse = self.settings.export_timelapse;
@@ -761,7 +768,7 @@ impl App {
                 // screen.
                 let mirror = self.settings.mirror_cameras && camera.mirrored();
                 let shown = GRID.iter().position(|c| *c == camera).and_then(|slot| self.player.shown(slot)).and_then(|s| crate::blur_editor::snapshot(&s.frame, mirror));
-                self.export.editing = Some(Editing { camera, points, index, snapshot: shown });
+                self.export.editing = Some(Editing { camera, points, index, snapshot: shown, placing: Vec::new() });
                 let Some((start, end)) = self.export_range() else { return Task::none() };
                 let at = self.preview_at(start, end);
                 let segments = self.player.segments().to_vec();
@@ -783,6 +790,12 @@ impl App {
             ExportMsg::ZonePoints(points) => {
                 if let Some(e) = self.export.editing.as_mut() {
                     e.points = points;
+                    e.placing.clear();
+                }
+            }
+            ExportMsg::ZonePlacing(points) => {
+                if let Some(e) = self.export.editing.as_mut() {
+                    e.placing = points;
                 }
             }
             ExportMsg::SaveZone => {
@@ -844,11 +857,6 @@ impl App {
                     self.export.map_size = *z;
                 }
             }
-            ExportMsg::MapMode(i) => {
-                if !self.export.running() {
-                    self.export.map_live = i == 1;
-                }
-            }
             ExportMsg::DashStyle(i) => {
                 if let Some(d) = DashStyle::ALL.get(i).filter(|_| !self.export.running()) {
                     self.export.dash_style = *d;
@@ -903,7 +911,7 @@ impl App {
                 }
                 self.settings.export_minimap_position = self.export.map_corner.key().to_string();
                 self.settings.export_minimap_size = self.export.map_size.key().to_string();
-                self.settings.export_minimap_live = self.export.map_live;
+                self.settings.export_minimap_live = true;
                 self.settings.export_dash_free = self.export.dash_free;
                 self.settings.export_map_free = self.export.map_free;
                 self.settings.export_timelapse = self.export.timelapse;
@@ -993,7 +1001,14 @@ impl App {
 
     /// The blur zone editor, over the Export dialog.
     fn zone_editor<'a>(&'a self, edit: &'a Editing) -> Element<'a, Message> {
-        let editor = crate::blur_editor::Editor { snapshot: edit.snapshot.as_ref(), aspect: 1448.0 / 938.0, points: &edit.points, on_change: |p| wrap(ExportMsg::ZonePoints(p)) };
+        let editor = crate::blur_editor::Editor {
+            snapshot: edit.snapshot.as_ref(),
+            aspect: 1448.0 / 938.0,
+            points: &edit.points,
+            on_change: |p| wrap(ExportMsg::ZonePoints(p)),
+            placing: &edit.placing,
+            on_place: |p| wrap(ExportMsg::ZonePlacing(p)),
+        };
         let header = row![
             text(format!("{} · {}", t("ui.export.blurZoneEditor"), edit.camera.label())).size(15).font(theme::semibold(theme::INTER)),
             space().width(Length::Fill),
@@ -1158,8 +1173,8 @@ impl App {
             Some(Ok(shown)) => shown.full,
             _ => (0, 0),
         };
-        let widest = self.export_widest(e.quality);
-        let mb = job::bitrate(e.quality, !multi, used, widest) as f64 / 8.0 * secs / speed / 1e6;
+        let (fw, fh) = self.export_size(e.quality);
+        let mb = job::bitrate(e.quality, !multi, used, fw, fh) as f64 / 8.0 * secs / speed / 1e6;
         let mut facts = vec![used.label().to_string(), format!("≈ {} MB", if mb < 10.0 { format!("{mb:.1}") } else { format!("{mb:.0}") })];
         if w > 0 {
             facts.insert(0, format!("{w} × {h}"));
@@ -1224,7 +1239,8 @@ impl App {
         // computer has no encoder for it or the frame is too big for it.
         let used = self.export_format();
         let widest = self.export_widest(e.quality);
-        let mb_for = |f: Format| job::bitrate(e.quality, !multi, f, widest) as f64 / 8.0 * secs / speed / 1e6;
+        let (fw, fh) = self.export_size(e.quality);
+        let mb_for = |f: Format| job::bitrate(e.quality, !multi, f, fw, fh) as f64 / 8.0 * secs / speed / 1e6;
         let mb_text = |mb: f64| if mb < 10.0 { format!("{mb:.1}") } else { format!("{mb:.0}") };
         let mut formats = row![].spacing(8);
         for f in Format::ALL {
@@ -1341,8 +1357,6 @@ impl App {
             let (place, lit) = if e.map_free.is_some() { (t("ui.export.customPosition"), None) } else { (t(e.map_corner.label_key()), Some(e.map_corner)) };
             let size = DashSize::ALL.iter().position(|z| *z == e.map_size).unwrap_or(0);
             overlays = overlays.push(sub(place_and_size(place, corner_pad(&MAP_CORNERS, lit, !busy, ExportMsg::MapCorner), segmented(size_labels(), size, !busy, ExportMsg::MapSize))));
-            let modes = vec![t("ui.export.minimapStaticFast").to_string(), t("ui.export.minimapLiveSlow").to_string()];
-            overlays = overlays.push(sub(labelled(t("ui.export.minimapRenderMode"), "", segmented(modes, e.map_live as usize, !busy, ExportMsg::MapMode))));
         }
 
         let section = |title: String, body: Element<'static, Message>| -> Element<'static, Message> {
@@ -2129,6 +2143,53 @@ mod tests {
         let small = ::image::imageops::resize(&grid, bw, bh / 2, ::image::imageops::FilterType::Triangle);
         small.save(out).unwrap();
         let _ = std::fs::remove_dir_all(&home);
+    }
+
+    /// The zone editor inside the whole app window, driven as the app runs
+    /// (App::view, App::update): clicking corners must make a zone.
+    #[test]
+    #[ignore]
+    fn zone_editor_in_the_app() {
+        let Some(dir) = std::env::var_os("SENTRY_DIALOG_CLIPS") else { return };
+        let home = std::env::temp_dir().join(format!("sentry-zoneapp-{}", std::process::id()));
+        std::fs::create_dir_all(&home).unwrap();
+        // SAFETY: the test runs alone (ignored, run on its own).
+        unsafe { std::env::set_var("HOME", &home) };
+        let (mut app, _) = crate::App::boot();
+        let size = iced::Size::new(1280.0, 820.0);
+        app.window_size = Some(size);
+        app.settings.privacy_accepted = crate::welcome::PRIVACY_VERSION;
+        let collections = crate::library::scan(std::path::Path::new(&dir)).unwrap();
+        app.player.load(crate::library::load_segments(&collections[0]).unwrap(), 0.0);
+        app.export.open = true;
+        let _ = app.export_update(super::ExportMsg::AddZone);
+        let before = app.export.editing.as_ref().unwrap().points.clone();
+        use iced::mouse::{Button, Event as M};
+        let at = |x: f32, y: f32| iced::Event::Mouse(M::CursorMoved { position: iced::Point::new(x, y) });
+        // Frames are drawn between events, as in the app.
+        let redraw = || iced::Event::Window(iced::window::Event::RedrawRequested(std::time::Instant::now()));
+        let click = |x: f32, y: f32| vec![redraw(), at(x, y), redraw(), iced::Event::Mouse(M::ButtonPressed(Button::Left)), redraw(), iced::Event::Mouse(M::ButtonReleased(Button::Left)), redraw()];
+        let mut steps = vec![redraw(), redraw()];
+        for (x, y) in [(300.0, 600.0), (420.0, 560.0), (520.0, 640.0), (430.0, 670.0), (301.0, 601.0)] {
+            steps.extend(click(x, y));
+        }
+        let mut painter = crate::export::overlay::Painter::new().unwrap();
+        let seen = std::cell::RefCell::new(Vec::new());
+        painter.run(
+            &mut app,
+            |a| a.view(),
+            |a, m| {
+                seen.borrow_mut().push(format!("{m:?}").chars().take(70).collect::<String>());
+                let _ = a.update(m);
+            },
+            size,
+            &steps,
+        );
+        let after = app.export.editing.as_ref().map(|e| e.points.clone());
+        eprintln!("messages: {:#?}", seen.borrow());
+        eprintln!("before {before:?}\nafter {after:?}");
+        let _ = std::fs::remove_dir_all(&home);
+        assert!(!seen.borrow().is_empty() && after.as_ref().is_some_and(|p| p[0].1 > 0.6), "clicking corners in the app made no zone");
     }
 
     #[test]

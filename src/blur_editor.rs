@@ -56,6 +56,10 @@ pub struct Editor<'a, M> {
     pub aspect: f32,
     pub points: &'a [(f32, f32)],
     pub on_change: fn(Vec<(f32, f32)>) -> M,
+    /// A new zone being placed corner by corner (kept by the app, so each
+    /// click is a message and is drawn at once).
+    pub placing: &'a [(f32, f32)],
+    pub on_place: fn(Vec<(f32, f32)>) -> M,
 }
 
 #[derive(Default)]
@@ -70,9 +74,7 @@ pub struct State {
     /// draws a rectangle (`dragged`); a click starts placing corners.
     drawing: Option<Point>,
     dragged: bool,
-    /// A new zone being placed corner by corner, and the pointer (for the
-    /// line to the next corner).
-    placing: Vec<Point>,
+    /// The pointer, for the line to the next corner while placing.
     pointer: Option<Point>,
 }
 
@@ -82,6 +84,11 @@ impl<M> Editor<'_, M> {
         let aspect = self.snapshot.map(|s| s.width as f32 / s.height.max(1) as f32).unwrap_or(self.aspect);
         let (w, h) = if bounds.width / bounds.height > aspect { (bounds.height * aspect, bounds.height) } else { (bounds.width, bounds.width / aspect) };
         Rectangle::new(Point::new((bounds.width - w) / 2.0, (bounds.height - h) / 2.0), Size::new(w, h))
+    }
+
+    /// The corners placed so far, on the picture.
+    fn placed(&self, pic: Rectangle) -> Vec<Point> {
+        self.placing.iter().map(|(x, y)| Point::new(pic.x + x * pic.width, pic.y + y * pic.height)).collect()
     }
 
     fn corners(&self, pic: Rectangle) -> Vec<Point> {
@@ -140,19 +147,21 @@ impl<M> canvas::Program<M> for Editor<'_, M> {
                 // A double-click on a corner removes it.
                 let double = state.last_click.is_some_and(|(t, q)| t.elapsed().as_millis() < 400 && q.distance(p) < 6.0);
                 state.last_click = Some((std::time::Instant::now(), p));
+                log::info!("zone editor: press at {:.0},{:.0} (picture {:.0}x{:.0} at {:.0},{:.0}; {} corner(s) placed)", p.x, p.y, pic.width, pic.height, pic.x, pic.y, self.placing.len());
                 // Placing a new zone: each click a corner; the first corner
                 // again (or a double-click) finishes it.
-                if !state.placing.is_empty() {
+                if !self.placing.is_empty() {
+                    let mut placing = self.placed(pic);
                     let q = Point::new(p.x.clamp(pic.x, pic.x + pic.width), p.y.clamp(pic.y, pic.y + pic.height));
-                    let closing = state.placing.len() >= 3 && (state.placing[0].distance(q) < GRAB + 4.0 || double);
+                    let closing = placing.len() >= 3 && (placing[0].distance(q) < GRAB + 4.0 || double);
                     if closing {
-                        let done = std::mem::take(&mut state.placing);
-                        return Some(canvas::Action::publish((self.on_change)(Self::to_points(pic, &done))).and_capture());
+                        return Some(canvas::Action::publish((self.on_change)(Self::to_points(pic, &placing))).and_capture());
                     }
-                    if !double {
-                        state.placing.push(q);
+                    if double {
+                        return Some(canvas::Action::capture());
                     }
-                    return Some(canvas::Action::request_redraw().and_capture());
+                    placing.push(q);
+                    return Some(canvas::Action::publish((self.on_place)(Self::to_points(pic, &placing))).and_capture());
                 }
                 if let Some(i) = corners.iter().position(|c| c.distance(p) < GRAB + 2.0) {
                     if double && corners.len() > 3 {
@@ -187,7 +196,7 @@ impl<M> canvas::Program<M> for Editor<'_, M> {
             canvas::Event::Mouse(mouse::Event::CursorMoved { .. }) => {
                 // Dragging carries on outside the picture, kept inside it.
                 let p = cursor.position_from(bounds.position())?;
-                if !state.placing.is_empty() {
+                if !self.placing.is_empty() {
                     state.pointer = Some(p);
                     return Some(canvas::Action::request_redraw());
                 }
@@ -239,18 +248,17 @@ impl<M> canvas::Program<M> for Editor<'_, M> {
                 // new zone.
                 if let Some(start) = state.drawing.take() {
                     if !state.dragged {
-                        state.placing = vec![start];
                         state.pointer = Some(start);
+                        return Some(canvas::Action::publish((self.on_place)(Self::to_points(pic, &[start]))).and_capture());
                     }
-                    return Some(canvas::Action::request_redraw().and_capture());
+                    return Some(canvas::Action::capture());
                 }
                 let was = state.corner.take().is_some() | state.zone.take().is_some();
                 was.then(canvas::Action::capture)
             }
             // Escape drops a zone being placed (and only that).
-            canvas::Event::Keyboard(iced::keyboard::Event::KeyPressed { key: iced::keyboard::Key::Named(iced::keyboard::key::Named::Escape), .. }) if !state.placing.is_empty() => {
-                state.placing.clear();
-                Some(canvas::Action::request_redraw().and_capture())
+            canvas::Event::Keyboard(iced::keyboard::Event::KeyPressed { key: iced::keyboard::Key::Named(iced::keyboard::key::Named::Escape), .. }) if !self.placing.is_empty() => {
+                Some(canvas::Action::publish((self.on_place)(Vec::new())).and_capture())
             }
             _ => None,
         }
@@ -264,7 +272,7 @@ impl<M> canvas::Program<M> for Editor<'_, M> {
             None => frame.fill_rectangle(pic.position(), pic.size(), Color::from_rgb8(20, 22, 26)),
         }
         let corners = self.corners(pic);
-        let placing = !state.placing.is_empty();
+        let placing = !self.placing.is_empty();
         if corners.len() >= 3 && !placing {
             let path = Path::new(|b| {
                 b.move_to(corners[0]);
@@ -278,7 +286,7 @@ impl<M> canvas::Program<M> for Editor<'_, M> {
         }
         if placing {
             // The corners so far, joined, and a line on to the pointer.
-            let pts = &state.placing;
+            let pts = &self.placed(pic);
             let mut line = pts.clone();
             if let Some(p) = state.pointer {
                 line.push(p);
@@ -314,7 +322,7 @@ impl<M> canvas::Program<M> for Editor<'_, M> {
         if state.corner.is_some() || state.zone.is_some() {
             return mouse::Interaction::Grabbing;
         }
-        if state.drawing.is_some() || !state.placing.is_empty() {
+        if state.drawing.is_some() || !self.placing.is_empty() {
             return mouse::Interaction::Crosshair;
         }
         let Some(p) = cursor.position_in(bounds) else { return mouse::Interaction::default() };

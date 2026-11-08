@@ -1,6 +1,41 @@
 {
   "versions": [
     {
+      "version": "2026.45.41",
+      "date": "2026-11-08",
+      "title": "Export",
+      "changes": [
+        {
+          "type": "feature",
+          "description": "Export Video is back, and faster."
+        },
+        {
+          "type": "feature",
+          "description": "See a live preview of your export, and drag the dashboard and map where you want them."
+        },
+        {
+          "type": "feature",
+          "description": "Blur out license plates and other details before you export."
+        },
+        {
+          "type": "improvement",
+          "description": "Exports look sharper, and the dashboard looks like it does in playback."
+        },
+        {
+          "type": "improvement",
+          "description": "Frosted-glass windows, with a solid option in Settings."
+        },
+        {
+          "type": "feature",
+          "description": "Linux on ARM is supported."
+        },
+        {
+          "type": "note",
+          "description": "Still to come: the advanced editor, the Footage Converter and clip sharing."
+        }
+      ]
+    },
+    {
       "version": "2026.45.40",
       "date": "2026-11-07",
       "title": "Native Studio",

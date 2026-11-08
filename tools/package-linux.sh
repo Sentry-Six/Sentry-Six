@@ -55,7 +55,7 @@ Run ./sentry-studio from this folder (or pass a TeslaCam folder: ./sentry-studio
 
 Video decoding uses GStreamer from your distribution. Install it with:
   Arch, CachyOS, Manjaro:  sudo pacman -S --needed gstreamer gst-plugins-base gst-plugins-good gst-plugins-bad gst-plugin-va gst-libav
-  Debian, Ubuntu, Mint:    sudo apt install gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-libav
+  Debian, Ubuntu, Mint:    sudo apt install gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly gstreamer1.0-libav
   Fedora:                  sudo dnf install gstreamer1-plugins-base gstreamer1-plugins-good gstreamer1-plugins-bad-free gstreamer1-plugin-libav
 The GPU is used when GStreamer has a hardware decoder for it (VA-API on Intel and AMD,
 NVDEC on NVIDIA); otherwise video is decoded on the CPU. Running from a terminal shows which.
@@ -87,7 +87,7 @@ Architecture: $DEB_ARCH
 Maintainer: Sentry-Six <noreply@sentry-six.com>
 Installed-Size: $SIZE_KB
 Depends: libc6 (>= 2.28), libgstreamer1.0-0, libgstreamer-plugins-base1.0-0, gstreamer1.0-plugins-base, gstreamer1.0-plugins-good, gstreamer1.0-plugins-bad, gstreamer1.0-libav, libxkbcommon0, libxkbcommon-x11-0, libvulkan1 | libegl1
-Recommends: mesa-va-drivers | intel-media-va-driver | va-driver-all, mesa-vulkan-drivers
+Recommends: mesa-va-drivers | intel-media-va-driver | va-driver-all, mesa-vulkan-drivers, gstreamer1.0-plugins-ugly
 Section: video
 Priority: optional
 Homepage: https://github.com/Sentry-Six/Sentry-Six

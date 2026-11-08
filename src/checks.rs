@@ -632,9 +632,11 @@ pub fn export_check(dir: &std::path::Path, quality: Option<&str>, speed: Option<
             format: std::env::var("SENTRY_EXPORT_FORMAT").ok().and_then(|f| crate::export::encode::Format::from_key(&f)),
             speed: speed.unwrap_or(1.0),
             mirror: true,
-            fast: true,
+            // SENTRY_EXPORT_FAST=0: the encoder's normal (quality) mode.
+            fast: std::env::var("SENTRY_EXPORT_FAST").map_or(true, |v| v != "0"),
             // The dashboard with SENTRY_EXPORT_DASHBOARD=1, else the timestamp.
-            timestamp: (!dashboard).then_some(crate::export::overlay::Timestamp {
+            // SENTRY_EXPORT_TIMESTAMP=0: none.
+            timestamp: (!dashboard && std::env::var("SENTRY_EXPORT_TIMESTAMP").map_or(true, |v| v != "0")).then_some(crate::export::overlay::Timestamp {
                 corner: crate::export::overlay::Corner::BottomCenter,
                 date_format: crate::settings::DateFormat::Ymd,
                 h24: false,

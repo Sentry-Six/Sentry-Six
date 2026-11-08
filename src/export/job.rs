@@ -139,16 +139,28 @@ pub fn cell_size(base: (u32, u32), quality: Quality, front_only: bool) -> (u32, 
     (make_even(base.0 as f64 * factor), make_even(base.1 as f64 * factor))
 }
 
-/// The rate in bits/s for a frame whose longer side is `widest`.
-/// Earlier versions' rate (8 Mbit/s at quality 18, less for lower
-/// qualities, whatever the size) is H.264's; HEVC and AV1 get their
-/// share of it for about the same picture. Past 4096, where earlier
-/// versions switched to HEVC at that rate, it is HEVC's instead.
-pub fn bitrate(quality: Quality, front_only: bool, format: Format, widest: u32) -> u64 {
+/// Bits per pixel that keep about the car's own quality, in H.264: Tesla
+/// records a side camera at about 5.3 Mbit/s (1448x938 at 36 fps, 0.108)
+/// and the front at about 10.3 (2896x1876, 0.053). High takes a little
+/// less (85%) for smaller files.
+fn bits_per_pixel(quality: Quality, front_only: bool) -> f64 {
+    let tesla = if front_only { 0.053 } else { 0.108 };
+    match quality {
+        Quality::High => tesla * 0.85,
+        _ => tesla,
+    }
+}
+
+/// The rate in bits/s for a `width` x `height` export: the car's quality
+/// for that many pixels (bits_per_pixel), and never less than earlier
+/// versions' rate (8 Mbit/s at quality 18, less for lower qualities,
+/// whatever the size). That is H.264's; HEVC and AV1 get their share of
+/// it for about the same picture.
+pub fn bitrate(quality: Quality, front_only: bool, format: Format, width: u32, height: u32) -> u64 {
     let (_, crf) = quality.factor_and_crf(front_only);
-    let earlier = 8000.0 * (1.0 - (crf as f64 - 18.0) * 0.03).max(0.3);
-    let reference = if widest > Format::H264.max_side() { Format::Hevc.rate_share() } else { 1.0 };
-    (earlier * format.rate_share() / reference).round() as u64 * 1000
+    let earlier = 8_000_000.0 * (1.0 - (crf as f64 - 18.0) * 0.03).max(0.3);
+    let matched = bits_per_pixel(quality, front_only) * width as f64 * height as f64 * FPS as f64;
+    ((earlier.max(matched) * format.rate_share()) / 1000.0).round() as u64 * 1000
 }
 
 fn make_even(n: f64) -> u32 {
@@ -252,7 +264,9 @@ pub fn plan(req: &Request) -> Result<Plan> {
         None if widest <= Format::Hevc.max_side() => Format::Hevc,
         None => bail!("The layout is too big to export ({width}×{height}); the most is 8192 on a side."),
     };
-    Ok(Plan { cell, width, height, codec, bitrate: bitrate(req.quality, front_only, codec, widest), video_top, date_bar, data_bar, frames })
+    // SENTRY_EXPORT_KBPS: a rate of its own (for comparing quality).
+    let rate = std::env::var("SENTRY_EXPORT_KBPS").ok().and_then(|k| k.parse::<u64>().ok()).map(|k| k * 1000).unwrap_or_else(|| bitrate(req.quality, front_only, codec, width, height));
+    Ok(Plan { cell, width, height, codec, bitrate: rate, video_top, date_bar, data_bar, frames })
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -756,6 +770,24 @@ fn encode_all(
         _ => bail!("the encoder and the MP4 writer disagree about who writes the file"),
     }
     Ok(true)
+}
+
+#[cfg(test)]
+mod rate_tests {
+    use super::*;
+
+    #[test]
+    fn rates_follow_the_cars_quality() {
+        let mbit = |q, f, w, h| bitrate(q, false, f, w, h) as f64 / 1e6;
+        // Six cameras: Mobile keeps earlier versions' rate (above the car's).
+        assert!((mbit(Quality::Mobile, Format::H264, 1740, 752) - 5.84).abs() < 0.01);
+        assert!((mbit(Quality::Medium, Format::H264, 2172, 940) - 7.94).abs() < 0.05);
+        assert!((mbit(Quality::High, Format::H264, 3258, 1408) - 15.16).abs() < 0.05);
+        assert!((mbit(Quality::High, Format::Hevc, 3258, 1408) - 15.16).abs() < 0.05);
+        assert!((mbit(Quality::Max, Format::Hevc, 4344, 1876) - 31.69).abs() < 0.05);
+        // The front camera alone at full size: the car's own 10.4 Mbit/s.
+        assert!((bitrate(Quality::Max, true, Format::H264, 2896, 1876) as f64 / 1e6 - 10.37).abs() < 0.05);
+    }
 }
 
 #[cfg(all(test, target_os = "macos"))]

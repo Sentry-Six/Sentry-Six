@@ -8,7 +8,7 @@
 pub enum Format {
     /// Plays everywhere.
     H264,
-    /// About a third smaller for the same picture; most devices play it.
+    /// H.265: exports faster on a Mac; most devices play it.
     Hevc,
     /// Smaller again; newer devices only, and only GPUs from about 2022
     /// encode it.
@@ -47,11 +47,14 @@ impl Format {
         }
     }
 
-    /// Its bitrate for about the same picture as H.264 at 1.
+    /// Its bitrate against H.264's. HEVC gets the same: Apple's hardware
+    /// encoder, without B-frames and in speed mode, makes HEVC no smaller
+    /// than H.264 for the same picture (measured on a drive: equal rates,
+    /// equal quality), so it buys speed rather than size. AV1's share is
+    /// the usual one, untested on hardware that encodes it.
     pub fn rate_share(self) -> f64 {
         match self {
-            Format::H264 => 1.0,
-            Format::Hevc => 0.65,
+            Format::H264 | Format::Hevc => 1.0,
             Format::Av1 => 0.55,
         }
     }
