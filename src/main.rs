@@ -340,6 +340,7 @@ pub(crate) enum Message {
     /// The window (from the Settings overlay) and the Settings dialog.
     OverlaySized(Size),
     DialogSized(Size),
+    SettingsSized(Size),
     /// Opens the OS's own popup menu for the speed or the date.
     SpeedMenu,
     DayMenu,
@@ -577,6 +578,8 @@ struct App {
     metric_override: Option<bool>,
     overlay_size: Option<Size>,
     dialog_size: Option<Size>,
+    /// Settings' size (other dialogs can open over it).
+    settings_size: Option<Size>,
 }
 
 impl App {
@@ -657,6 +660,7 @@ impl App {
             metric_override: None,
             overlay_size: None,
             dialog_size: None,
+            settings_size: None,
             places: settings::data_dir().map(|dir| {
                 let seeds: Vec<PathBuf> = settings::sentry_drive_caches();
                 geocode::Geocoder::new(dir.join("place-names.json"), &seeds)
@@ -869,6 +873,7 @@ impl App {
             Message::PanelSized(size) => self.panel_size = Some(size),
             Message::OverlaySized(size) => self.overlay_size = Some(size),
             Message::DialogSized(size) => self.dialog_size = Some(size),
+            Message::SettingsSized(size) => self.settings_size = Some(size),
             Message::CameraDragTo(slot, at) => {
                 if self.focus.is_none() {
                     self.camera_drag = Some((slot, at));
@@ -1435,12 +1440,20 @@ impl App {
         self.settings_open || self.export.open || self.delete_confirm.is_some() || self.privacy_pending() || self.update.is_some() || self.prerelease_question || self.changelog.is_some()
     }
 
-    /// The open dialog's rectangle, for frosting the video under it.
+    /// Whether the open dialog covers the clip panel.
+    fn panel_under_dialog(&self) -> bool {
+        let panel = self.panel_size.map(|s| Rectangle::new(iced::Point::new(PANEL_X, PANEL_Y), s));
+        self.dialog_rect().zip(panel).is_some_and(|(d, p)| d.intersects(&p))
+    }
+
+    /// The open dialog's rectangle, for frosting the video under it. With
+    /// Settings open it's Settings' (a dialog over Settings is solid).
     fn dialog_rect(&self) -> Option<Rectangle> {
         if !self.dialog_open() {
             return None;
         }
-        let (w, d) = (self.overlay_size.or(self.window_size)?, self.dialog_size?);
+        let size = if self.settings_open { self.settings_size } else { self.dialog_size };
+        let (w, d) = (self.overlay_size.or(self.window_size)?, size?);
         Some(Rectangle { x: (w.width - d.width) / 2.0, y: (w.height - d.height) / 2.0, width: d.width, height: d.height })
     }
 
@@ -2079,7 +2092,11 @@ impl App {
             .align_x(Alignment::Center);
             stage = stage.push(mouse_area(container(prompt).center(Length::Fill).style(theme::overlay(0.55))).on_press(Message::OpenFolder));
         }
-        stage = stage.push(floating);
+        // Under a dialog the panel steps aside: the dialog frosts the video,
+        // but iced can't frost the panel's text, which would show through.
+        if !self.panel_under_dialog() {
+            stage = stage.push(floating);
+        }
         if self.file_hover {
             stage = stage.push(
                 container(
@@ -2177,16 +2194,21 @@ impl App {
             app = app.push(overlay);
         }
         if self.settings_open {
-            let overlay = sensor(settings_view::view(&self.settings, &self.settings_ui, &self.shortcuts, Message::DialogSized))
+            let overlay = sensor(settings_view::view(&self.settings, &self.settings_ui, &self.shortcuts, Message::SettingsSized))
                 .on_show(Message::OverlaySized)
                 .on_resize(Message::OverlaySized);
             app = stack![app, overlay];
         }
         if self.prerelease_question {
+            // Over Settings these are solid: what's under them is Settings'
+            // text, which can't be frosted.
+            theme::set_stacked(self.settings_open);
             app = app.push(update_view::prerelease_question());
         } else if let Some(notes) = &self.changelog {
+            theme::set_stacked(self.settings_open);
             app = app.push(update_view::changelog(notes));
         } else if let Some(dialog) = &self.update {
+            theme::set_stacked(self.settings_open);
             app = app.push(update_view::view(dialog, self.update_progress.load(std::sync::atomic::Ordering::Relaxed)));
         }
         app.into()
@@ -2498,7 +2520,7 @@ impl App {
             // The player's tile for this camera (its tiles follow GRID).
             let idx = GRID.iter().position(|c| *c == camera).unwrap_or(slot);
             let picture = self.player.shown(idx).map(|s| (s.id, s.frame.clone()));
-            let glass = self.panel_size.map(|size| video::Glass {
+            let glass = self.panel_size.filter(|_| !self.panel_under_dialog()).map(|size| video::Glass {
                 rect: Rectangle::new(iced::Point::new(PANEL_X, PANEL_Y), size),
                 radius: if self.panel_open { PANEL_RADIUS } else { COLLAPSED_RADIUS },
                 blur: self.settings.glass_blur,
@@ -2663,7 +2685,17 @@ impl App {
             row![
                 text(hms(position)).font(MONO).size(13),
                 text("/").font(MONO).size(13).color(theme::TEXT_MUTED),
-                text(hms(if has_media { total } else { 0.0 })).font(MONO).size(13),
+                // Not shown while the minutes' lengths are still coming in:
+                // it would keep changing.
+                text(if !has_media {
+                    hms(0.0)
+                } else if self.player.total_known() {
+                    hms(total)
+                } else {
+                    "–:––".to_string()
+                })
+                .font(MONO)
+                .size(13),
             ]
             .spacing(4),
         )

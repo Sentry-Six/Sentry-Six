@@ -475,6 +475,8 @@ pub struct Player {
     lengths: Option<Receiver<(usize, f64)>>,
     /// Stops the running length reader when another collection loads.
     lengths_cancel: Arc<std::sync::atomic::AtomicBool>,
+    /// The length reader has finished.
+    lengths_done: bool,
     /// Tells the length reader to hold off (see `read_lengths`).
     busy: Arc<std::sync::atomic::AtomicBool>,
     /// When a camera last held the clock back.
@@ -504,11 +506,86 @@ pub struct Player {
 /// way: one file at a time, and none at all while `busy` is set (a clip
 /// opening, a seek, or a camera waiting for data). On a network share a
 /// burst of index reads made playback stutter for the first 15-30 s.
+/// Clip lengths remembered between runs (clip-lengths.json in the data
+/// folder), so a day opened before shows its full length at once. Each is
+/// kept with the file's size and modification time and used only while
+/// those still match.
+mod length_cache {
+    use std::collections::HashMap;
+    use std::path::{Path, PathBuf};
+    use std::sync::{Mutex, OnceLock};
+
+    type Entry = (u64, i64, f64);
+
+    fn file() -> Option<PathBuf> {
+        crate::settings::data_dir().map(|d| d.join("clip-lengths.json"))
+    }
+
+    fn cache() -> &'static Mutex<(HashMap<String, Entry>, bool)> {
+        static CACHE: OnceLock<Mutex<(HashMap<String, Entry>, bool)>> = OnceLock::new();
+        CACHE.get_or_init(|| {
+            let map = file().and_then(|f| std::fs::read(f).ok()).and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default();
+            Mutex::new((map, false))
+        })
+    }
+
+    fn stamp(path: &Path) -> Option<(u64, i64)> {
+        let meta = std::fs::metadata(path).ok()?;
+        let modified = meta.modified().ok()?.duration_since(std::time::UNIX_EPOCH).ok()?.as_secs() as i64;
+        Some((meta.len(), modified))
+    }
+
+    /// The remembered length, without looking at the file (no disk or
+    /// network access: for the UI thread). The length reader checks it.
+    pub fn remembered(path: &Path) -> Option<f64> {
+        let c = cache().lock().unwrap_or_else(|e| e.into_inner());
+        c.0.get(&path.to_string_lossy().into_owned()).map(|(_, _, d)| *d)
+    }
+
+    /// The remembered length, if the file is unchanged (reads its size and
+    /// time: slow on a network share, so off the UI thread only).
+    pub fn get(path: &Path) -> Option<f64> {
+        let (size, modified) = stamp(path)?;
+        let c = cache().lock().unwrap_or_else(|e| e.into_inner());
+        c.0.get(&path.to_string_lossy().into_owned()).filter(|(s, m, _)| *s == size && *m == modified).map(|(_, _, d)| *d)
+    }
+
+    pub fn put(path: &Path, length: f64) {
+        let Some((size, modified)) = stamp(path) else { return };
+        let mut c = cache().lock().unwrap_or_else(|e| e.into_inner());
+        c.0.insert(path.to_string_lossy().into_owned(), (size, modified, length));
+        c.1 = true;
+    }
+
+    /// Writes what's new (at most 200,000 clips are kept).
+    pub fn save() {
+        let mut c = cache().lock().unwrap_or_else(|e| e.into_inner());
+        if !c.1 {
+            return;
+        }
+        if c.0.len() > 200_000 {
+            c.0.clear();
+        }
+        c.1 = false;
+        if let (Some(f), Ok(bytes)) = (file(), serde_json::to_vec(&c.0)) {
+            let tmp = f.with_extension("json.tmp");
+            if std::fs::write(&tmp, bytes).is_ok() {
+                let _ = std::fs::rename(&tmp, &f);
+            }
+        }
+    }
+}
+
+/// The clip a minute's length is read from: its front camera's, or any.
+fn length_clip(s: &Segment) -> Option<&PathBuf> {
+    s.files.get(&Camera::Front).or_else(|| s.files.values().next())
+}
+
 fn read_lengths(segments: &[Segment], tx: Sender<(usize, f64)>, busy: Arc<std::sync::atomic::AtomicBool>, cancel: Arc<std::sync::atomic::AtomicBool>) {
     let paths: Vec<(usize, PathBuf)> = segments
         .iter()
         .enumerate()
-        .filter_map(|(i, s)| s.files.get(&Camera::Front).or_else(|| s.files.values().next()).map(|p| (i, p.clone())))
+        .filter_map(|(i, s)| length_clip(s).map(|p| (i, p.clone())))
         .collect();
     let cancelled = || cancel.load(std::sync::atomic::Ordering::Relaxed);
     for (i, path) in &paths {
@@ -518,15 +595,22 @@ fn read_lengths(segments: &[Segment], tx: Sender<(usize, f64)>, busy: Arc<std::s
         if cancelled() {
             return;
         }
+        // Remembered and unchanged: already in (Player::load).
+        if length_cache::get(path).is_some() {
+            continue;
+        }
         let began = Instant::now();
         let length = std::fs::File::open(path).ok().and_then(|f| read_video_track(&f).ok()).map(|t| t.duration);
         crate::trace::trace!("length of segment {i}: {:.0} ms", began.elapsed().as_secs_f64() * 1000.0);
         if let Some(d) = length.filter(|d| *d > 0.0) {
+            length_cache::put(path, d);
             if tx.send((*i, d)).is_err() {
+                length_cache::save();
                 return;
             }
         }
     }
+    length_cache::save();
 }
 
 impl Player {
@@ -566,6 +650,7 @@ impl Player {
             pending: false,
             queued_seek: None,
             lengths: None,
+            lengths_done: false,
             lengths_cancel: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             pending_since: None,
             last_tick: None,
@@ -583,7 +668,13 @@ impl Player {
     pub fn load(&mut self, segments: Vec<Segment>, start: f64) {
         self.queued_seek = None;
         self.pending = false;
-        self.durations = vec![DEFAULT_SEGMENT; segments.len()];
+        // Lengths remembered from before go in at once, without touching the
+        // files (each would be a round trip on a network share); the reader
+        // checks them and reads the rest. All remembered: the total is
+        // known now.
+        let remembered: Vec<Option<f64>> = segments.iter().map(|s| length_clip(s).and_then(|p| length_cache::remembered(p))).collect();
+        self.lengths_done = remembered.iter().all(Option::is_some);
+        self.durations = remembered.into_iter().map(|d| d.unwrap_or(DEFAULT_SEGMENT)).collect();
         let (tx, rx) = channel();
         let list = segments.clone();
         std::thread::Builder::new()
@@ -743,11 +834,20 @@ impl Player {
         }
         // Real lengths of the other minutes as they come in.
         if let Some(rx) = &self.lengths {
-            while let Ok((i, d)) = rx.try_recv() {
-                if i != self.segment {
-                    if let Some(slot) = self.durations.get_mut(i) {
-                        *slot = d;
+            loop {
+                match rx.try_recv() {
+                    Ok((i, d)) => {
+                        if i != self.segment {
+                            if let Some(slot) = self.durations.get_mut(i) {
+                                *slot = d;
+                            }
+                        }
                     }
+                    Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                        self.lengths_done = true;
+                        break;
+                    }
+                    Err(std::sync::mpsc::TryRecvError::Empty) => break,
                 }
             }
         }
@@ -1004,6 +1104,12 @@ impl Player {
 
     pub fn total(&self) -> f64 {
         self.durations.iter().sum()
+    }
+
+    /// Whether every minute's real length is in (until then the total
+    /// would change as they arrive).
+    pub fn total_known(&self) -> bool {
+        self.lengths_done
     }
 
     /// Local wall-clock time of what is on screen.

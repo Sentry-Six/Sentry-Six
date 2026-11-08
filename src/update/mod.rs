@@ -353,7 +353,15 @@ pub fn download(asset: &Asset, progress: &AtomicU64) -> Result<PathBuf, String> 
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let path = dir.join(&asset.file);
-    let agent = agent(Duration::from_secs(60 * 60));
+    // An hour for the whole file, but a server that hasn't started to
+    // answer in 30 s (GitHub's release downloads sometimes hang) is an
+    // error the dialog shows, not a bar stuck at 0%.
+    let agent: ureq::Agent = ureq::Agent::config_builder()
+        .timeout_connect(Some(Duration::from_secs(15)))
+        .timeout_recv_response(Some(Duration::from_secs(30)))
+        .timeout_global(Some(Duration::from_secs(60 * 60)))
+        .build()
+        .into();
     let mut resp = match agent.get(&asset.url).header("User-Agent", crate::USER_AGENT).call() {
         Ok(r) => r,
         Err(ureq::Error::StatusCode(code)) => return Err(format!("HTTP {code}")),

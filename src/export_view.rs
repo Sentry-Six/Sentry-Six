@@ -1017,7 +1017,15 @@ impl App {
         .align_y(Alignment::Center);
         let body = column![
             text(format!("{} {}", t("ui.export.blurZoneInstructions"), t("ui.export.blurZoneDraw"))).size(11).color(theme::TEXT_MUTED),
-            iced::widget::canvas(editor).width(Length::Fill).height(520),
+            // The picture underneath, the zone drawn over it (centred and
+            // fitted the same way, so they line up).
+            stack![
+                edit.snapshot.as_ref().map_or_else(
+                    || -> Element<'_, Message> { space().width(Length::Fill).height(520).into() },
+                    |s| iced::widget::image(s.image.clone()).width(Length::Fill).height(520).content_fit(iced::ContentFit::Contain).into(),
+                ),
+                iced::widget::canvas(editor).width(Length::Fill).height(520),
+            ],
         ]
         .spacing(12);
         let footer = row![space().width(Length::Fill), secondary(t("ui.export.cancel"), Some(wrap(ExportMsg::CancelZone))), primary(t("ui.export.saveZone"), Some(wrap(ExportMsg::SaveZone)))]
@@ -1297,7 +1305,10 @@ impl App {
         if widest > 3840 {
             quality = quality.push(info(t("ui.export.over4kWarning").to_string(), theme::WARNING));
         }
-        if multi && chosen.contains(&Camera::Front) {
+        // Only where the front camera is bigger than the others (HW4, not
+        // HW3, where every camera is 1280x960).
+        let front_bigger = e.front_size.zip(e.side_size).is_some_and(|(f, s)| f.0 > s.0);
+        if multi && chosen.contains(&Camera::Front) && front_bigger {
             quality = quality.push(info(t("ui.export.frontCamWarning").to_string(), theme::WARNING));
         }
 
@@ -1381,15 +1392,19 @@ impl App {
         }
         let cam_labels: Vec<String> = available.iter().map(|c| c.label().to_string()).collect();
         let cam_index = available.iter().position(|c| *c == e.zone_camera).unwrap_or(0);
-        privacy = privacy.push(
+        // "Add Blur Zone: pick the camera, then draw the area", with the
+        // camera and the button side by side.
+        privacy = privacy.push(labelled(
+            t("ui.export.addBlurZone"),
+            t("ui.export.blurZonePick"),
             row![
-                container(select(cam_labels, cam_index, !busy, ExportMsg::ZoneCameraMenu, ExportMsg::ZoneCamera)).width(Length::Fill),
+                select(cam_labels, cam_index, !busy, ExportMsg::ZoneCameraMenu, ExportMsg::ZoneCamera),
                 secondary(t("ui.export.addZone"), (!busy && available.contains(&e.zone_camera)).then_some(wrap(ExportMsg::AddZone))),
             ]
             .spacing(8)
-            .align_y(Alignment::Center),
-        );
-        privacy = privacy.push(text(t("ui.export.blurZoneHint")).size(10).color(theme::TEXT_MUTED));
+            .align_y(Alignment::Center)
+            .into(),
+        ));
         for (i, z) in e.zones.iter().enumerate() {
             privacy = privacy.push(
                 container(

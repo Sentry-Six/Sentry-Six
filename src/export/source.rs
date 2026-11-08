@@ -105,6 +105,8 @@ fn open(path: &std::path::Path) -> Result<Clip> {
 
 impl Clip {
     const MAX_ERRORS: u32 = 30;
+    /// Frames decoded past t at most, waiting for a late decoder.
+    const LOOKAHEAD: usize = 32;
 
     fn advance(&mut self, t: f64, decoded: &mut u64) -> Result<Option<Arc<Frame>>> {
         let n = self.track.samples.len();
@@ -125,9 +127,21 @@ impl Clip {
                 self.decoder.reset();
             }
         }
-        // Decode while something from here on is due at or before t.
+        // Decode while something from here on is due at or before t, and
+        // then on until a picture after t has come out: decoders that hand
+        // pictures back a few frames late (GStreamer's, Media Foundation's)
+        // have then given up the one for t too. Without this a preview (one
+        // frame) stays black and each camera of an export runs late.
         let due = (t * scale).floor() as i64;
-        while self.next < n && self.earliest[self.next] <= due {
+        let limit = t + 0.5 / scale;
+        let mut ahead = 0;
+        while self.next < n {
+            if self.earliest[self.next] > due {
+                if ahead >= Self::LOOKAHEAD || self.pending.iter().any(|(at, _)| *at > limit) {
+                    break;
+                }
+                ahead += 1;
+            }
             let s = self.track.samples[self.next];
             let pts = s.pts as f64 / scale;
             let data = self.reader.read(s.offset, s.size as usize)?;
@@ -169,7 +183,6 @@ impl Clip {
         }
         // The latest picture due by t is shown; older ones are done with.
         self.pending.sort_by(|a, b| a.0.total_cmp(&b.0));
-        let limit = t + 0.5 / scale;
         if let Some(last_due) = self.pending.iter().rposition(|(at, _)| *at <= limit) {
             self.shown = Some(self.pending[last_due].1.clone());
             self.pending.drain(..=last_due);

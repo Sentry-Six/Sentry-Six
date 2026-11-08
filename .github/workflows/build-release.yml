@@ -447,7 +447,8 @@ jobs:
       # From crates.io: GitHub's release downloads (which install-action
       # uses) can time out.
       - name: Install cargo-zigbuild
-        run: cargo install --locked cargo-zigbuild --version 0.24.1
+        # The Rust cache can bring it back already installed.
+        run: command -v cargo-zigbuild >/dev/null || cargo install --locked cargo-zigbuild --version 0.24.1
       - name: Set up Rust
         run: rustup target add x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu
 

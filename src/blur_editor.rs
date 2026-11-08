@@ -267,9 +267,11 @@ impl<M> canvas::Program<M> for Editor<'_, M> {
     fn draw(&self, state: &State, renderer: &Renderer, _theme: &Theme, bounds: Rectangle, _cursor: mouse::Cursor) -> Vec<canvas::Geometry> {
         let mut frame = Frame::new(renderer, bounds.size());
         let pic = self.picture(bounds.size());
-        match self.snapshot {
-            Some(s) => frame.draw_image(pic, canvas::Image::new(s.image.clone())),
-            None => frame.fill_rectangle(pic.position(), pic.size(), Color::from_rgb8(20, 22, 26)),
+        // The camera's picture is drawn under the canvas, as an image of its
+        // own (zone_editor): an image drawn in a canvas goes over its shapes
+        // on the GPU renderer and would hide the zone.
+        if self.snapshot.is_none() {
+            frame.fill_rectangle(pic.position(), pic.size(), Color::from_rgb8(20, 22, 26));
         }
         let corners = self.corners(pic);
         let placing = !self.placing.is_empty();

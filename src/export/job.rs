@@ -573,7 +573,9 @@ fn encode_all(
                     Some((mm, fit, compositor.overlay(&blank, None), x, y, route))
                 }
                 Some(fit) => {
-                    mm.fetch_tiles(&fit, std::time::Duration::from_secs(if capture.is_some() { 2 } else { 12 }));
+                    if !mm.fetch_tiles(&fit, std::time::Duration::from_secs(if capture.is_some() { 2 } else { 12 })) {
+                        log::warn!("export: some map tiles didn't arrive in time; the minimap shows what there is");
+                    }
                     let picture = mm.paint_map(p, &route, &fit);
                     let (x, y) = mm.place(side, plan.width, plan.height);
                     log::info!("export: minimap {side} px at zoom {:.1}, {} route points", fit.zoom, route.len());
@@ -592,6 +594,8 @@ fn encode_all(
     let mut arrow: Option<(i32, super::compose::Overlay)> = None;
     // The live map: where it was last drawn (half pixels, degrees).
     let mut live_at: Option<(i64, i64, i32)> = None;
+    let mut tile_wait = std::time::Duration::ZERO;
+    const TILE_WAIT_BUDGET: std::time::Duration = std::time::Duration::from_secs(15);
     let mut last_report = Instant::now();
     for k in 0..total {
         if cancel.load(Ordering::Relaxed) {
@@ -683,8 +687,18 @@ fn encode_all(
                 let key = ((fit.center.0 * world_px).round() as i64, (fit.center.1 * world_px).round() as i64, heading.round() as i32);
                 if live_at != Some(key) {
                     live_at = Some(key);
-                    if mm.tiles_ready(&fit) != Some(true) {
-                        mm.fetch_tiles(&fit, std::time::Duration::from_secs(3));
+                    // Waiting for tiles: 3 s at a time, 15 s for the whole
+                    // export. Offline, or with the tile server down, the
+                    // map then draws with what there is instead of
+                    // waiting at every redraw.
+                    if tile_wait < TILE_WAIT_BUDGET && mm.tiles_ready(&fit) != Some(true) {
+                        let began = Instant::now();
+                        let wait = (TILE_WAIT_BUDGET - tile_wait).min(std::time::Duration::from_secs(3));
+                        let ready = mm.fetch_tiles(&fit, wait);
+                        tile_wait += began.elapsed();
+                        if !ready && tile_wait >= TILE_WAIT_BUDGET {
+                            log::warn!("export: map tiles aren't arriving; the minimap shows what there is from here on");
+                        }
                     }
                     let picture = mm.paint_map_with(p, route, &fit, Some((lat, lon, heading)), side);
                     let old = std::mem::replace(map_overlay, compositor.overlay(&picture, None));

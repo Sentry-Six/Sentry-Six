@@ -364,7 +364,8 @@
     "ui.settings.dialogStyle": "Dialog Style",
     "ui.settings.dialogFrosted": "Frosted",
     "ui.settings.dialogSolid": "Solid",
-    "ui.settings.dialogStyleDesc": "Solid dialogs are easier to read over bright or busy video."
+    "ui.settings.dialogStyleDesc": "Solid dialogs are easier to read over bright or busy video.",
+    "ui.export.blurZonePick": "Choose a camera, then draw the area to blur (a license plate, a face)."
   },
   "es": {
     "app.arrived": "Llegada",
@@ -731,7 +732,8 @@
     "ui.settings.dialogStyle": "Estilo de los diálogos",
     "ui.settings.dialogFrosted": "Esmerilado",
     "ui.settings.dialogSolid": "Sólido",
-    "ui.settings.dialogStyleDesc": "Los diálogos sólidos se leen mejor sobre vídeo brillante o con mucho movimiento."
+    "ui.settings.dialogStyleDesc": "Los diálogos sólidos se leen mejor sobre vídeo brillante o con mucho movimiento.",
+    "ui.export.blurZonePick": "Elige una cámara y dibuja la zona que quieres difuminar (una matrícula, una cara)."
   },
   "fr": {
     "app.arrived": "Arrivée",
@@ -1098,7 +1100,8 @@
     "ui.settings.dialogStyle": "Style des fenêtres",
     "ui.settings.dialogFrosted": "Givré",
     "ui.settings.dialogSolid": "Opaque",
-    "ui.settings.dialogStyleDesc": "Les fenêtres opaques sont plus lisibles sur une vidéo claire ou chargée."
+    "ui.settings.dialogStyleDesc": "Les fenêtres opaques sont plus lisibles sur une vidéo claire ou chargée.",
+    "ui.export.blurZonePick": "Choisissez une caméra, puis dessinez la zone à flouter (une plaque, un visage)."
   },
   "de": {
     "app.arrived": "Ankunft",
@@ -1465,7 +1468,8 @@
     "ui.settings.dialogStyle": "Dialogstil",
     "ui.settings.dialogFrosted": "Milchglas",
     "ui.settings.dialogSolid": "Deckend",
-    "ui.settings.dialogStyleDesc": "Deckende Dialoge sind über hellem oder unruhigem Video leichter zu lesen."
+    "ui.settings.dialogStyleDesc": "Deckende Dialoge sind über hellem oder unruhigem Video leichter zu lesen.",
+    "ui.export.blurZonePick": "Wähle eine Kamera und zeichne dann den Bereich, der verwischt werden soll (ein Kennzeichen, ein Gesicht)."
   },
   "zh": {
     "app.arrived": "到达",
@@ -1832,7 +1836,8 @@
     "ui.settings.dialogStyle": "对话框样式",
     "ui.settings.dialogFrosted": "磨砂",
     "ui.settings.dialogSolid": "实色",
-    "ui.settings.dialogStyleDesc": "实色对话框在明亮或画面繁杂的视频上更易阅读。"
+    "ui.settings.dialogStyleDesc": "实色对话框在明亮或画面繁杂的视频上更易阅读。",
+    "ui.export.blurZonePick": "选择一个摄像头，然后画出要模糊的区域（车牌、人脸等）。"
   },
   "ja": {
     "app.arrived": "到着",
@@ -2199,7 +2204,8 @@
     "ui.settings.dialogStyle": "ダイアログのスタイル",
     "ui.settings.dialogFrosted": "すりガラス",
     "ui.settings.dialogSolid": "不透明",
-    "ui.settings.dialogStyleDesc": "不透明なダイアログは、明るい映像や動きの多い映像の上でも読みやすくなります。"
+    "ui.settings.dialogStyleDesc": "不透明なダイアログは、明るい映像や動きの多い映像の上でも読みやすくなります。",
+    "ui.export.blurZonePick": "カメラを選び、ぼかしたい範囲（ナンバープレートや顔など）を描きます。"
   },
   "ko": {
     "app.arrived": "도착",
@@ -2566,7 +2572,8 @@
     "ui.settings.dialogStyle": "대화 상자 스타일",
     "ui.settings.dialogFrosted": "반투명",
     "ui.settings.dialogSolid": "불투명",
-    "ui.settings.dialogStyleDesc": "불투명한 대화 상자는 밝거나 복잡한 영상 위에서 더 읽기 쉽습니다."
+    "ui.settings.dialogStyleDesc": "불투명한 대화 상자는 밝거나 복잡한 영상 위에서 더 읽기 쉽습니다.",
+    "ui.export.blurZonePick": "카메라를 고른 뒤 흐리게 할 영역(번호판, 얼굴 등)을 그리세요."
   },
   "pt": {
     "app.arrived": "Chegada",
@@ -2933,7 +2940,8 @@
     "ui.settings.dialogStyle": "Estilo das caixas de diálogo",
     "ui.settings.dialogFrosted": "Fosco",
     "ui.settings.dialogSolid": "Sólido",
-    "ui.settings.dialogStyleDesc": "As caixas sólidas leem-se melhor sobre vídeo claro ou com muito movimento."
+    "ui.settings.dialogStyleDesc": "As caixas sólidas leem-se melhor sobre vídeo claro ou com muito movimento.",
+    "ui.export.blurZonePick": "Escolha uma câmara e desenhe a zona a desfocar (uma matrícula, um rosto)."
   },
   "ru": {
     "app.arrived": "Прибытие",
@@ -3300,7 +3308,8 @@
     "ui.settings.dialogStyle": "Стиль окон",
     "ui.settings.dialogFrosted": "Матовое стекло",
     "ui.settings.dialogSolid": "Сплошной",
-    "ui.settings.dialogStyleDesc": "Сплошные окна легче читать поверх яркого или пёстрого видео."
+    "ui.settings.dialogStyleDesc": "Сплошные окна легче читать поверх яркого или пёстрого видео.",
+    "ui.export.blurZonePick": "Выберите камеру и нарисуйте область, которую нужно размыть (номер, лицо)."
   },
   "it": {
     "app.arrived": "Arrivo",
@@ -3667,7 +3676,8 @@
     "ui.settings.dialogStyle": "Stile delle finestre",
     "ui.settings.dialogFrosted": "Satinato",
     "ui.settings.dialogSolid": "Pieno",
-    "ui.settings.dialogStyleDesc": "Le finestre piene si leggono meglio sopra video luminosi o movimentati."
+    "ui.settings.dialogStyleDesc": "Le finestre piene si leggono meglio sopra video luminosi o movimentati.",
+    "ui.export.blurZonePick": "Scegli una telecamera, poi disegna l'area da sfocare (una targa, un volto)."
   },
   "nl": {
     "app.arrived": "Aankomst",
@@ -4034,7 +4044,8 @@
     "ui.settings.dialogStyle": "Stijl van vensters",
     "ui.settings.dialogFrosted": "Mat glas",
     "ui.settings.dialogSolid": "Effen",
-    "ui.settings.dialogStyleDesc": "Effen vensters zijn beter leesbaar boven felle of drukke video."
+    "ui.settings.dialogStyleDesc": "Effen vensters zijn beter leesbaar boven felle of drukke video.",
+    "ui.export.blurZonePick": "Kies een camera en teken dan het gebied dat vervaagd moet worden (een kenteken, een gezicht)."
   },
   "pl": {
     "app.arrived": "Przyjazd",
@@ -4401,7 +4412,8 @@
     "ui.settings.dialogStyle": "Styl okien",
     "ui.settings.dialogFrosted": "Matowe szkło",
     "ui.settings.dialogSolid": "Jednolity",
-    "ui.settings.dialogStyleDesc": "Jednolite okna łatwiej czytać na jasnym lub ruchliwym obrazie."
+    "ui.settings.dialogStyleDesc": "Jednolite okna łatwiej czytać na jasnym lub ruchliwym obrazie.",
+    "ui.export.blurZonePick": "Wybierz kamerę, a potem narysuj obszar do rozmycia (tablicę rejestracyjną, twarz)."
   },
   "tr": {
     "app.arrived": "Varış",
@@ -4768,6 +4780,7 @@
     "ui.settings.dialogStyle": "İletişim kutusu stili",
     "ui.settings.dialogFrosted": "Buzlu",
     "ui.settings.dialogSolid": "Düz",
-    "ui.settings.dialogStyleDesc": "Düz iletişim kutuları parlak veya hareketli videonun üzerinde daha kolay okunur."
+    "ui.settings.dialogStyleDesc": "Düz iletişim kutuları parlak veya hareketli videonun üzerinde daha kolay okunur.",
+    "ui.export.blurZonePick": "Bir kamera seçin, ardından bulanıklaştırılacak alanı çizin (plaka, yüz)."
   }
 }

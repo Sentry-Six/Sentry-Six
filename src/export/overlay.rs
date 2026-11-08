@@ -586,16 +586,13 @@ impl Minimap {
     }
 
     /// Asks for the tiles the map needs and waits for them (at most
-    /// `wait`); missing ones are left out.
-    pub fn fetch_tiles(&self, fit: &MapFit, wait: std::time::Duration) {
+    /// `wait`); missing ones are left out. Whether they all came.
+    pub fn fetch_tiles(&self, fit: &MapFit, wait: std::time::Duration) -> bool {
         let deadline = std::time::Instant::now() + wait;
         loop {
-            let ready = self.tiles_ready(fit);
-            if ready == Some(true) || std::time::Instant::now() >= deadline {
-                if ready != Some(true) {
-                    log::warn!("export: some map tiles didn't arrive in time; the minimap shows what there is");
-                }
-                return;
+            let ready = self.tiles_ready(fit) == Some(true);
+            if ready || std::time::Instant::now() >= deadline {
+                return ready;
             }
             std::thread::sleep(std::time::Duration::from_millis(100));
         }

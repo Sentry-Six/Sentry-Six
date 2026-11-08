@@ -181,18 +181,45 @@ pub fn set_solid_dialogs(solid: bool) {
     SOLID_DIALOGS.store(solid, std::sync::atomic::Ordering::Relaxed);
 }
 
+/// A dialog is opening over another (an update prompt over Settings):
+/// what's under it is the other dialog's text, which can't be frosted, so
+/// it's solid (`modal_top`).
+static STACKED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+pub fn set_stacked(stacked: bool) {
+    STACKED.store(stacked, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// A dialog that can open over another: solid when it does.
+pub fn modal_top(theme: &Theme) -> container::Style {
+    if STACKED.load(std::sync::atomic::Ordering::Relaxed) {
+        modal_solid(theme)
+    } else {
+        modal(theme)
+    }
+}
+
+/// The solid dialog surface (graphite).
+fn modal_solid(_: &Theme) -> container::Style {
+    container::Style {
+        background: Some(Background::Gradient(iced::gradient::Linear::new(iced::Degrees(180.0)).add_stop(0.0, rgba(36, 39, 45, 1.0)).add_stop(1.0, rgba(26, 28, 33, 1.0)).into())),
+        border: Border { color: white(0.10), width: 1.0, radius: 24.0.into() },
+        shadow: Shadow { color: black(0.5), offset: Vector::new(0.0, 32.0), blur_radius: 100.0 },
+        text_color: Some(TEXT),
+        ..Default::default()
+    }
+}
+
 /// A dialog: frosted glass (the video under it blurred, see video::Glass),
 /// or with the Dialog Style setting, a solid graphite surface; 24 px
 /// corners, deep shadow.
 pub fn modal(_: &Theme) -> container::Style {
-    let (background, border) = if SOLID_DIALOGS.load(std::sync::atomic::Ordering::Relaxed) {
-        (iced::gradient::Linear::new(iced::Degrees(180.0)).add_stop(0.0, rgba(36, 39, 45, 1.0)).add_stop(1.0, rgba(26, 28, 33, 1.0)), white(0.10))
-    } else {
-        (iced::gradient::Linear::new(iced::Degrees(180.0)).add_stop(0.0, rgba(70, 78, 92, 0.42)).add_stop(1.0, rgba(30, 34, 42, 0.50)), white(0.22))
-    };
+    if SOLID_DIALOGS.load(std::sync::atomic::Ordering::Relaxed) {
+        return modal_solid(&Theme::Dark);
+    }
     container::Style {
-        background: Some(Background::Gradient(background.into())),
-        border: Border { color: border, width: 1.0, radius: 24.0.into() },
+        background: Some(Background::Gradient(iced::gradient::Linear::new(iced::Degrees(180.0)).add_stop(0.0, rgba(70, 78, 92, 0.42)).add_stop(1.0, rgba(30, 34, 42, 0.50)).into())),
+        border: Border { color: white(0.22), width: 1.0, radius: 24.0.into() },
         shadow: Shadow { color: black(0.5), offset: Vector::new(0.0, 32.0), blur_radius: 100.0 },
         text_color: Some(TEXT),
         ..Default::default()
