@@ -33,7 +33,7 @@ rfd = "0.17"
 # Deleting a clip moves it to the Trash / Recycle Bin first.
 trash = "5"
 # Update downloads (SHA-512) and the install ID (SHA-256).
-sha2 = "0.10"
+sha2 = "0.11"
 # The app log behind diagnostics (src/applog.rs); also carries wgpu's and
 # winit's warnings.
 log = "0.4"
