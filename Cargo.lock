@@ -1933,6 +1933,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "metal"
+version = "0.33.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c7047791b5bc903b8cd963014b355f71dc9864a9a0b727057676c1dcae5cbc15"
+dependencies = [
+ "bitflags 2.13.2",
+ "block",
+ "core-graphics-types 0.2.0",
+ "foreign-types",
+ "log",
+ "objc",
+ "paste",
+]
+
+[[package]]
 name = "miniz_oxide"
 version = "0.8.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3141,7 +3156,7 @@ dependencies = [
  "libloading 0.9.0",
  "libm",
  "log",
- "metal",
+ "metal 0.33.0",
  "objc2 0.6.5",
  "objc2-app-kit 0.3.2",
  "objc2-core-foundation",
@@ -4267,7 +4282,7 @@ dependencies = [
  "libc",
  "libloading 0.8.9",
  "log",
- "metal",
+ "metal 0.32.0",
  "naga",
  "ndk-sys",
  "objc",
