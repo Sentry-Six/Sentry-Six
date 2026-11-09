@@ -1,6 +1,41 @@
 {
   "versions": [
     {
+      "version": "2026.46.2",
+      "date": "2026-11-09",
+      "title": "Layouts and Polish",
+      "changes": [
+        {
+          "type": "feature",
+          "description": "Export editor: stack cameras for a portrait video, move and resize the timestamp, place Tesla Mobile's bars freely, and set the dashboard's text sizes."
+        },
+        {
+          "type": "feature",
+          "description": "Sentry and Saved events show a pin on the map where they happened."
+        },
+        {
+          "type": "improvement",
+          "description": "HW3 cars: the back camera and repeaters now stay in sync with the front."
+        },
+        {
+          "type": "improvement",
+          "description": "Button tooltips, the export marker shortcuts and the Sentry and Saved timeline markers are back."
+        },
+        {
+          "type": "improvement",
+          "description": "A day's total length shows up much faster."
+        },
+        {
+          "type": "fix",
+          "description": "Dragging the map while playing no longer snaps it back to the car, and the watermark is no longer cut off on single-camera exports."
+        },
+        {
+          "type": "fix",
+          "description": "Smaller fixes to settings, shortcuts and diagnostics."
+        }
+      ]
+    },
+    {
       "version": "2026.46.1",
       "date": "2026-11-08",
       "title": "The New Sentry Studio",
