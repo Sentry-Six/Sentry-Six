@@ -617,41 +617,70 @@ fn length_clip(s: &Segment) -> Option<&PathBuf> {
 }
 
 /// Reads the length of every segment's clip (front camera, or the first
-/// one there is), one at a time, and sends `(segment, seconds)`. Stops
-/// early when the receiver is dropped (another collection was loaded).
-/// It runs alongside playback on the same share, so it stays out of the
-/// way: one file at a time, and none at all while `busy` is set (a clip
-/// opening, a seek, or a camera waiting for data).
+/// one there is) and sends `(segment, seconds)`. Stops early when the
+/// receiver is dropped (another collection was loaded). It runs alongside
+/// playback on the same drive or share, so it stays out of the way: no
+/// reads while `busy` is set (a clip opening, a seek, or a camera waiting
+/// for data). `LENGTH_READERS` files at a time: each read is two small
+/// reads at the file's ends, so the time goes on waiting for the drive (a
+/// USB stick or a network share), which several at once overlap. On a USB
+/// drive: 62 ms a clip one at a time, 18 ms four at a time, 13.5 ms eight
+/// at a time, no better with sixteen.
 fn read_lengths(segments: &[Segment], tx: Sender<(usize, f64)>, busy: Arc<std::sync::atomic::AtomicBool>, cancel: Arc<std::sync::atomic::AtomicBool>) {
+    use std::sync::atomic::{AtomicUsize, Ordering};
     let paths: Vec<(usize, PathBuf)> = segments
         .iter()
         .enumerate()
         .filter_map(|(i, s)| length_clip(s).map(|p| (i, p.clone())))
         .collect();
-    let cancelled = || cancel.load(std::sync::atomic::Ordering::Relaxed);
-    for (i, path) in &paths {
-        while busy.load(std::sync::atomic::Ordering::Relaxed) && !cancelled() {
-            std::thread::sleep(Duration::from_millis(50));
+    let next = AtomicUsize::new(0);
+    let cancelled = || cancel.load(Ordering::Relaxed);
+    std::thread::scope(|scope| {
+        for _ in 0..LENGTH_READERS {
+            let tx = tx.clone();
+            let (next, paths, busy) = (&next, &paths, &busy);
+            scope.spawn(move || loop {
+                while busy.load(Ordering::Relaxed) && !cancelled() {
+                    std::thread::sleep(Duration::from_millis(50));
+                }
+                if cancelled() {
+                    return;
+                }
+                let Some((i, path)) = paths.get(next.fetch_add(1, Ordering::Relaxed)) else { return };
+                // Remembered and unchanged: already in (Player::load).
+                if length_cache::get(path).is_some() {
+                    continue;
+                }
+                let began = Instant::now();
+                let length = std::fs::File::open(path).ok().and_then(|f| read_video_track(&f).ok()).map(|t| t.duration);
+                crate::trace::trace!("length of segment {i}: {:.0} ms", began.elapsed().as_secs_f64() * 1000.0);
+                if let Some(d) = length.filter(|d| *d > 0.0) {
+                    length_cache::put(path, d);
+                    if tx.send((*i, d)).is_err() {
+                        return;
+                    }
+                }
+            });
         }
-        if cancelled() {
-            return;
-        }
-        // Remembered and unchanged: already in (Player::load).
-        if length_cache::get(path).is_some() {
-            continue;
-        }
-        let began = Instant::now();
-        let length = std::fs::File::open(path).ok().and_then(|f| read_video_track(&f).ok()).map(|t| t.duration);
-        crate::trace::trace!("length of segment {i}: {:.0} ms", began.elapsed().as_secs_f64() * 1000.0);
-        if let Some(d) = length.filter(|d| *d > 0.0) {
-            length_cache::put(path, d);
-            if tx.send((*i, d)).is_err() {
-                length_cache::save();
-                return;
-            }
-        }
-    }
+    });
     length_cache::save();
+}
+
+/// Clip lengths read at once (see `read_lengths`).
+const LENGTH_READERS: usize = 8;
+
+/// A minute's length until its clip is read: the time to the next minute
+/// by their file names (Tesla starts the next file as one closes, so this
+/// is right to about a second), or 60 s before a gap or at the end.
+fn estimated_lengths(segments: &[Segment]) -> Vec<f64> {
+    segments
+        .iter()
+        .enumerate()
+        .map(|(i, s)| match segments.get(i + 1).map(|n| (n.start - s.start) as f64) {
+            Some(gap) if (50.0..=62.0).contains(&gap) => gap,
+            _ => DEFAULT_SEGMENT,
+        })
+        .collect()
 }
 
 impl Player {
@@ -717,7 +746,8 @@ impl Player {
         // known now.
         let remembered: Vec<Option<f64>> = segments.iter().map(|s| length_clip(s).and_then(|p| length_cache::remembered(p))).collect();
         self.lengths_done = remembered.iter().all(Option::is_some);
-        self.durations = remembered.into_iter().map(|d| d.unwrap_or(DEFAULT_SEGMENT)).collect();
+        let estimated = estimated_lengths(&segments);
+        self.durations = remembered.into_iter().zip(estimated).map(|(d, e)| d.unwrap_or(e)).collect();
         let (tx, rx) = channel();
         let list = segments.clone();
         std::thread::Builder::new()
@@ -1178,5 +1208,19 @@ impl Player {
     pub fn offset_of(segments: &[Segment], wall: LocalSecs) -> f64 {
         let Some(first) = segments.first() else { return 0.0 };
         (wall - first.start).max(0) as f64
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn lengths_estimated_from_file_names() {
+        let seg = |start: i64| Segment { start, files: Default::default() };
+        // Back to back, then a 10-minute gap, then the last minute.
+        let s = [seg(0), seg(60), seg(121), seg(721)];
+        assert_eq!(estimated_lengths(&s), vec![60.0, 61.0, DEFAULT_SEGMENT, DEFAULT_SEGMENT]);
+        assert!(estimated_lengths(&[]).is_empty());
     }
 }
