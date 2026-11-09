@@ -132,6 +132,9 @@ struct OpenClip {
     /// Seconds this clip starts after the minute's front clip: its pictures
     /// are shown that much later (on the minute's timeline).
     offset: f64,
+    /// Lined up by the clips' lengths while the telemetry's timing is being
+    /// measured: taken up once it's known.
+    awaiting_timing: Option<PathBuf>,
 }
 
 /// A clip's index and its first window of data, read ahead of time.
@@ -158,11 +161,12 @@ fn preload(path: &PathBuf, reference: Option<&PathBuf>) -> anyhow::Result<Preloa
 /// Seconds `clip` (at `path`) starts after the minute's `reference` clip.
 fn clip_offset(clip: &mut OpenClip, path: &PathBuf, reference: Option<&PathBuf>, camera: Camera) -> f64 {
     let own = crate::sync::start_of(path, || crate::sync::start_from(&clip.track, |o, n| clip.reader.read(o, n).ok().map(<[u8]>::to_vec)));
-    let reference = match reference {
-        Some(r) if r != path => crate::sync::start(r),
-        _ => own,
+    let (reference, ref_camera) = match reference {
+        Some(r) if r != path => (crate::sync::start(r), crate::sync::camera_of(r).unwrap_or(Camera::Front)),
+        _ => (own, camera),
     };
-    crate::sync::offset(path, own, reference, camera)
+    clip.awaiting_timing = crate::sync::awaits_timing(path, own, reference, camera, ref_camera).then(|| path.clone());
+    crate::sync::offset(path, own, reference, camera, ref_camera)
 }
 
 fn open_clip(path: &PathBuf, at: f64, generation: u64) -> anyhow::Result<OpenClip> {
@@ -194,6 +198,7 @@ fn clip_from(Preloaded { mut reader, track }: Preloaded, at: f64, generation: u6
         gop_start: 0.0,
         queued: 0,
         offset: 0.0,
+        awaiting_timing: None,
     };
     seek_clip(&mut clip, at);
     Ok(clip)
@@ -434,6 +439,16 @@ fn worker(rx: &Receiver<Cmd>, shared: &SharedTile) {
         // from (but at the very end, at least the last picture).
         let end = c.next >= c.track.samples.len();
         let horizon = c.earliest.get(c.next).copied().unwrap_or(i64::MAX) as f64 / c.track.timescale as f64;
+        // The telemetry's timing measured since the clip opened: from here on.
+        if let Some(t) = c.awaiting_timing.as_deref().and_then(crate::sync::timed_offset) {
+            c.awaiting_timing = None;
+            if (t - c.offset).abs() > 1e-6 {
+                c.offset = t;
+                if st.generation == c.generation {
+                    st.duration = Some(c.track.duration + c.offset);
+                }
+            }
+        }
         while c.held.first().is_some_and(|h| end || h.0 < horizon - 1e-9) {
             let h = c.held.remove(0);
             let only_one_left = end && c.held.is_empty() && c.queued == 0;
