@@ -42,7 +42,7 @@ uuid = { version = "1", features = ["v4"] }
 
 [target.'cfg(unix)'.dependencies]
 # Linux video decoding loads GStreamer at run time (src/decode/gstreamer.rs).
-libloading = "0.8"
+libloading = "0.9"
 # atexit: the log records a clean quit however the app ends (Cmd+Q on a
 # Mac ends it without a window event).
 libc = "0.2"
