@@ -656,9 +656,9 @@ http://github.com/SSheldon/rust-block
 Copyright (c) Steven Sheldon
 Used under MIT; the crate is published without a licence file, so its terms are the standard text in "Standard licence texts: MIT", above.
 
-block-buffer 0.10.4 (MIT OR Apache-2.0)
+block-buffer 0.12.1 (MIT OR Apache-2.0)
 https://github.com/RustCrypto/utils
-Copyright (c) 2018-2019 The RustCrypto Project Developers
+Copyright (c) 2018-2025 The RustCrypto Project Developers
 MIT: the standard text in "Standard licence texts: MIT", above.
 
 block2 0.5.1 (MIT)
@@ -1003,6 +1003,11 @@ concurrent-queue 2.5.0 (Apache-2.0 OR MIT)
 https://github.com/smol-rs/concurrent-queue
 MIT: the standard text in "Standard licence texts: MIT", above.
 
+const-oid 0.10.2 (Apache-2.0 OR MIT)
+https://github.com/RustCrypto/formats
+Copyright (c) 2020-2026 The RustCrypto Project Developers
+MIT: the standard text in "Standard licence texts: MIT", above.
+
 core-foundation 0.10.1 (MIT OR Apache-2.0)
 https://github.com/servo/core-foundation-rs
 Copyright (c) 2012-2013 Mozilla Foundation
@@ -1050,9 +1055,9 @@ https://github.com/pop-os/cosmic-text
 Copyright (c) 2022 System76
 MIT: the standard text in "Standard licence texts: MIT", above.
 
-cpufeatures 0.2.17 (MIT OR Apache-2.0)
+cpufeatures 0.3.1 (MIT OR Apache-2.0)
 https://github.com/RustCrypto/utils
-Copyright (c) 2020-2025 The RustCrypto Project Developers
+Copyright (c) 2020-2026 The RustCrypto Project Developers
 MIT: the standard text in "Standard licence texts: MIT", above.
 
 crc32fast 1.5.4 (MIT OR Apache-2.0)
@@ -1069,9 +1074,9 @@ cryoglyph 0.1.0 (MIT OR Apache-2.0 OR Zlib)
 https://github.com/iced-rs/cryoglyph
 MIT: the standard text in "Standard licence texts: MIT", above.
 
-crypto-common 0.1.7 (MIT OR Apache-2.0)
+crypto-common 0.2.2 (MIT OR Apache-2.0)
 https://github.com/RustCrypto/traits
-Copyright (c) 2021 RustCrypto Developers
+Copyright (c) 2021-2026 RustCrypto Developers
 MIT: the standard text in "Standard licence texts: MIT", above.
 
 ctor 0.10.1 (Apache-2.0 OR MIT)
@@ -1088,8 +1093,9 @@ https://github.com/servo/rust-url
 Copyright (c) 2013-2025 The rust-url developers
 MIT: the standard text in "Standard licence texts: MIT", above.
 
-digest 0.10.7 (MIT OR Apache-2.0)
+digest 0.11.3 (MIT OR Apache-2.0)
 https://github.com/RustCrypto/traits
+Copyright (c) 2017-2025 RustCrypto Developers
 Copyright (c) 2017 Artyom Pavlov
 MIT: the standard text in "Standard licence texts: MIT", above.
 
@@ -1389,11 +1395,6 @@ Copyright (c) 2016 Alex Crichton
 Copyright (c) 2017 The Tokio Authors
 MIT: the standard text in "Standard licence texts: MIT", above.
 
-generic-array 0.14.7 (MIT)
-https://github.com/fizyk20/generic-array.git
-Copyright (c) 2015 Bartłomiej Kamiński
-MIT: the standard text in "Standard licence texts: MIT", above.
-
 gethostname 1.1.0 (Apache-2.0)
 https://codeberg.org/swsnr/gethostname.rs.git
 Apache-2.0: the standard text in "Standard licence texts: Apache-2.0", above.
@@ -1508,6 +1509,11 @@ MIT: the standard text in "Standard licence texts: MIT", above.
 httparse 1.10.1 (MIT OR Apache-2.0)
 https://github.com/seanmonstar/httparse
 Copyright (c) 2015-2025 Sean McArthur
+MIT: the standard text in "Standard licence texts: MIT", above.
+
+hybrid-array 0.4.15 (MIT OR Apache-2.0)
+https://github.com/RustCrypto/hybrid-array
+Copyright (c) 2022-2026 The RustCrypto Project Developers
 MIT: the standard text in "Standard licence texts: MIT", above.
 
 iana-time-zone 0.1.65 (MIT OR Apache-2.0)
@@ -1658,6 +1664,10 @@ AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR 
 WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT,
 NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
 THIS SOFTWARE.
+
+libloading 0.9.0 (ISC)
+https://github.com/nagisa/rust_libloading/
+libloading 0.9.0: LICENSE: the same text as libloading 0.8.9: LICENSE, above.
 
 libm 0.2.16 (MIT)
 https://github.com/rust-lang/compiler-builtins
@@ -2586,11 +2596,12 @@ serde_repr 0.1.21 (MIT OR Apache-2.0)
 https://github.com/dtolnay/serde-repr
 MIT: the standard text in "Standard licence texts: MIT", above.
 
-sha2 0.10.9 (MIT OR Apache-2.0)
+sha2 0.11.1 (MIT OR Apache-2.0)
 https://github.com/RustCrypto/hashes
-Copyright (c) 2006-2009 Graydon Hoare
-Copyright (c) 2009-2013 Mozilla Foundation
+Copyright (c) 2016-2026 The RustCrypto Project Developers
 Copyright (c) 2016 Artyom Pavlov
+Copyright (c) 2009-2013 Mozilla Foundation
+Copyright (c) 2006-2009 Graydon Hoare
 MIT: the standard text in "Standard licence texts: MIT", above.
 
 signal-hook-registry 1.4.8 (MIT OR Apache-2.0)
@@ -3241,17 +3252,7 @@ https://github.com/microsoft/windows-rs
     Copyright (c) Microsoft Corporation.
 MIT: the standard text in "Standard licence texts: MIT", above.
 
-windows 0.61.3 (MIT OR Apache-2.0)
-https://github.com/microsoft/windows-rs
-    Copyright (c) Microsoft Corporation.
-MIT: the standard text in "Standard licence texts: MIT", above.
-
 windows 0.62.2 (MIT OR Apache-2.0)
-https://github.com/microsoft/windows-rs
-    Copyright (c) Microsoft Corporation.
-MIT: the standard text in "Standard licence texts: MIT", above.
-
-windows-collections 0.2.0 (MIT OR Apache-2.0)
 https://github.com/microsoft/windows-rs
     Copyright (c) Microsoft Corporation.
 MIT: the standard text in "Standard licence texts: MIT", above.
@@ -3266,17 +3267,7 @@ https://github.com/microsoft/windows-rs
     Copyright (c) Microsoft Corporation.
 MIT: the standard text in "Standard licence texts: MIT", above.
 
-windows-core 0.61.2 (MIT OR Apache-2.0)
-https://github.com/microsoft/windows-rs
-    Copyright (c) Microsoft Corporation.
-MIT: the standard text in "Standard licence texts: MIT", above.
-
 windows-core 0.62.2 (MIT OR Apache-2.0)
-https://github.com/microsoft/windows-rs
-    Copyright (c) Microsoft Corporation.
-MIT: the standard text in "Standard licence texts: MIT", above.
-
-windows-future 0.2.1 (MIT OR Apache-2.0)
 https://github.com/microsoft/windows-rs
     Copyright (c) Microsoft Corporation.
 MIT: the standard text in "Standard licence texts: MIT", above.
@@ -3306,17 +3297,7 @@ https://github.com/microsoft/windows-rs
     Copyright (c) Microsoft Corporation.
 MIT: the standard text in "Standard licence texts: MIT", above.
 
-windows-link 0.1.3 (MIT OR Apache-2.0)
-https://github.com/microsoft/windows-rs
-    Copyright (c) Microsoft Corporation.
-MIT: the standard text in "Standard licence texts: MIT", above.
-
 windows-link 0.2.1 (MIT OR Apache-2.0)
-https://github.com/microsoft/windows-rs
-    Copyright (c) Microsoft Corporation.
-MIT: the standard text in "Standard licence texts: MIT", above.
-
-windows-numerics 0.2.0 (MIT OR Apache-2.0)
 https://github.com/microsoft/windows-rs
     Copyright (c) Microsoft Corporation.
 MIT: the standard text in "Standard licence texts: MIT", above.
@@ -3331,22 +3312,12 @@ https://github.com/microsoft/windows-rs
     Copyright (c) Microsoft Corporation.
 MIT: the standard text in "Standard licence texts: MIT", above.
 
-windows-result 0.3.4 (MIT OR Apache-2.0)
-https://github.com/microsoft/windows-rs
-    Copyright (c) Microsoft Corporation.
-MIT: the standard text in "Standard licence texts: MIT", above.
-
 windows-result 0.4.1 (MIT OR Apache-2.0)
 https://github.com/microsoft/windows-rs
     Copyright (c) Microsoft Corporation.
 MIT: the standard text in "Standard licence texts: MIT", above.
 
 windows-strings 0.1.0 (MIT OR Apache-2.0)
-https://github.com/microsoft/windows-rs
-    Copyright (c) Microsoft Corporation.
-MIT: the standard text in "Standard licence texts: MIT", above.
-
-windows-strings 0.4.2 (MIT OR Apache-2.0)
 https://github.com/microsoft/windows-rs
     Copyright (c) Microsoft Corporation.
 MIT: the standard text in "Standard licence texts: MIT", above.
@@ -3367,11 +3338,6 @@ https://github.com/microsoft/windows-rs
 MIT: the standard text in "Standard licence texts: MIT", above.
 
 windows-targets 0.52.6 (MIT OR Apache-2.0)
-https://github.com/microsoft/windows-rs
-    Copyright (c) Microsoft Corporation.
-MIT: the standard text in "Standard licence texts: MIT", above.
-
-windows-threading 0.1.0 (MIT OR Apache-2.0)
 https://github.com/microsoft/windows-rs
     Copyright (c) Microsoft Corporation.
 MIT: the standard text in "Standard licence texts: MIT", above.

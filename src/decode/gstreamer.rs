@@ -137,7 +137,7 @@ unsafe impl Sync for Gst {}
 fn open_lib(names: &[&str]) -> Result<libloading::Library> {
     let mut last = None;
     for name in names {
-        match unsafe { libloading::Library::new(name) } {
+        match unsafe { libloading::Library::new(*name) } {
             Ok(lib) => return Ok(lib),
             Err(e) => last = Some(e),
         }

@@ -23,7 +23,7 @@ serde = { version = "1", features = ["derive"] }
 # JavaScript does, so drives measure the same as in earlier versions.
 serde_json = { version = "1", features = ["preserve_order", "float_roundtrip"] }
 chrono = { version = "0.4", features = ["unstable-locales"] }
-base64 = "0.22"
+base64 = "0.23"
 libm = "0.2"
 ureq = "3"
 regex = "1"
@@ -33,7 +33,7 @@ rfd = "0.17"
 # Deleting a clip moves it to the Trash / Recycle Bin first.
 trash = "5"
 # Update downloads (SHA-512) and the install ID (SHA-256).
-sha2 = "0.10"
+sha2 = "0.11"
 # The app log behind diagnostics (src/applog.rs); also carries wgpu's and
 # winit's warnings.
 log = "0.4"
@@ -42,7 +42,7 @@ uuid = { version = "1", features = ["v4"] }
 
 [target.'cfg(unix)'.dependencies]
 # Linux video decoding loads GStreamer at run time (src/decode/gstreamer.rs).
-libloading = "0.8"
+libloading = "0.9"
 # atexit: the log records a clean quit however the app ends (Cmd+Q on a
 # Mac ends it without a window event).
 libc = "0.2"
@@ -64,7 +64,7 @@ objc2-foundation = "0.3"
 dispatch2 = "0.3"
 
 [target.'cfg(target_os = "windows")'.dependencies]
-windows = { version = "0.61", features = [
+windows = { version = "0.62", features = [
     "Win32_Foundation",
     "Win32_Graphics_Direct3D",
     "Win32_Graphics_Direct3D11",
