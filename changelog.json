@@ -2,7 +2,7 @@
   "versions": [
     {
       "version": "2026.46.1",
-      "date": "2026-11-09",
+      "date": "2026-11-08",
       "title": "The New Sentry Studio",
       "changes": [
         {
@@ -35,7 +35,7 @@
         },
         {
           "type": "note",
-          "description": "The Footage Converter isn't in this version yet and will return in a later update. Macs on macOS 12 stay on the previous version."
+          "description": "The Footage Converter isn't in this version yet and will return in a later update. Macs on macOS 12 stay on 2026.44.37, the last version for macOS 12."
         }
       ]
     },

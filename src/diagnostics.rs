@@ -145,17 +145,31 @@ fn settings_lines(s: &crate::settings::Settings) -> Vec<String> {
         for (key, value) in map {
             let shown = match key.as_str() {
                 // Where, not what: a path says only what kind of drive.
-                "defaultFolder" | "sentryUsbDataPath" => match value.as_str().filter(|p| !p.is_empty()) {
+                "defaultFolder" | "sentryUsbDataPath" | "lastExportFolder" => match value.as_str().filter(|p| !p.is_empty()) {
                     Some(p) => format!("set, on {}", system::volume(Path::new(p))),
                     None => "not set".into(),
                 },
                 // Its token opens the chat: never in a report.
                 "aiSupportConversation" => if value.is_null() { "none".into() } else { "a chat is saved".into() },
+                // Each one's delete token deletes it, and its link opens it:
+                // only how many.
+                "sharedClips" => match value.as_array().map_or(0, Vec::len) {
+                    0 => "none".into(),
+                    1 => "1 shared clip".into(),
+                    n => format!("{n} shared clips"),
+                },
+                // Where on the picture the user hides something: only how many.
+                "exportLastBlurZones" => match value.as_array().map_or(0, Vec::len) {
+                    0 => "none".into(),
+                    1 => "1 zone".into(),
+                    n => format!("{n} zones"),
+                },
                 "keybinds" => {
                     let changed: Vec<&String> = value.as_object().map(|m| m.keys().collect()).unwrap_or_default();
                     if changed.is_empty() { "defaults".into() } else { format!("changed: {}", changed.iter().map(|k| k.as_str()).collect::<Vec<_>>().join(", ")) }
                 }
-                _ => value.to_string(),
+                // Anything else as saved, with any path or place taken out.
+                _ => redact(&value.to_string()),
             };
             lines.push(format!("{key}: {shown}"));
         }
@@ -613,6 +627,31 @@ mod tests {
         assert_eq!(redact("near 40.1234, -100.4321 at 10:00"), "near [coordinates] at 10:00");
         // Times, versions and sizes stay.
         assert_eq!(redact("2026-11-07_10-12-00-front.mp4 2896x1876 v2026.45.40 12.5 ms"), "2026-11-07_10-12-00-front.mp4 2896x1876 v2026.45.40 12.5 ms");
+    }
+
+    #[test]
+    fn settings_leave_out_shared_clips_and_paths() {
+        let s = crate::settings::Settings {
+            shared_clips: vec![crate::share::SharedClip {
+                code: "abc123".into(),
+                url: "https://share.example/abc123".into(),
+                delete_token: "secret-delete-token".into(),
+                expires_at: "2026-12-01T00:00:00Z".into(),
+                file_size: 1_000,
+                file_name: "Alice driving home.mp4".into(),
+                uploaded_at: "2026-11-09T00:00:00Z".into(),
+            }],
+            last_export_folder: Some(PathBuf::from("/Users/alice/Movies/Exports")),
+            export_blur_zones: vec![crate::export::blur::BlurZone { camera: crate::library::Camera::Front, points: vec![(0.1, 0.2), (0.3, 0.4), (0.5, 0.6)] }],
+            ..Default::default()
+        };
+        let text = settings_lines(&s).join("\n");
+        for private in ["secret-delete-token", "abc123", "share.example", "Alice driving", "alice", "Exports", "\"x\":"] {
+            assert!(!text.contains(private), "{private} in:\n{text}");
+        }
+        assert!(text.contains("sharedClips: 1 shared clip"), "{text}");
+        assert!(text.contains("exportLastBlurZones: 1 zone"), "{text}");
+        assert!(text.contains("lastExportFolder: set, on "), "{text}");
     }
 
     #[test]
