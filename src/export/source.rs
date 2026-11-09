@@ -65,9 +65,9 @@ impl Source {
                     };
                     let ref_camera = reference.as_deref().and_then(crate::sync::camera_of).unwrap_or(crate::library::Camera::Front);
                     c.offset = crate::sync::offset(path, own, front, self.camera, ref_camera);
-                    // A camera whose counter can't be compared (an HW3
-                    // car's back camera): by the telemetry's timing.
-                    if let Some(r) = reference.as_ref().filter(|r| *r != path && crate::sync::counted(own, front) && !crate::sync::comparable(own, front, self.camera, ref_camera)) {
+                    // A clip cut short whose counter can't be compared (an
+                    // HW3 car's back camera): by the telemetry's timing.
+                    if let Some(r) = reference.as_ref().filter(|r| *r != path && ref_camera == crate::library::Camera::Front && crate::sync::needs_timing(own, front, self.camera)) {
                         if let Some(o) = crate::sync::time_offset_now(path, r) {
                             c.offset = o;
                         }
