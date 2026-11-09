@@ -180,10 +180,11 @@ pub fn timed_offset(path: &Path) -> Option<f64> {
     timed().lock().unwrap_or_else(|e| e.into_inner()).get(path).copied().flatten()
 }
 
-/// Whether `path`'s offset needs the telemetry's timing: its counter can't
-/// be compared with the front's and the clips' lengths say nothing.
+/// Whether `path`'s offset needs the telemetry's timing: the clips' lengths
+/// say nothing (a clip cut short, 2 in 1,000) and its counter can't be
+/// compared with the front's (or its first frame has none).
 pub fn needs_timing(own: Option<Start>, front: Option<Start>, camera: Camera) -> bool {
-    counted(own, front) && end_offset(own, front).is_none() && !comparable(own, front, camera, Camera::Front)
+    own.is_some() && front.is_some() && end_offset(own, front).is_none() && !comparable(own, front, camera, Camera::Front)
 }
 
 /// Seconds a clip starts after the minute's front clip by their lengths
@@ -330,17 +331,28 @@ fn clear_best(errors: &[(f64, f64)], apart: f64) -> Option<f64> {
 /// The time offset of `path` against the minute's front clip `front`,
 /// measured now (the export, which can't wait for a background answer).
 pub fn time_offset_now(path: &Path, front: &Path) -> Option<f64> {
-    if let Some(known) = timed().lock().unwrap_or_else(|e| e.into_inner()).get(path).copied().flatten() {
+    if let Some(known) = timed_offset(path) {
         return Some(known);
+    }
+    // Measured before without an answer: not read again on every open.
+    if attempted().lock().unwrap_or_else(|e| e.into_inner()).contains(path) {
+        return None;
     }
     let found = series(front, STRIDE).zip(series(path, STRIDE)).and_then(|(f, c)| best_time(&f, &c));
     remember_timing(path.to_path_buf(), found);
     found.or_else(|| timed_offset(path))
 }
 
+/// Clips whose timing has been measured, with or without an answer.
+fn attempted() -> &'static Mutex<std::collections::HashSet<PathBuf>> {
+    static A: OnceLock<Mutex<std::collections::HashSet<PathBuf>>> = OnceLock::new();
+    A.get_or_init(Default::default)
+}
+
 /// Keeps a measured timing; a measurement without an answer never replaces
 /// one with an answer (two can run for the same clip).
 fn remember_timing(path: PathBuf, found: Option<f64>) {
+    attempted().lock().unwrap_or_else(|e| e.into_inner()).insert(path.clone());
     let mut t = timed().lock().unwrap_or_else(|e| e.into_inner());
     if found.is_some() || !matches!(t.get(&path), Some(Some(_))) {
         t.insert(path, found);

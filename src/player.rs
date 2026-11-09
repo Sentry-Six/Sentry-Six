@@ -157,11 +157,17 @@ fn preload(path: &PathBuf, reference: Option<&PathBuf>) -> anyhow::Result<Preloa
 
 /// Seconds `clip` (at `path`) starts after the minute's `reference` clip.
 fn clip_offset(clip: &mut OpenClip, path: &PathBuf, reference: Option<&PathBuf>, camera: Camera) -> f64 {
+    let reference_path = reference;
     let own = crate::sync::start_of(path, || crate::sync::start_from(&clip.track, |o, n| clip.reader.read(o, n).ok().map(<[u8]>::to_vec)));
     let (reference, ref_camera) = match reference {
         Some(r) if r != path => (crate::sync::start(r), crate::sync::camera_of(r).unwrap_or(Camera::Front)),
         _ => (own, camera),
     };
+    // A clip cut short that only the telemetry's timing can line up: measured
+    // now, as the export does, so playback and the export agree.
+    if let Some(r) = reference_path.filter(|r| *r != path && ref_camera == Camera::Front && crate::sync::needs_timing(own, reference, camera)) {
+        crate::sync::time_offset_now(path, r);
+    }
     crate::sync::offset(path, own, reference, camera, ref_camera)
 }
 
