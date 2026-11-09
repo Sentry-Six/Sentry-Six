@@ -16,10 +16,11 @@
 //! The car closes a minute's clips together, so each clip's length also
 //! says when it started: a clip a third of a second shorter than the front
 //! one started a third of a second later. That holds to about a frame on
-//! HW3 and HW4 cars, needs no telemetry (a parked car's minutes have none)
-//! and no driving to match by, so it lines a camera up until its lag or
-//! timing has been measured, and catches an HW3 back camera's counter that
-//! only happens to land near the front's.
+//! HW3 and HW4 cars and needs no telemetry (a parked car's minutes have
+//! none) or driving to match by, so it lines up every camera without a
+//! measured counter lag, playback and export alike, and catches an HW3
+//! back camera's counter that only happens to land near the front's. The
+//! telemetry's timing is left for a clip cut short.
 
 use crate::library::Camera;
 use crate::mp4::VideoTrack;
@@ -71,6 +72,11 @@ pub fn lag(camera: Camera) -> f64 {
 
 fn measured_lag(camera: Camera) -> Option<f64> {
     measured().lock().unwrap_or_else(|e| e.into_inner()).get(&camera).copied()
+}
+
+/// A lag known for this car: measured, or the front's own (0).
+fn known_lag(camera: Camera) -> Option<f64> {
+    if camera == Camera::Front { Some(0.0) } else { measured_lag(camera) }
 }
 
 /// Bumped by `forget`: a measurement started before it is dropped.
@@ -144,40 +150,40 @@ pub fn start(path: &Path) -> Option<Start> {
 }
 
 /// Seconds `camera`'s clip at `path`, starting at `own`, begins after the
-/// minute's reference clip (its front camera's) starting at `reference`:
-/// by the counter with this car's measured lag taken off or, when the
-/// counters aren't comparable (an HW3 car's back camera), as measured from
-/// the telemetry's timing (`measure_times`). Until either is known, by the
-/// clips' lengths; without those either, by the counter with the usual
-/// lag, or 0.
+/// minute's reference clip starting at `reference`: by the counters with
+/// this car's measured lags taken off, else by the clips' lengths; for a
+/// clip cut short, by the telemetry's timing against the front clip
+/// (`measure_times`) once known; else 0.
 ///
-/// `reference_camera`: the camera of the reference clip (the front, or
-/// another when the minute has no front clip); its lag counts too.
+/// `reference_camera`: the reference clip's camera (the front, or another
+/// when the minute has no front clip); its lag counts too.
 pub fn offset(path: &Path, own: Option<Start>, reference: Option<Start>, camera: Camera, reference_camera: Camera) -> f64 {
-    let comparable = comparable(own, reference, camera, reference_camera);
-    if comparable {
-        if let (Some(a), Some(b)) = (measured_lag(camera), measured_lag(reference_camera).or((reference_camera == Camera::Front).then_some(0.0))) {
+    if comparable(own, reference, camera, reference_camera) {
+        if let (Some(a), Some(b)) = (known_lag(camera), known_lag(reference_camera)) {
             return offset_with(own, reference, a - b);
         }
-    } else if let Some(t) = timed_offset(path) {
-        return t;
     }
-    match end_offset(own, reference) {
-        Some(o) => o,
-        None if comparable => offset_with(own, reference, lag(camera) - lag(reference_camera)),
-        None => 0.0,
+    if let Some(o) = end_offset(own, reference) {
+        return o;
     }
+    if reference_camera == Camera::Front {
+        if let Some(t) = timed_offset(path) {
+            return t;
+        }
+    }
+    0.0
 }
 
-/// The offset measured from the telemetry's timing for `path`, once known.
+/// The offset against the front clip measured from the telemetry's timing
+/// for `path`, once known.
 pub fn timed_offset(path: &Path) -> Option<f64> {
     timed().lock().unwrap_or_else(|e| e.into_inner()).get(path).copied().flatten()
 }
 
-/// Whether `path`'s offset will come from the telemetry's timing (its
-/// counter can't be compared) and that isn't known yet.
-pub fn awaits_timing(path: &Path, own: Option<Start>, reference: Option<Start>, camera: Camera, reference_camera: Camera) -> bool {
-    counted(own, reference) && !comparable(own, reference, camera, reference_camera) && timed_offset(path).is_none()
+/// Whether `path`'s offset needs the telemetry's timing: its counter can't
+/// be compared with the front's and the clips' lengths say nothing.
+pub fn needs_timing(own: Option<Start>, front: Option<Start>, camera: Camera) -> bool {
+    counted(own, front) && end_offset(own, front).is_none() && !comparable(own, front, camera, Camera::Front)
 }
 
 /// Seconds a clip starts after the minute's front clip by their lengths
@@ -202,10 +208,9 @@ pub fn comparable(own: Option<Start>, reference: Option<Start>, camera: Camera, 
     if !counted(own, reference) || ((a.seq - r.seq) * r.interval).abs() >= MOST {
         return false;
     }
-    let ref_lag = if reference_camera == Camera::Front { Some(0.0) } else { measured_lag(reference_camera) };
     match end_offset(own, reference) {
         Some(e) => (offset_with_unchecked(a, r, lag(camera) - lag(reference_camera)) - e).abs() < AGREE,
-        None => measured_lag(camera).is_some() && ref_lag.is_some(),
+        None => known_lag(camera).is_some() && known_lag(reference_camera).is_some(),
     }
 }
 
@@ -329,8 +334,17 @@ pub fn time_offset_now(path: &Path, front: &Path) -> Option<f64> {
         return Some(known);
     }
     let found = series(front, STRIDE).zip(series(path, STRIDE)).and_then(|(f, c)| best_time(&f, &c));
-    timed().lock().unwrap_or_else(|e| e.into_inner()).insert(path.to_path_buf(), found);
-    found
+    remember_timing(path.to_path_buf(), found);
+    found.or_else(|| timed_offset(path))
+}
+
+/// Keeps a measured timing; a measurement without an answer never replaces
+/// one with an answer (two can run for the same clip).
+fn remember_timing(path: PathBuf, found: Option<f64>) {
+    let mut t = timed().lock().unwrap_or_else(|e| e.into_inner());
+    if found.is_some() || !matches!(t.get(&path), Some(Some(_))) {
+        t.insert(path, found);
+    }
 }
 
 /// Measures, on a thread of its own, the time offsets of the minute's
@@ -351,7 +365,7 @@ pub fn measure_times(files: std::collections::BTreeMap<Camera, PathBuf>) {
         return;
     }
     let _ = std::thread::Builder::new().name("camera-sync-time".into()).spawn(move || {
-        let todo: Vec<PathBuf> = todo.into_iter().filter(|(c, p)| counted(start(p), start(&front)) && !comparable(start(p), start(&front), *c, Camera::Front)).map(|(_, p)| p).collect();
+        let todo: Vec<PathBuf> = todo.into_iter().filter(|(c, p)| needs_timing(start(p), start(&front), *c)).map(|(_, p)| p).collect();
         if todo.is_empty() {
             return;
         }
@@ -361,7 +375,7 @@ pub fn measure_times(files: std::collections::BTreeMap<Camera, PathBuf>) {
             if let Some(o) = found {
                 log::info!("camera sync: {} starts {:+.0} ms from the front clip (by its timing)", path.file_name().map(|n| n.to_string_lossy()).unwrap_or_default(), o * 1000.0);
             }
-            timed().lock().unwrap_or_else(|e| e.into_inner()).insert(path, found);
+            remember_timing(path, found);
         }
     });
 }
@@ -465,6 +479,9 @@ mod tests {
         // Counters close but the clip cut short, and no lag measured: not
         // trusted (an HW3 back camera's counter runs on its own).
         assert!(!comparable(clip(1_052.0, 30.0), clip(1_000.0, 60.0), Camera::Back, Camera::Front));
+        // The front camera against another reference: its own lag is 0, and
+        // by the lengths until the other camera's lag is measured.
+        assert!((offset(p, clip(1_000.0, 59.9), clip(1_001.0, 60.0), Camera::Front, Camera::LeftRepeater) - 0.1).abs() < 1e-9);
         // A clip against itself (the minute's only camera): 0.
         assert_eq!(offset(p, clip(1_000.0, 60.0), clip(1_000.0, 60.0), Camera::LeftRepeater, Camera::LeftRepeater), 0.0);
     }
