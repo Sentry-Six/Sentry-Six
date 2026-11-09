@@ -10,6 +10,7 @@ pub mod blur;
 pub mod compose;
 pub mod encode;
 pub mod job;
+pub mod layout;
 pub mod mp4_writer;
 pub mod overlay;
 pub mod source;

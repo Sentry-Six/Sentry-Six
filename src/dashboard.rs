@@ -208,6 +208,11 @@ pub struct Dash<'a> {
     pub accel: AccelMode,
     /// The steering wheel's angle, eased towards the telemetry's.
     pub steering: f32,
+    /// The export's Label Size (the speed's unit and the time) and Value
+    /// Size (the numbers, words and icons) on the compact dashboard; 1 in
+    /// playback.
+    pub label: f32,
+    pub value: f32,
 }
 
 fn gear_label(g: i32) -> &'static str {
@@ -243,15 +248,17 @@ pub fn time_of_day(secs_of_day: i64, h24: bool) -> String {
 pub fn compact<'a, M: 'a>(d: Dash<'_>) -> Element<'a, M> {
     let icons = icons();
     let sc = d.scale;
-    let icon_px = 28.0 * sc;
+    let (label, value) = fit_sizes(&d);
+    let (lsc, vsc) = (sc * label, sc * value);
+    let icon_px = 28.0 * vsc;
     let gap = || Space::new().width(Length::Fill);
 
     let Some(sei) = d.telemetry else {
         // Parked: gauges hidden, PARKED next to the time.
         return row![
             gap(),
-            text(crate::i18n::t("app.parked")).size(20.0 * sc).font(theme::bold(theme::INTER)).color(Color::WHITE),
-            text(d.time).size(15.0 * sc).font(theme::medium(theme::INTER)).color(theme::TEXT_SECONDARY),
+            text(crate::i18n::t("app.parked")).size(20.0 * vsc).font(theme::bold(theme::INTER)).color(Color::WHITE),
+            text(d.time).size(15.0 * lsc).font(theme::medium(theme::INTER)).color(theme::TEXT_SECONDARY),
             gap(),
         ]
         .spacing(16.0 * sc)
@@ -279,20 +286,20 @@ pub fn compact<'a, M: 'a>(d: Dash<'_>) -> Element<'a, M> {
     };
 
     let gear = text(gear_label(sei.gear_state))
-        .size(22.0 * sc)
+        .size(22.0 * vsc)
         .font(theme::semibold(theme::INTER))
         .color(if autopilot_on { BLUE } else { Color::WHITE })
         .center();
     let speed_box = column![
-        text(format!("{speed}")).size(21.0 * sc).font(theme::bold(theme::INTER)).color(Color::WHITE),
-        text(crate::i18n::t(if d.metric { "ui.dashboard.kmh" } else { "ui.dashboard.mph" })).size(11.0 * sc).font(theme::medium(theme::INTER)).color(theme::TEXT_MUTED),
+        text(format!("{speed}")).size(21.0 * vsc).font(theme::bold(theme::INTER)).color(Color::WHITE),
+        text(crate::i18n::t(if d.metric { "ui.dashboard.kmh" } else { "ui.dashboard.mph" })).size(11.0 * lsc).font(theme::medium(theme::INTER)).color(theme::TEXT_MUTED),
     ]
     .align_x(Alignment::Center)
     .spacing(2.0 * sc)
-    .width(65.0 * sc);
+    .width(65.0 * sc * label.max(value));
     let autopilot_box = column![
-        text(autopilot_label(sei.autopilot_state)).size(20.0 * sc).color(if autopilot_on { BLUE } else { theme::TEXT_MUTED }),
-        text(d.time).size(12.0 * sc).font(theme::medium(theme::INTER)).color(theme::TEXT_SECONDARY),
+        text(autopilot_label(sei.autopilot_state)).size(20.0 * vsc).color(if autopilot_on { BLUE } else { theme::TEXT_MUTED }),
+        text(d.time).size(12.0 * lsc).font(theme::medium(theme::INTER)).color(theme::TEXT_SECONDARY),
     ]
     .align_x(Alignment::Center)
     .spacing(2.0 * sc);
@@ -337,6 +344,25 @@ pub fn compact<'a, M: 'a>(d: Dash<'_>) -> Element<'a, M> {
     .align_y(Alignment::Center)
     .height(Length::Fill)
     .into()
+}
+
+/// The export's Label and Value Size, made smaller together where the
+/// compact dashboard's row would no longer fit its 650 x 76 bar (as earlier
+/// versions' editor capped each item to its place). Playback's (1, 1) is
+/// left as it is.
+fn fit_sizes(d: &Dash<'_>) -> (f32, f32) {
+    let (l, v) = (d.label, d.value);
+    if l == 1.0 && v == 1.0 {
+        return (l, v);
+    }
+    // Roughly: Inter is about 0.6 of its size wide a character, and a line
+    // 1.3 of its size high.
+    let chars = |s: &str| s.chars().count() as f32 * 0.6;
+    let (gear, words) = d.telemetry.map_or(("", ""), |m| (gear_label(m.gear_state), autopilot_label(m.autopilot_state)));
+    let wide = 5.0 * 28.0 * v + chars(gear) * 22.0 * v + 65.0 * l.max(v) + (chars(words) * 20.0 * v).max(chars(&d.time) * 12.0 * l) + 40.0;
+    let high = (1.3 * (21.0 * v + 11.0 * l)).max(1.3 * (20.0 * v + 12.0 * l)).max(28.0 * v) + 4.0;
+    let k = (620.0 / wide).min(72.0 / high).min(1.0);
+    (l * k, v * k)
 }
 
 /// Pedal position in percent (the value may be 0-1 or 0-100).

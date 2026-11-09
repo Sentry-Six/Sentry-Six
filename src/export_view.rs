@@ -9,7 +9,8 @@ pub use share_ui::{ShareMsg, ShareUi};
 
 use crate::export::encode::{Format, Support};
 use crate::export::job::{self, Position, Quality, Tile};
-use crate::export::overlay::{Corner, DashSize, DashStyle, Dashboard, MapTiles, Minimap, Timestamp, Watermark};
+use crate::export::layout::{Layout, Overlays, Rect};
+use crate::export::overlay::{Corner, DashSize, DashSizes, DashStyle, Dashboard, MapTiles, Minimap, Timestamp, Watermark};
 
 /// The minimap's corners, as earlier versions offered them.
 const MAP_CORNERS: [Corner; 4] = [Corner::TopRight, Corner::TopLeft, Corner::BottomRight, Corner::BottomLeft];
@@ -57,13 +58,18 @@ pub enum Fold {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Dragged {
     Camera(Camera),
+    Timestamp,
+    /// The compact dashboard, or Tesla Mobile's data bar.
     Dashboard,
+    /// Tesla Mobile's date bar.
+    DateBar,
     Map,
     Watermark,
 }
 
 /// Where it was dropped: near one of its places (snapped there), or
-/// anywhere else (its top-left, as shares of the frame).
+/// anywhere else (its top-left, as shares of the cameras' grid; see
+/// export::layout).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum DragTo {
     Corner(Corner),
@@ -76,6 +82,11 @@ pub struct Shown {
     pub handle: iced::widget::image::Handle,
     pub size: (u32, u32),
     pub full: (u32, u32),
+    /// Where the frame was on the layout's sheet when drawn (see
+    /// export::layout) and the grid's size then: the editor shows the
+    /// picture there (scaled, if its layout's grid is another size).
+    pub sheet: Rect,
+    pub grid: (u32, u32),
     /// The frame without the movable pieces, and the pieces: shown while
     /// one is dragged, so it moves without the preview being drawn again.
     pub base: Option<iced::widget::image::Handle>,
@@ -89,6 +100,8 @@ impl Shown {
             handle: handle(p.shown.0, p.shown.1, &p.rgba),
             size: p.shown,
             full: (p.width, p.height),
+            sheet: p.sheet,
+            grid: p.grid,
             base: (!p.base.is_empty()).then(|| handle(p.shown.0, p.shown.1, &p.base)),
             pieces: p
                 .pieces
@@ -96,7 +109,9 @@ impl Shown {
                 .map(|piece| {
                     let what = match piece.kind {
                         job::PieceKind::Camera(c) => Dragged::Camera(c),
+                        job::PieceKind::Timestamp => Dragged::Timestamp,
                         job::PieceKind::Dashboard => Dragged::Dashboard,
+                        job::PieceKind::DateBar => Dragged::DateBar,
                         job::PieceKind::Map => Dragged::Map,
                         job::PieceKind::Watermark => Dragged::Watermark,
                     };
@@ -125,6 +140,11 @@ pub enum ExportMsg {
     DashCorner(usize),
     DashStyle(usize),
     Bar(usize),
+    /// The dashboard's Label Size, Value Size and Tesla Mobile's date bar
+    /// size (indexes into DashSizes::STEPS).
+    LabelSize(usize),
+    ValueSize(usize),
+    DateSize(usize),
     ZoneCameraMenu,
     ZoneCamera(usize),
     AddZone,
@@ -233,9 +253,21 @@ pub struct Export {
     /// The watermark's width as a share of the frame's.
     pub wm_share: f32,
     /// The dashboard (compact) and map dragged to a place of their own in
-    /// the preview: top-left as shares of the frame.
+    /// the preview: top-left as shares of the cameras' grid (see
+    /// export::layout).
     pub dash_free: Option<(f32, f32)>,
     pub map_free: Option<(f32, f32)>,
+    /// The timestamp dragged somewhere (as above), and its size (1: the
+    /// usual 36 px type).
+    pub ts_free: Option<(f32, f32)>,
+    pub ts_scale: f32,
+    /// Tesla Mobile's data bar and date bar moved or resized: left, top
+    /// (as above) and width as a share of the grid's; None: across the
+    /// cameras.
+    pub data_bar: Option<(f32, f32, f32)>,
+    pub date_bar: Option<(f32, f32, f32)>,
+    /// The dashboard's Label Size, Value Size and date bar size.
+    pub dash_sizes: DashSizes,
     /// Cameras moved or resized in the preview (see job::Tile::free), the
     /// last moved last (drawn over the others). Kept while the app runs.
     pub cam_free: Vec<(Camera, (f32, f32, f32))>,
@@ -310,6 +342,11 @@ impl Default for Export {
             dash_free: None,
             cam_free: Vec::new(),
             map_free: None,
+            ts_free: None,
+            ts_scale: 1.0,
+            data_bar: None,
+            date_bar: None,
+            dash_sizes: DashSizes::default(),
             watermark: true,
             wm_corner: Corner::BottomRight,
             wm_free: None,
@@ -548,7 +585,8 @@ impl App {
     /// The burned-in time as set up (earlier versions never burned in both:
     /// the dashboard shows the time).
     fn export_timestamp(&self) -> Option<Timestamp> {
-        (self.export.timestamp && !self.export.dashboard).then_some(Timestamp { corner: self.export.corner, date_format: self.settings.date_format, h24: self.settings.time_24h })
+        let e = &self.export;
+        (e.timestamp && !e.dashboard).then_some(Timestamp { corner: e.corner, date_format: self.settings.date_format, h24: self.settings.time_24h, free: e.ts_free, scale: e.ts_scale })
     }
 
     /// The dashboard as set up (None when it's off).
@@ -567,6 +605,9 @@ impl App {
             accel: self.settings.accel_mode,
             glass: self.settings.glass_blur,
             free: e.dash_free.filter(|_| e.dash_style == DashStyle::Compact),
+            data_bar: e.data_bar.filter(|_| e.dash_style == DashStyle::TeslaMobile),
+            date_bar: e.date_bar.filter(|_| e.dash_style == DashStyle::TeslaMobile),
+            sizes: e.dash_sizes,
         })
     }
 
@@ -653,25 +694,21 @@ impl App {
         w.max(h)
     }
 
-    /// The export's width and height at quality `q` with the cameras chosen
-    /// (Tesla Mobile's bars included).
+    /// The export's width and height at quality `q`: the box around the
+    /// cameras chosen and the overlays (see export::layout).
     fn export_size(&self, q: Quality) -> (u32, u32) {
+        self.export_layout(q).size()
+    }
+
+    /// Where everything goes at quality `q`, as the export will lay it out.
+    fn export_layout(&self, q: Quality) -> Layout {
         let chosen = self.export_cameras();
         let multi = !(chosen.len() == 1 && chosen[0] == Camera::Front);
         let e = &self.export;
         let base = if multi { e.side_size.or(e.front_size).unwrap_or((1448, 938)) } else { e.front_size.unwrap_or((2896, 1876)) };
-        let order: Vec<Camera> = self.settings.camera_order.iter().copied().filter(|c| chosen.contains(c)).collect();
-        let tiles = job::grid(&order);
-        let (cw, ch) = job::cell_size(base, q, !multi);
-        let cols = tiles.iter().map(|t| t.col + 1).max().unwrap_or(1);
-        let rows = tiles.iter().map(|t| t.row + 1).max().unwrap_or(1);
-        let width = cw * cols;
-        let mut height = ch * rows;
-        if e.dashboard && e.dash_style == DashStyle::TeslaMobile {
-            let (date, data) = crate::export::tesla_mobile::bar_heights(width);
-            height += date + data;
-        }
-        (width, height)
+        let (timestamp, dashboard, minimap, watermark) = (self.export_timestamp(), self.export_dashboard(), self.export_minimap(), self.export_watermark());
+        let overlays = Overlays { timestamp: timestamp.as_ref(), dashboard: dashboard.as_ref(), minimap: minimap.as_ref(), watermark: watermark.as_ref() };
+        crate::export::layout::layout(&self.export_tiles(), job::cell_size(base, q, !multi), overlays)
     }
 
     /// How this computer encodes `f` (before it's been looked up: H.264
@@ -730,6 +767,9 @@ impl App {
                 | ExportMsg::DashStyle(_)
                 | ExportMsg::DashCorner(_)
                 | ExportMsg::Bar(_)
+                | ExportMsg::LabelSize(_)
+                | ExportMsg::ValueSize(_)
+                | ExportMsg::DateSize(_)
                 | ExportMsg::Minimap(_)
                 | ExportMsg::MapCorner(_)
                 | ExportMsg::DragDone
@@ -880,6 +920,16 @@ impl App {
                     self.export.wm_corner = Corner::from_key(&self.settings.export_watermark_position).unwrap_or(Corner::BottomRight);
                     self.export.wm_free = self.settings.export_watermark_free;
                     self.export.map_free = self.settings.export_map_free;
+                    self.export.ts_free = self.settings.export_timestamp_free;
+                    self.export.ts_scale = self.settings.export_timestamp_scale.map_or(1.0, |x| x as f32);
+                    let bar = |free: Option<(f32, f32)>, share: Option<f64>| free.map(|(x, y)| (x, y, share.unwrap_or(1.0) as f32));
+                    self.export.data_bar = bar(self.settings.export_dash_bar_free, self.settings.export_dash_bar_scale);
+                    self.export.date_bar = bar(self.settings.export_dash_date_free, self.settings.export_dash_date_scale);
+                    self.export.dash_sizes = DashSizes {
+                        label: self.settings.export_dash_label_scale as f32,
+                        value: self.settings.export_dash_value_scale as f32,
+                        date: self.settings.export_dash_date_value_scale as f32,
+                    };
                     self.export.timelapse = self.settings.export_timelapse;
                     self.export.speed = self.settings.export_speed;
                 }
@@ -959,6 +1009,7 @@ impl App {
             ExportMsg::Corner(i) => {
                 if let Some(c) = Corner::ALL.get(i).filter(|_| !self.export.running()) {
                     self.export.corner = *c;
+                    self.export.ts_free = None;
                 }
             }
             ExportMsg::Dashboard(on) => {
@@ -1090,6 +1141,26 @@ impl App {
                 self.export.dragging = true;
                 match (what, to) {
                     (Dragged::Camera(_), _) => {}
+                    (Dragged::Timestamp, DragTo::Corner(c)) => {
+                        self.export.corner = c;
+                        self.export.ts_free = None;
+                    }
+                    (Dragged::Timestamp, DragTo::Free(x, y)) => self.export.ts_free = Some((x, y)),
+                    // Tesla Mobile's bars: back across the cameras (the data
+                    // bar above or below them), or moved, keeping their width.
+                    (Dragged::Dashboard, DragTo::Corner(c)) if self.export.dash_style == DashStyle::TeslaMobile => {
+                        self.export.bar_top = matches!(c, Corner::TopLeft | Corner::TopCenter | Corner::TopRight);
+                        self.export.data_bar = None;
+                    }
+                    (Dragged::Dashboard, DragTo::Free(x, y)) if self.export.dash_style == DashStyle::TeslaMobile => {
+                        let share = self.export.data_bar.map(|b| b.2).or_else(|| self.export_bar_share(Dragged::Dashboard)).unwrap_or(1.0);
+                        self.export.data_bar = Some((x, y, share));
+                    }
+                    (Dragged::DateBar, DragTo::Corner(_)) => self.export.date_bar = None,
+                    (Dragged::DateBar, DragTo::Free(x, y)) => {
+                        let share = self.export.date_bar.map(|b| b.2).or_else(|| self.export_bar_share(Dragged::DateBar)).unwrap_or(1.0);
+                        self.export.date_bar = Some((x, y, share));
+                    }
                     (Dragged::Dashboard, DragTo::Corner(c)) => {
                         self.export.dash_corner = c;
                         self.export.dash_free = None;
@@ -1119,9 +1190,23 @@ impl App {
                     self.export.cam_free.push((c, (x, y, share as f32)));
                     return Task::none();
                 }
+                // Tesla Mobile's bars: their width, moved where it ended.
+                let tm = self.export.dash_style == DashStyle::TeslaMobile;
+                if let (Dragged::Dashboard | Dragged::DateBar, true, DragTo::Free(x, y)) = (what, tm || what == Dragged::DateBar, to) {
+                    self.export.dragging = true;
+                    let bar = Some((x, y, share as f32));
+                    if what == Dragged::DateBar {
+                        self.export.date_bar = bar;
+                    } else {
+                        self.export.data_bar = bar;
+                    }
+                    return Task::none();
+                }
                 match what {
-                    Dragged::Camera(_) => {}
-                    Dragged::Dashboard => self.export.dash_share = share,
+                    Dragged::Camera(_) | Dragged::DateBar => {}
+                    Dragged::Timestamp => self.export.ts_scale = share as f32,
+                    Dragged::Dashboard if !tm => self.export.dash_share = share,
+                    Dragged::Dashboard => {}
                     Dragged::Map => self.export.map_share = share,
                     Dragged::Watermark => self.export.wm_share = share as f32,
                 }
@@ -1133,8 +1218,21 @@ impl App {
                 }
             }
             ExportMsg::Bar(i) => {
+                // Both bars back across the cameras.
                 if !self.export.running() {
                     self.export.bar_top = i == 1;
+                    self.export.data_bar = None;
+                    self.export.date_bar = None;
+                }
+            }
+            ExportMsg::LabelSize(i) | ExportMsg::ValueSize(i) | ExportMsg::DateSize(i) => {
+                if let Some(x) = DashSizes::STEPS.get(i).filter(|_| !self.export.running()) {
+                    let sizes = &mut self.export.dash_sizes;
+                    match m {
+                        ExportMsg::LabelSize(_) => sizes.label = *x as f32,
+                        ExportMsg::ValueSize(_) => sizes.value = *x as f32,
+                        _ => sizes.date = *x as f32,
+                    }
                 }
             }
             ExportMsg::Start => {
@@ -1191,6 +1289,15 @@ impl App {
                 self.settings.export_watermark_position = self.export.wm_corner.key().to_string();
                 self.settings.export_watermark_free = self.export.wm_free;
                 self.settings.export_map_free = self.export.map_free;
+                self.settings.export_timestamp_free = self.export.ts_free;
+                self.settings.export_timestamp_scale = Some(self.export.ts_scale as f64);
+                self.settings.export_dash_bar_free = self.export.data_bar.map(|(x, y, _)| (x, y));
+                self.settings.export_dash_bar_scale = self.export.data_bar.map(|b| b.2 as f64);
+                self.settings.export_dash_date_free = self.export.date_bar.map(|(x, y, _)| (x, y));
+                self.settings.export_dash_date_scale = self.export.date_bar.map(|b| b.2 as f64);
+                self.settings.export_dash_label_scale = self.export.dash_sizes.label as f64;
+                self.settings.export_dash_value_scale = self.export.dash_sizes.value as f64;
+                self.settings.export_dash_date_value_scale = self.export.dash_sizes.date as f64;
                 self.settings.export_timelapse = self.export.timelapse;
                 self.settings.export_speed = self.export.speed;
                 crate::settings::save(&self.settings);
@@ -1327,97 +1434,96 @@ impl App {
         opaque(container(measured(dialog)).center(Length::Fill).style(theme::backdrop))
     }
 
-    /// The cameras' part of an export `w` x `h`: its top and height (less
-    /// Tesla Mobile's bars).
-    fn export_area(&self, w: u32, h: u32) -> (u32, u32) {
-        match self.export_dashboard().filter(|d| d.style == DashStyle::TeslaMobile) {
-            Some(d) => {
-                let (date, data) = crate::export::tesla_mobile::bar_heights(w);
-                (date + if d.bar_on_top() { data } else { 0 }, h.saturating_sub(date + data))
-            }
-            None => (0, h),
-        }
+    /// A Tesla Mobile bar's width (where it is now) as a share of the
+    /// grid's: what it keeps when first moved.
+    fn export_bar_share(&self, what: Dragged) -> Option<f32> {
+        let l = self.export_layout(self.export.quality);
+        let r = if what == Dragged::DateBar { l.date_bar } else { l.dashboard }?;
+        Some(r.w / l.grid.0.max(1) as f32)
     }
 
-    /// The dashboard (compact) and map in an export `w` x `h`, for dragging.
-    fn movables(&self, w: u32, h: u32) -> Vec<Movable> {
+    /// The layout as set up, and what the editor can move in it: in the
+    /// pixels of what the editor shows (Layout::view, from its top-left).
+    fn movables(&self) -> (Layout, Vec<Movable>) {
+        let l = self.export_layout(self.export.quality);
+        let view = l.view();
+        let local = |r: Rect| iced::Rectangle::new(iced::Point::new(r.x - view.x, r.y - view.y), iced::Size::new(r.w, r.h));
+        let point = |x: f32, y: f32| iced::Point::new(x - view.x, y - view.y);
+        let (gw, area) = (l.grid.0.max(1) as f32, l.area);
+        let (aw, ah) = (area.w as u32, area.h as u32);
+        // The usual places of a `w` x `h` overlay: the cameras' corners.
+        let corners = |options: &[Corner], w: f32, h: f32| -> Vec<(Corner, iced::Point)> {
+            options
+                .iter()
+                .map(|c| {
+                    let (x, y) = c.place(w as u32, h as u32, aw, ah);
+                    (*c, point(area.x + x, area.y + y))
+                })
+                .collect()
+        };
+        let widest = l.canvas.w / gw;
         let mut out = Vec::new();
-        let rect = |x: f32, y: f32, cw: u32, ch: u32| iced::Rectangle::new(iced::Point::new(x, y), iced::Size::new(cw as f32, ch as f32));
-        // The cameras, under the overlays: their grid fills the frame less
-        // Tesla Mobile's bars.
-        let tiles = self.export_tiles();
-        let cols = tiles.iter().map(|t| t.col + 1).max().unwrap_or(1);
-        let rows = tiles.iter().map(|t| t.row + 1).max().unwrap_or(1);
-        let (top, area_h) = self.export_area(w, h);
-        let bars = h.saturating_sub(area_h);
-        let cell = (w / cols, area_h / rows);
-        for t in &tiles {
-            let (x, y, tw, th) = t.rect(cell, w, h, top, area_h);
-            out.push(Movable {
-                what: Dragged::Camera(t.camera),
-                rect: iced::Rectangle::new(iced::Point::new(x, y), iced::Size::new(tw, th)),
-                snaps: Vec::new(),
-                corner: None,
-                unit: w as f32,
-                shares: (0.1, 1.0),
-            });
+        // The cameras, under the overlays.
+        for (camera, r) in &l.cameras {
+            out.push(Movable { what: Dragged::Camera(*camera), rect: local(*r), snaps: Vec::new(), corner: None, unit: gw, shares: (0.1, widest) });
         }
-        if let Some(d) = self.export_dashboard().filter(|d| d.style == DashStyle::Compact) {
-            let size = d.size(w);
-            let (x, y) = d.place(size.width, size.height, w, h);
-            let snaps = Corner::ALL
-                .iter()
-                .map(|c| {
-                    let (sx, sy) = Dashboard { corner: *c, free: None, ..d }.place(size.width, size.height, w, h);
-                    (*c, iced::Point::new(sx, sy))
-                })
-                .collect();
-            let (lo, hi) = Dashboard::SHARES;
-            let unit = Dashboard::UNIT as f32;
-            out.push(Movable {
-                what: Dragged::Dashboard,
-                rect: rect(x, y, size.width, size.height),
-                snaps,
-                corner: d.free.is_none().then_some(d.corner),
-                unit,
-                shares: (lo as f32, (hi as f32).min(w.saturating_sub(80) as f32 / unit)),
-            });
+        if let (Some(ts), Some(r)) = (self.export_timestamp(), l.timestamp) {
+            let (lo, hi) = Timestamp::SCALES;
+            let snaps = corners(&Corner::ALL, r.w, r.h);
+            out.push(Movable { what: Dragged::Timestamp, rect: local(r), snaps, corner: ts.free.is_none().then_some(ts.corner), unit: Timestamp::WIDTH, shares: (lo, hi) });
         }
-        if let Some(m) = self.export_minimap() {
-            let side = m.side(w, h);
-            let (x, y) = m.place_in(side, w, h, top, h.saturating_sub(bars));
-            let snaps = MAP_CORNERS
-                .iter()
-                .map(|c| {
-                    let (sx, sy) = crate::export::overlay::corner_in(*c, side, side, w, top, h.saturating_sub(bars));
-                    (*c, iced::Point::new(sx, sy))
-                })
-                .collect();
+        if let (Some(d), Some(r)) = (self.export_dashboard(), l.dashboard) {
+            if d.style == DashStyle::Compact {
+                let snaps = Corner::ALL
+                    .iter()
+                    .map(|c| {
+                        let (x, y) = Dashboard { corner: *c, ..d }.place(r.w as u32, r.h as u32, aw, ah);
+                        (*c, point(area.x + x, area.y + y))
+                    })
+                    .collect();
+                let (lo, hi) = Dashboard::SHARES;
+                let unit = Dashboard::UNIT as f32;
+                out.push(Movable {
+                    what: Dragged::Dashboard,
+                    rect: local(r),
+                    snaps,
+                    corner: d.free.is_none().then_some(d.corner),
+                    unit,
+                    shares: (lo as f32, (hi as f32).min((gw - 80.0).max(80.0) / unit)),
+                });
+            } else {
+                // Tesla Mobile's bars snap back across the cameras: the data
+                // bar under or over them, the date bar on top.
+                let (date_h, data_h) = crate::export::tesla_mobile::bar_heights(aw);
+                let (date_h, data_h) = (date_h as f32, data_h as f32);
+                let data_snaps = vec![(Corner::BottomCenter, point(area.x, area.bottom())), (Corner::TopCenter, point(area.x, area.y - data_h))];
+                out.push(Movable { what: Dragged::Dashboard, rect: local(r), snaps: data_snaps, corner: None, unit: gw, shares: (0.2, widest) });
+                if let Some(date) = l.date_bar {
+                    let above = date_h + if d.bar_on_top() { data_h } else { 0.0 };
+                    let date_snaps = vec![(Corner::TopCenter, point(area.x, area.y - above))];
+                    out.push(Movable { what: Dragged::DateBar, rect: local(date), snaps: date_snaps, corner: None, unit: gw, shares: (0.2, widest) });
+                }
+            }
+        }
+        if let (Some(m), Some(r)) = (self.export_minimap(), l.map) {
             let (lo, hi) = Minimap::SHARES;
-            out.push(Movable { what: Dragged::Map, rect: rect(x, y, side, side), snaps, corner: m.free.is_none().then_some(m.corner), unit: w.min(h) as f32, shares: (lo as f32, hi as f32) });
+            // Its side is a share of the untouched frame's shorter side.
+            let unit = r.w / m.share.max(0.01) as f32;
+            out.push(Movable { what: Dragged::Map, rect: local(r), snaps: corners(&MAP_CORNERS, r.w, r.h), corner: m.free.is_none().then_some(m.corner), unit, shares: (lo as f32, hi as f32) });
         }
-        if let Some(wm) = self.export_watermark() {
-            let (ww, wh) = wm.size(w);
-            let (x, y) = wm.place_in(w, h, top, h.saturating_sub(bars));
-            let snaps = Corner::ALL
-                .iter()
-                .map(|c| {
-                    let (sx, sy) = crate::export::overlay::corner_in(*c, ww, wh, w, top, h.saturating_sub(bars));
-                    (*c, iced::Point::new(sx, sy))
-                })
-                .collect();
+        if let (Some(wm), Some(r)) = (self.export_watermark(), l.watermark) {
             let (lo, hi) = Watermark::SHARES;
             let (pl, ph) = Watermark::PIXELS;
             out.push(Movable {
                 what: Dragged::Watermark,
-                rect: rect(x, y, ww, wh),
-                snaps,
+                rect: local(r),
+                snaps: corners(&Corner::ALL, r.w, r.h),
                 corner: wm.free.is_none().then_some(wm.corner),
-                unit: w as f32,
-                shares: (lo.max(pl / w as f32), hi.min(ph / w as f32)),
+                unit: gw,
+                shares: (lo.max(pl / gw), hi.min(ph / gw)),
             });
         }
-        out
+        (l, out)
     }
 
     /// The finished export: what was made, a look at it, and what next.
@@ -1536,21 +1642,28 @@ impl App {
     /// live from what's playing (the same drawing as the export's, at the
     /// preview's size): the dashboard on its frosted glass, Tesla Mobile's
     /// bars, the time and the map. The watermark is the preview's picture.
-    fn live_layers<'a>(&'a self, items: &[Movable], full: (u32, u32), (w, h): (f32, f32)) -> iced::widget::Stack<'a, Message> {
-        use crate::export::overlay::{corner_in, DashState};
+    /// `items` are in the view's pixels (see movables), shown `w` wide.
+    fn live_layers<'a>(&'a self, items: &[Movable], l: &Layout, (w, h): (f32, f32)) -> iced::widget::Stack<'a, Message> {
+        use crate::export::overlay::DashState;
         use iced::widget::pin;
-        let scale = w / full.0.max(1) as f32;
-        // A preview rectangle on whole pixels, from the frame's pixels.
+        let view = l.view();
+        let scale = w / view.w.max(1.0);
+        // A preview rectangle on whole pixels, from the view's pixels.
         let px = |x: f32, y: f32, rw: f32, rh: f32| {
             let (x0, y0) = ((x * scale).round(), (y * scale).round());
             let (x1, y1) = (((x + rw) * scale).round().min(w), ((y + rh) * scale).round().min(h));
             iced::Rectangle::new(iced::Point::new(x0, y0), iced::Size::new((x1 - x0).max(1.0), (y1 - y0).max(1.0)))
         };
+        let of = |item: &Movable| px(item.rect.x, item.rect.y, item.rect.width, item.rect.height);
+        let find = |what: Dragged| items.iter().find(|m| m.what == what);
         let place = |layers: iced::widget::Stack<'a, Message>, r: iced::Rectangle, e: Element<'a, Message>| layers.push(pin(container(e).width(r.width).height(r.height)).x(r.x).y(r.y).width(w).height(h));
-        let mut layers = stack![container(space()).width(w).height(h).style(|_| container::Style { background: Some(Background::Color(Color::BLACK)), ..Default::default() })];
+        // The frame black, the canvas around it left as it is.
+        let out = px(l.frame.x - view.x, l.frame.y - view.y, l.frame.w, l.frame.h);
+        let black = container(space()).width(out.width).height(out.height).style(|_| container::Style { background: Some(Background::Color(Color::BLACK)), ..Default::default() });
+        let mut layers = stack![space().width(w).height(h), pin(black).x(out.x).y(out.y).width(w).height(h)];
         let dashboard = self.export_dashboard();
         // The dashboard's glass, in preview pixels.
-        let frost = dashboard.and_then(|d| d.frost(full.0, full.1)).map(|([x, y, fw, fh, r], sigma)| (px(x, y, fw, fh), r * scale, sigma * scale));
+        let frost = dashboard.zip(l.dashboard).and_then(|(d, r)| d.frost([r.x - view.x, r.y - view.y, r.w, r.h])).map(|([x, y, fw, fh, r], sigma)| (px(x, y, fw, fh), r * scale, sigma * scale));
         for item in items {
             let Dragged::Camera(c) = item.what else { continue };
             let Some(idx) = GRID.iter().position(|g| *g == c) else { continue };
@@ -1559,7 +1672,7 @@ impl App {
             }
             let picture = self.player.shown(idx).map(|s| (s.id, s.frame.clone()));
             let view = crate::video::View { mirror: c.mirrored() && self.settings.mirror_cameras, square: true, ..Default::default() };
-            let r = px(item.rect.x, item.rect.y, item.rect.width, item.rect.height);
+            let r = of(item);
             // The glass from the tile's top-left (see video::View::square).
             let glass2 = frost.filter(|(g, _, _)| g.intersects(&r)).map(|(g, radius, blur)| crate::video::Glass {
                 rect: iced::Rectangle::new(iced::Point::new(g.x - r.x, g.y - r.y), g.size()),
@@ -1573,35 +1686,32 @@ impl App {
         }
         let telemetry = self.front_telemetry();
         let wall = self.player.wall_clock();
-        // Tesla Mobile's bars, across the frame.
-        let (top, bars) = match dashboard.filter(|d| d.style == DashStyle::TeslaMobile) {
-            Some(d) => {
-                let (date, data) = crate::export::tesla_mobile::bar_heights(full.0);
+        // Tesla Mobile's bars, where they are.
+        if let Some(d) = dashboard.filter(|d| d.style == DashStyle::TeslaMobile) {
+            if let Some(item) = find(Dragged::DateBar) {
                 let line = wall.map(|t| crate::export::tesla_mobile::date_line(t, self.settings.time_24h)).unwrap_or_default();
-                layers = place(layers, px(0.0, 0.0, full.0 as f32, date as f32), crate::export::tesla_mobile::date_bar(line));
-                let data_y = if d.bar_on_top() { date } else { full.1.saturating_sub(data) };
-                let state = DashState { telemetry: telemetry.cloned(), time: String::new(), steering: self.steering, blink_ms: self.epoch.elapsed().as_millis() % 700 };
-                layers = place(layers, px(0.0, data_y as f32, full.0 as f32, data as f32), crate::export::tesla_mobile::data_bar(state, self.metric(), !d.bar_on_top()));
-                (date + if d.bar_on_top() { data } else { 0 }, date + data)
+                layers = place(layers, of(item), crate::export::tesla_mobile::date_bar(line, d.sizes.date));
             }
-            None => (0, 0),
-        };
+            if let Some(item) = find(Dragged::Dashboard) {
+                let state = DashState { telemetry: telemetry.cloned(), time: String::new(), steering: self.steering, blink_ms: self.epoch.elapsed().as_millis() % 700 };
+                layers = place(layers, of(item), crate::export::tesla_mobile::data_bar(state, self.metric(), !d.bar_on_top(), (d.sizes.label, d.sizes.value)));
+            }
+        }
         // The time.
-        if let (Some(ts), Some(t)) = (self.export_timestamp(), wall) {
-            let size = ts.size(full.0);
-            let (x, y) = corner_in(ts.corner, size.width, size.height, full.0, top, full.1.saturating_sub(bars));
-            layers = place(layers, px(x, y, size.width as f32, size.height as f32), ts.label(t, scale));
+        if let (Some(ts), Some(t), Some(item)) = (self.export_timestamp(), wall, find(Dragged::Timestamp)) {
+            layers = place(layers, of(item), ts.label(t, scale));
         }
         // The compact dashboard, as the export draws it at this size.
-        if let (Some(d), Some(item)) = (dashboard.filter(|d| d.style == DashStyle::Compact), items.iter().find(|m| m.what == Dragged::Dashboard)) {
-            let r = px(item.rect.x, item.rect.y, item.rect.width, item.rect.height);
+        if let (Some(d), Some(item)) = (dashboard.filter(|d| d.style == DashStyle::Compact), find(Dragged::Dashboard)) {
+            let r = of(item);
             let inner = r.width / 650.0;
-            layers = place(layers, r, Dashboard::bar(crate::dashboard::compact(self.dash(inner)), d.glass > 0.0, r.height, 6.0 * inner));
+            let dash = crate::dashboard::Dash { label: d.sizes.label, value: d.sizes.value, ..self.dash(inner) };
+            layers = place(layers, r, Dashboard::bar(crate::dashboard::compact(dash), d.glass > 0.0, r.height, 6.0 * inner));
         }
         // The map following the car: playback's map at this size (its 260 px
         // at zoom 16, as the export's live map).
-        if let Some(item) = items.iter().find(|m| m.what == Dragged::Map) {
-            let r = px(item.rect.x, item.rect.y, item.rect.width, item.rect.height);
+        if let Some(item) = find(Dragged::Map) {
+            let r = of(item);
             let car = telemetry.and_then(crate::map::car);
             let route = self.map_route().0;
             let center = car.map(|(lat, lon, _)| (lat, lon)).or_else(|| route.get(route.len() / 2).map(|p| (p.0 as f64, p.1 as f64)));
@@ -1622,9 +1732,9 @@ impl App {
             }
         }
         // The watermark: its picture from the preview.
-        if let (Some(Ok(sh)), Some(item)) = (self.export.preview.as_ref(), items.iter().find(|m| m.what == Dragged::Watermark)) {
+        if let (Some(Ok(sh)), Some(item)) = (self.export.preview.as_ref(), find(Dragged::Watermark)) {
             if let Some((_, piece)) = sh.pieces.iter().find(|(what, _)| *what == Dragged::Watermark) {
-                let r = px(item.rect.x, item.rect.y, item.rect.width, item.rect.height);
+                let r = of(item);
                 layers = place(layers, r, iced::widget::image(piece.clone()).width(r.width).height(r.height).content_fit(iced::ContentFit::Fill).into());
             }
         }
@@ -1632,18 +1742,26 @@ impl App {
     }
 
     /// The preview of the export, with its size, format and range under it.
+    /// It shows the canvas the pieces can be moved on, the frame (the box
+    /// around them, which is what's exported) drawn on it.
     fn preview_block(&self, (a, b): (f64, f64), secs: f64, speed: f64, multi: bool, used: Format, (wide, tall): (f32, f32)) -> Element<'_, Message> {
+        use iced::widget::pin;
         let e = &self.export;
-        let (wide_px, tall_px) = (wide, tall);
-        #[allow(non_snake_case)]
-        let (WIDE, TALL) = (wide_px, tall_px);
         let frame: Element<'_, Message> = match &e.preview {
-            Some(Ok(Shown { handle, size: shown, .. })) => {
-                let aspect = shown.0 as f32 / shown.1.max(1) as f32;
-                let (w, h) = if WIDE / aspect > TALL { (TALL * aspect, TALL) } else { (WIDE, WIDE / aspect) };
-                let picture = iced::widget::image(handle.clone()).width(w).height(h).content_fit(iced::ContentFit::Fill);
-                let full = e.preview.as_ref().and_then(|p| p.as_ref().ok()).map(|p| p.full).unwrap_or(*shown);
-                let items = self.movables(full.0, full.1);
+            Some(Ok(shown)) => {
+                let (l, items) = self.movables();
+                let view = l.view();
+                let aspect = view.w / view.h.max(1.0);
+                let (w, h) = if wide / aspect > tall { (tall * aspect, tall) } else { (wide, wide / aspect) };
+                let scale = w / view.w.max(1.0);
+                // A rectangle on the sheet, in the preview's pixels.
+                let at = |r: Rect| iced::Rectangle::new(iced::Point::new((r.x - view.x) * scale, (r.y - view.y) * scale), iced::Size::new(r.w * scale, r.h * scale));
+                let picture_at = |handle: iced::widget::image::Handle, r: iced::Rectangle| pin(iced::widget::image(handle).width(r.width).height(r.height).content_fit(iced::ContentFit::Fill)).x(r.x).y(r.y).width(w).height(h);
+                // The drawn frame, where it was when drawn (on a sheet of
+                // another scale when the footage's size wasn't known yet,
+                // or the export had to be made smaller).
+                let k = l.grid.0 as f32 / shown.grid.0.max(1) as f32;
+                let drawn = at(Rect::new(shown.sheet.x * k, shown.sheet.y * k, shown.sheet.w * k, shown.sheet.h * k));
                 // While a piece is dragged: the frame without the pieces,
                 // and each piece where it is now (scaled with the preview).
                 let pieces_shown = e.dragging || e.drag_wait;
@@ -1651,30 +1769,33 @@ impl App {
                 // are, so the drag layer keeps its place (and what it holds)
                 // when they change from the frame to the pieces.
                 let content: Element<'_, Message> = if e.playing {
-                    self.live_layers(&items, full, (w, h)).into()
+                    self.live_layers(&items, &l, (w, h)).into()
                 } else {
-                    match e.preview.as_ref().and_then(|p| p.as_ref().ok()).filter(|p| pieces_shown && p.base.is_some()) {
-                    Some(sh) => {
-                        let scale = w / full.0.max(1) as f32;
-                        let mut layers = stack![iced::widget::image(sh.base.clone().unwrap_or_else(|| handle.clone())).width(w).height(h).content_fit(iced::ContentFit::Fill)];
-                        for (what, piece) in &sh.pieces {
-                            if let Some(item) = items.iter().find(|m| m.what == *what) {
-                                let r = item.rect;
-                                layers = layers.push(
-                                    container(iced::widget::image(piece.clone()).width(r.width * scale).height(r.height * scale).content_fit(iced::ContentFit::Fill))
-                                        .padding(iced::Padding { top: r.y * scale, left: r.x * scale, ..iced::Padding::ZERO })
-                                        .width(w)
-                                        .height(h),
-                                );
+                    match shown.base.as_ref().filter(|_| pieces_shown) {
+                        Some(base) => {
+                            let mut layers = stack![space().width(w).height(h), picture_at(base.clone(), drawn)];
+                            for (what, piece) in &shown.pieces {
+                                if let Some(item) = items.iter().find(|m| m.what == *what) {
+                                    let r = item.rect;
+                                    let r = iced::Rectangle::new(iced::Point::new(r.x * scale, r.y * scale), iced::Size::new(r.width * scale, r.height * scale));
+                                    layers = layers.push(picture_at(piece.clone(), r));
+                                }
                             }
+                            layers.into()
                         }
-                        layers.into()
-                    }
-                    None => picture.into(),
+                        None => stack![space().width(w).height(h), picture_at(shown.handle.clone(), drawn)].into(),
                     }
                 };
-                let (top, area_h) = self.export_area(full.0, full.1);
-                let drag = PreviewDrag { frame: (full.0 as f32, full.1 as f32), area: (top as f32, area_h as f32), items, enabled: !e.running() };
+                let local = |r: Rect| iced::Rectangle::new(iced::Point::new(r.x - view.x, r.y - view.y), iced::Size::new(r.w, r.h));
+                let drag = PreviewDrag {
+                    frame: (view.w, view.h),
+                    bounds: local(l.canvas),
+                    out: local(l.frame),
+                    origin: (view.x, view.y),
+                    grid: (l.grid.0 as f32, l.grid.1 as f32),
+                    items,
+                    enabled: !e.running(),
+                };
                 let mut layers = stack![content, iced::widget::canvas(drag).width(w).height(h)];
                 if e.preview_busy && !e.playing {
                     layers = layers.push(container(container(text(t("ui.export.previewUpdating")).size(10).color(theme::TEXT_SECONDARY)).padding([3, 8]).style(|_| container::Style {
@@ -1686,8 +1807,13 @@ impl App {
                     .width(w)
                     .align_x(Alignment::End));
                 }
+                // The canvas: a faint sheet around the frame.
                 container(layers)
-                    .style(|_| container::Style { border: Border { color: Color::from_rgba(1.0, 1.0, 1.0, 0.12), width: 1.0, radius: 4.0.into() }, ..Default::default() })
+                    .style(|_| container::Style {
+                        background: Some(Background::Color(Color::from_rgba(1.0, 1.0, 1.0, 0.03))),
+                        border: Border { color: Color::from_rgba(1.0, 1.0, 1.0, 0.12), width: 1.0, radius: 4.0.into() },
+                        ..Default::default()
+                    })
                     .into()
             }
             other => {
@@ -1695,7 +1821,7 @@ impl App {
                     Some(Err(message)) => message.clone(),
                     _ => t("ui.export.previewDrawing").to_string(),
                 };
-                container(text(words).size(11).color(theme::TEXT_MUTED)).center_x(WIDE).center_y(TALL * 0.6).style(card_style(false)).into()
+                container(text(words).size(11).color(theme::TEXT_MUTED)).center_x(wide).center_y(tall * 0.6).style(card_style(false)).into()
             }
         };
         // Size, format and file size; the range and its length.
@@ -1871,7 +1997,8 @@ impl App {
         )]
         .spacing(8);
         if e.timestamp && !e.dashboard {
-            overlays = overlays.push(sub(labelled(t("ui.export.position"), t(e.corner.label_key()), corner_pad(&Corner::ALL, Some(e.corner), !busy, ExportMsg::Corner))));
+            let (place, lit) = if e.ts_free.is_some() { (t("ui.export.customPosition"), None) } else { (t(e.corner.label_key()), Some(e.corner)) };
+            overlays = overlays.push(sub(labelled(t("ui.export.position"), place, corner_pad(&Corner::ALL, lit, !busy, ExportMsg::Corner))));
         }
         overlays = overlays.push(labelled(
             t("ui.export.dashboard"),
@@ -1883,11 +2010,32 @@ impl App {
             let style = DashStyle::ALL.iter().position(|d| *d == e.dash_style).unwrap_or(0);
             overlays = overlays.push(sub(labelled(t("ui.export.style"), "", segmented(styles, style, !busy, ExportMsg::DashStyle))));
             if e.dash_style == DashStyle::TeslaMobile {
+                // Bottom or Top puts both bars back across the cameras.
                 let bars = vec![t("ui.export.bottom").to_string(), t("ui.export.top").to_string()];
-                overlays = overlays.push(sub(labelled(t("ui.export.position"), "", segmented(bars, e.bar_top as usize, !busy, ExportMsg::Bar))));
+                let moved = e.data_bar.is_some() || e.date_bar.is_some();
+                let (place, lit) = if moved { (t("ui.export.customPosition"), usize::MAX) } else { ("", e.bar_top as usize) };
+                overlays = overlays.push(sub(labelled(t("ui.export.position"), place, segmented(bars, lit, !busy, ExportMsg::Bar))));
             } else {
                 let (place, lit) = if e.dash_free.is_some() { (t("ui.export.customPosition"), None) } else { (t(e.dash_corner.label_key()), Some(e.dash_corner)) };
                 overlays = overlays.push(sub(labelled(t("ui.export.position"), place, corner_pad(&Corner::ALL, lit, !busy, ExportMsg::DashCorner))));
+            }
+            // Label Size and Value Size (and Tesla Mobile's date bar), as
+            // earlier versions' editor offered them: 75% to 200%.
+            let steps: Vec<String> = DashSizes::STEPS.iter().map(|x| format!("{}%", (x * 100.0).round())).collect();
+            let step = |x: f32| DashSizes::STEPS.iter().position(|s| (*s as f32 - x).abs() < 0.01).unwrap_or(1);
+            let size_row = |label: &'static str, desc: &'static str, current: f32, choose: fn(usize) -> ExportMsg| {
+                sub(column![
+                    text(t(label)).size(12).font(theme::medium(theme::INTER)),
+                    segmented(steps.clone(), step(current), !busy, choose),
+                    text(t(desc)).size(10).color(theme::TEXT_MUTED),
+                ]
+                .spacing(6)
+                .into())
+            };
+            overlays = overlays.push(size_row("ui.export.labelSize", "ui.export.labelSizeDesc", e.dash_sizes.label, ExportMsg::LabelSize));
+            overlays = overlays.push(size_row("ui.export.valueSize", "ui.export.valueSizeDesc", e.dash_sizes.value, ExportMsg::ValueSize));
+            if e.dash_style == DashStyle::TeslaMobile {
+                overlays = overlays.push(size_row("ui.export.dateBarSize", "ui.export.dateBarSizeDesc", e.dash_sizes.date, ExportMsg::DateSize));
             }
         }
         overlays = overlays.push(labelled(
@@ -2194,14 +2342,21 @@ enum Grip {
 /// How near a corner (preview pixels) the pointer takes the resize handle.
 const HANDLE_REACH: f32 = 9.0;
 
-/// The layer over the preview that moves the dashboard and map: an outline
-/// on hover, dragged anywhere, snapping to its usual places when near one.
+/// The layer over the preview that moves the cameras and overlays: an
+/// outline on hover, dragged anywhere on the canvas, snapping to its usual
+/// places when near one. The exported frame (the box around everything)
+/// is outlined as it changes.
 struct PreviewDrag {
-    /// The export's size, which the preview shows scaled.
+    /// What's shown (Layout::view's size), which the preview shows scaled.
     frame: (f32, f32),
-    /// The cameras' part of it (top, height): dragged places are shares
-    /// of that (see overlay::free_place_in).
-    area: (f32, f32),
+    /// Where pieces may go (the layout's canvas), in the same pixels.
+    bounds: iced::Rectangle,
+    /// The exported frame as it is now, in the same pixels.
+    out: iced::Rectangle,
+    /// The view's top-left on the layout's sheet, and the grid's size:
+    /// dragged places are shares of the grid (see export::layout).
+    origin: (f32, f32),
+    grid: (f32, f32),
     items: Vec<Movable>,
     enabled: bool,
 }
@@ -2238,6 +2393,25 @@ fn snap_axis(pos: f32, len: f32, lines: &[f32], reach: f32) -> (f32, Option<f32>
 impl PreviewDrag {
     fn scale(&self, bounds: iced::Rectangle) -> f32 {
         bounds.width / self.frame.0.max(1.0)
+    }
+
+    /// A top-left at `(x, y)` (the view's pixels) as a place of its own.
+    fn free(&self, x: f32, y: f32) -> DragTo {
+        DragTo::Free((x + self.origin.0) / self.grid.0.max(1.0), (y + self.origin.1) / self.grid.1.max(1.0))
+    }
+
+    /// Lines to snap to: the canvas's edges and centre, and the other
+    /// pieces' edges and centres (all but item `i`).
+    fn lines(&self, i: usize) -> (Vec<f32>, Vec<f32>) {
+        let b = self.bounds;
+        let mut xs = vec![b.x, b.x + b.width / 2.0, b.x + b.width];
+        let mut ys = vec![b.y, b.y + b.height / 2.0, b.y + b.height];
+        for (_, other) in self.items.iter().enumerate().filter(|(j, _)| *j != i) {
+            let r = other.rect;
+            xs.extend([r.x, r.x + r.width / 2.0, r.x + r.width]);
+            ys.extend([r.y, r.y + r.height / 2.0, r.y + r.height]);
+        }
+        (xs, ys)
     }
 
     fn shown(&self, i: usize, scale: f32) -> iced::Rectangle {
@@ -2291,15 +2465,9 @@ impl PreviewDrag {
     #[allow(clippy::type_complexity)]
     fn resize(&self, state: &mut DragState, i: usize, p: iced::Point, (fixed, left, up, centred, keep): (iced::Point, bool, bool, bool, Option<Corner>), scale: f32) -> Option<iced::widget::canvas::Action<Message>> {
         let item = &self.items[i];
-        let (fw, fh) = self.frame;
+        let b = self.bounds;
         let aspect = item.rect.width / item.rect.height.max(1.0);
-        let mut xs = vec![0.0, fw / 2.0, fw];
-        let mut ys = vec![0.0, fh / 2.0, fh];
-        for (_, other) in self.items.iter().enumerate().filter(|(j, _)| *j != i) {
-            let r = other.rect;
-            xs.extend([r.x, r.x + r.width / 2.0, r.x + r.width]);
-            ys.extend([r.y, r.y + r.height / 2.0, r.y + r.height]);
-        }
+        let (xs, ys) = self.lines(i);
         let reach = 6.0 / scale;
         // The width the pointer asks for, by either axis.
         let (ex, gx) = if centred { (p.x, None) } else { snap_axis(p.x, 0.0, &xs, reach) };
@@ -2309,14 +2477,19 @@ impl PreviewDrag {
         // The handle runs along the corner's diagonal: the width whose
         // handle is nearest the pointer, or the width an edge snapped to.
         let k = if centred { 0.5 } else { 1.0 };
+        let diagonal = (k * dx + dy / aspect) / (k * k + 1.0 / (aspect * aspect));
+        // A snapped top or bottom only nudges the size: on a long, thin
+        // piece (Tesla Mobile's bars) each pixel of height is many of width.
+        let gy = gy.filter(|_| (dy * aspect - diagonal).abs() <= 3.0 * reach);
         let (want, guide) = match (gx, gy) {
             (Some(_), _) => (dx / k, (gx, None)),
             (None, Some(_)) => (dy * aspect, (None, gy)),
-            (None, None) => ((k * dx + dy / aspect) / (k * k + 1.0 / (aspect * aspect)), (None, None)),
+            (None, None) => (diagonal, (None, None)),
         };
-        // Kept inside the frame, and between the sizes it may be.
-        let room_x = if centred { 2.0 * fixed.x.min(fw - fixed.x) } else if left { fixed.x } else { fw - fixed.x };
-        let room_y = (if up { fixed.y } else { fh - fixed.y }) * aspect;
+        // Kept on the canvas, and between the sizes it may be.
+        let (right, bottom) = (b.x + b.width, b.y + b.height);
+        let room_x = if centred { 2.0 * (fixed.x - b.x).min(right - fixed.x) } else if left { fixed.x - b.x } else { right - fixed.x };
+        let room_y = (if up { fixed.y - b.y } else { bottom - fixed.y }) * aspect;
         let (lo, hi) = item.shares;
         let hi = hi.min(room_x.min(room_y) / item.unit).max(lo);
         let share = (want / item.unit).clamp(lo, hi);
@@ -2331,7 +2504,7 @@ impl PreviewDrag {
         state.guides = (at_edge(guide.0, edge_x).into_iter().collect(), at_edge(guide.1, edge_y).into_iter().collect());
         let to = match keep {
             Some(c) => DragTo::Corner(c),
-            None => DragTo::Free(x / fw, (y - self.area.0) / self.area.1.max(1.0)),
+            None => self.free(x, y),
         };
         Some(iced::widget::canvas::Action::publish(wrap(ExportMsg::Resize(item.what, share as f64, to))).and_capture())
     }
@@ -2378,32 +2551,26 @@ impl iced::widget::canvas::Program<Message> for PreviewDrag {
                 // The new top-left in the frame's pixels.
                 let x = (p.x - grip.x) / scale;
                 let y = (p.y - grip.y) / scale;
-                // Lines to snap to: the frame's edges and centre, the usual
+                // Lines to snap to: the canvas's edges and centre, the usual
                 // places' edges, and the other pieces' edges and centres.
-                let (fw, fh) = self.frame;
-                let mut xs = vec![0.0, fw / 2.0, fw];
-                let mut ys = vec![0.0, fh / 2.0, fh];
+                let (mut xs, mut ys) = self.lines(i);
                 for (_, s) in &item.snaps {
                     xs.extend([s.x, s.x + w]);
                     ys.extend([s.y, s.y + h]);
                 }
-                for (j, other) in self.items.iter().enumerate().filter(|(j, _)| *j != i) {
-                    let _ = j;
-                    let r = other.rect;
-                    xs.extend([r.x, r.x + r.width / 2.0, r.x + r.width]);
-                    ys.extend([r.y, r.y + r.height / 2.0, r.y + r.height]);
-                }
                 let reach = 6.0 / scale;
                 let (x, gx) = snap_axis(x, w, &xs, reach);
                 let (y, gy) = snap_axis(y, h, &ys, reach);
-                let x = x.clamp(0.0, (fw - w).max(0.0));
-                let y = y.clamp(0.0, (fh - h).max(0.0));
+                // On the canvas.
+                let b = self.bounds;
+                let x = x.clamp(b.x, (b.x + b.width - w).max(b.x));
+                let y = y.clamp(b.y, (b.y + b.height - h).max(b.y));
                 state.guides = (gx.into_iter().collect(), gy.into_iter().collect());
                 // Exactly on one of its usual places: that place.
                 let corner = item.snaps.iter().find(|(_, s)| (s.x - x).abs() < 0.5 && (s.y - y).abs() < 0.5);
                 let to = match corner {
                     Some((c, _)) => DragTo::Corner(*c),
-                    None => DragTo::Free(x / fw, (y - self.area.0) / self.area.1.max(1.0)),
+                    None => self.free(x, y),
                 };
                 if let Dragged::Camera(_) = item.what {
                     return Some(Action::publish(wrap(ExportMsg::Resize(item.what, (w / item.unit) as f64, to))).and_capture());
@@ -2422,6 +2589,10 @@ impl iced::widget::canvas::Program<Message> for PreviewDrag {
         use iced::widget::canvas::{Frame, Path, Stroke};
         let mut frame = Frame::new(renderer, bounds.size());
         let scale = self.scale(bounds);
+        // The exported frame's edge, as it is now (it follows what's moved).
+        let o = self.out;
+        let edge = Path::rectangle(iced::Point::new((o.x * scale).round() + 0.5, (o.y * scale).round() + 0.5), iced::Size::new((o.width * scale).round() - 1.0, (o.height * scale).round() - 1.0));
+        frame.stroke(&edge, Stroke::default().with_width(1.0).with_color(Color::from_rgba(1.0, 1.0, 1.0, 0.35)));
         let lit = state.held.map(|(what, _)| what).or(state.hover);
         if let Some(i) = lit.and_then(|what| self.items.iter().position(|m| m.what == what)) {
             let r = self.shown(i, scale);
@@ -2800,20 +2971,27 @@ mod tests {
         app.player.load(crate::library::load_segments(&collections[0]).unwrap(), 0.0);
         app.export.open = true;
         app.export.dashboard = true;
-        const W: u32 = 3258;
-        const H: u32 = 1408;
         const SHOWN: f32 = 720.0;
-        let (w, h, shown) = (W, H, SHOWN);
-        let scale = shown / w as f32;
+        let shown = SHOWN;
         fn view(a: &crate::App) -> iced::Element<'_, crate::Message> {
-            iced::widget::canvas(super::PreviewDrag { frame: (W as f32, H as f32), area: (0.0, H as f32), items: a.movables(W, H), enabled: true }).width(SHOWN).height(H as f32 * SHOWN / W as f32).into()
+            let (l, items) = a.movables();
+            let v = l.view();
+            let local = |r: super::Rect| iced::Rectangle::new(iced::Point::new(r.x - v.x, r.y - v.y), iced::Size::new(r.w, r.h));
+            let drag = super::PreviewDrag { frame: (v.w, v.h), bounds: local(l.canvas), out: local(l.frame), origin: (v.x, v.y), grid: (l.grid.0 as f32, l.grid.1 as f32), items, enabled: true };
+            iced::widget::canvas(drag).width(SHOWN).height(v.h * SHOWN / v.w).into()
         }
+        // The view's pixels (Layout::view); the grid's top-left is at `o`.
+        let (l, _) = app.movables();
+        let v = l.view();
+        let (w, h) = (l.grid.0, l.grid.1);
+        let o = (-v.x, -v.y);
+        let scale = shown / v.w;
         let update = |a: &mut crate::App, m: crate::Message| {
             if let crate::Message::Export(e) = m {
                 let _ = a.export_update(e);
             }
         };
-        let dash = |a: &crate::App| a.movables(W, H).into_iter().find(|m| m.what == super::Dragged::Dashboard).expect("no dashboard").rect;
+        let dash = |a: &crate::App| a.movables().1.into_iter().find(|m| m.what == super::Dragged::Dashboard).expect("no dashboard").rect;
         let r = dash(&app);
         let (cx, cy) = ((r.x + r.width / 2.0) * scale, (r.y + r.height / 2.0) * scale);
         use iced::mouse::{Button, Event as M};
@@ -2827,22 +3005,23 @@ mod tests {
         painter.run(&mut app, view, update, iced::Size::new(shown, 400.0), &steps);
         eprintln!("free: {:?}", app.export.dash_free);
         let (fx, fy) = app.export.dash_free.expect("the dashboard didn't move");
-        eprintln!("moved to {:?}, aimed at {:?}", (fx * w as f32, fy * h as f32), (r.x - 90.0 / scale, r.y - 72.0 / scale));
+        let moved = (fx * w as f32 + o.0, fy * h as f32 + o.1);
+        eprintln!("moved to {moved:?}, aimed at {:?}", (r.x - 90.0 / scale, r.y - 72.0 / scale));
         // Where it was aimed, or snapped to a line within reach (6 preview pixels).
         let reach = 6.0 / scale + 3.0;
-        assert!((fx * w as f32 - (r.x - 90.0 / scale)).abs() < reach && (fy * h as f32 - (r.y - 72.0 / scale)).abs() < reach);
-        // Dropped with its centre near the frame's centre: snapped onto it.
+        assert!((moved.0 - (r.x - 90.0 / scale)).abs() < reach && (moved.1 - (r.y - 72.0 / scale)).abs() < reach);
+        // Dropped with its centre near the canvas's centre: snapped onto it.
         let r = dash(&app);
         let grip = ((r.x + r.width / 2.0) * scale, (r.y + r.height / 2.0) * scale);
-        let aim = ((w as f32 / 2.0 + 15.0) * scale, (h as f32 / 2.0 - 12.0) * scale);
+        let aim = ((v.w / 2.0 + 15.0) * scale, (v.h / 2.0 - 12.0) * scale);
         let steps = vec![at(grip.0, grip.1), iced::Event::Mouse(M::ButtonPressed(Button::Left)), at(aim.0, aim.1), iced::Event::Mouse(M::ButtonReleased(Button::Left))];
         painter.run(&mut app, view, update, iced::Size::new(shown, 400.0), &steps);
         let c = dash(&app);
         eprintln!("centred: {:?}", c);
-        assert!((c.x + c.width / 2.0 - w as f32 / 2.0).abs() < 1.0 && (c.y + c.height / 2.0 - h as f32 / 2.0).abs() < 1.0);
+        assert!((c.x + c.width / 2.0 - v.w / 2.0).abs() < 1.0 && (c.y + c.height / 2.0 - v.h / 2.0).abs() < 1.0);
         // Dropped next to the top-left place: snapped there.
         let r = dash(&app);
-        let target = iced::Point::new(40.0 * scale + 2.0, 40.0 * scale + 2.0);
+        let target = iced::Point::new((o.0 + 40.0) * scale + 2.0, (o.1 + 40.0) * scale + 2.0);
         let grip = ((r.x + r.width / 2.0) * scale, (r.y + r.height / 2.0) * scale);
         let steps = vec![at(grip.0, grip.1), iced::Event::Mouse(M::ButtonPressed(Button::Left)), at(target.x + r.width / 2.0 * scale, target.y + r.height / 2.0 * scale), iced::Event::Mouse(M::ButtonReleased(Button::Left))];
         painter.run(&mut app, view, update, iced::Size::new(shown, 400.0), &steps);
@@ -2874,7 +3053,7 @@ mod tests {
         assert!(after.width < r.width - 30.0 / scale);
         // The front camera: shrunk by its top-left handle (its bottom-right
         // stays), then moved by its middle; Reset Layout puts it back.
-        let cam = |a: &crate::App| a.movables(W, H).into_iter().find(|m| m.what == super::Dragged::Camera(super::Camera::Front)).expect("no front camera").rect;
+        let cam = |a: &crate::App| a.movables().1.into_iter().find(|m| m.what == super::Dragged::Camera(super::Camera::Front)).expect("no front camera").rect;
         let home_rect = cam(&app);
         let handle = (home_rect.x * scale, home_rect.y * scale);
         let steps = vec![at(handle.0, handle.1), iced::Event::Mouse(M::ButtonPressed(Button::Left)), at(handle.0 + 40.0, handle.1 + 26.0), iced::Event::Mouse(M::ButtonReleased(Button::Left))];
@@ -2895,6 +3074,82 @@ mod tests {
         assert_eq!(tiles.last().map(|t| t.camera), Some(super::Camera::Front));
         let _ = app.export_update(super::ExportMsg::ResetLayout);
         assert_eq!(cam(&app), home_rect);
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    /// Tesla Mobile's bars and the timestamp move and resize on their own,
+    /// and the frame follows them (SENTRY_DIALOG_CLIPS).
+    #[test]
+    #[ignore]
+    fn editor_moves_the_bars_and_the_time() {
+        let Some(dir) = std::env::var_os("SENTRY_DIALOG_CLIPS") else { return };
+        let home = std::env::temp_dir().join(format!("sentry-bars-{}", std::process::id()));
+        std::fs::create_dir_all(&home).unwrap();
+        // SAFETY: the test runs alone (ignored, run on its own).
+        unsafe { std::env::set_var("HOME", &home) };
+        let (mut app, _) = crate::App::boot();
+        let collections = crate::library::scan(std::path::Path::new(&dir)).unwrap();
+        app.player.load(crate::library::load_segments(&collections[0]).unwrap(), 0.0);
+        app.export.open = true;
+        app.export.dashboard = true;
+        app.export.dash_style = crate::export::overlay::DashStyle::TeslaMobile;
+        const SHOWN: f32 = 720.0;
+        fn view(a: &crate::App) -> iced::Element<'_, crate::Message> {
+            let (l, items) = a.movables();
+            let v = l.view();
+            let local = |r: super::Rect| iced::Rectangle::new(iced::Point::new(r.x - v.x, r.y - v.y), iced::Size::new(r.w, r.h));
+            let drag = super::PreviewDrag { frame: (v.w, v.h), bounds: local(l.canvas), out: local(l.frame), origin: (v.x, v.y), grid: (l.grid.0 as f32, l.grid.1 as f32), items, enabled: true };
+            iced::widget::canvas(drag).width(SHOWN).height(v.h * SHOWN / v.w).into()
+        }
+        let update = |a: &mut crate::App, m: crate::Message| {
+            if let crate::Message::Export(e) = m {
+                let _ = a.export_update(e);
+            }
+        };
+        let find = |a: &crate::App, what: super::Dragged| a.movables().1.into_iter().find(|m| m.what == what).unwrap().rect;
+        let scale = SHOWN / app.movables().0.view().w;
+        use iced::mouse::{Button, Event as M};
+        let at = |x: f32, y: f32| iced::Event::Mouse(M::CursorMoved { position: iced::Point::new(x, y) });
+        let press = iced::Event::Mouse(M::ButtonPressed(Button::Left));
+        let release = iced::Event::Mouse(M::ButtonReleased(Button::Left));
+        let mut painter = crate::export::overlay::Painter::new().unwrap();
+        let size_before = app.movables().0.size();
+        // The data bar dragged 40 preview pixels down, below the cameras.
+        let r = find(&app, super::Dragged::Dashboard);
+        let (cx, cy) = ((r.x + r.width / 2.0) * scale, (r.y + r.height / 2.0) * scale);
+        painter.run(&mut app, view, update, iced::Size::new(SHOWN, 500.0), &[at(cx, cy), press.clone(), at(cx, cy + 20.0), at(cx, cy + 40.0), release.clone()]);
+        let moved = find(&app, super::Dragged::Dashboard);
+        let size_after = app.movables().0.size();
+        eprintln!("data bar {r:?} -> {moved:?}, {:?}; frame {size_before:?} -> {size_after:?}", app.export.data_bar);
+        // (As far as the canvas's bottom allows.)
+        assert!(app.export.data_bar.is_some() && moved.y > r.y + 100.0);
+        assert!(size_after.1 > size_before.1 + 100, "the frame didn't grow");
+        // The date bar made smaller by its bottom-right handle.
+        let r = find(&app, super::Dragged::DateBar);
+        // (Just inside the preview: a full-width bar's corner is its edge.)
+        let handle = ((r.x + r.width) * scale - 2.0, (r.y + r.height) * scale);
+        painter.run(&mut app, view, update, iced::Size::new(SHOWN, 500.0), &[at(handle.0, handle.1), press.clone(), at(handle.0 - 100.0, handle.1), at(handle.0 - 200.0, handle.1), release.clone()]);
+        let small = find(&app, super::Dragged::DateBar);
+        eprintln!("date bar {r:?} -> {small:?}, {:?}", app.export.date_bar);
+        assert!(small.width < r.width - 150.0 / scale && (small.x - r.x).abs() < 1.0);
+        // Bottom puts both back across the cameras.
+        let _ = app.export_update(super::ExportMsg::Bar(0));
+        assert_eq!(app.movables().0.size(), size_before);
+        // The timestamp (no dashboard): resized from its corner, bigger type.
+        app.export.dashboard = false;
+        let r = find(&app, super::Dragged::Timestamp);
+        let handle = ((r.x + r.width) * scale, r.y * scale);
+        painter.run(&mut app, view, update, iced::Size::new(SHOWN, 500.0), &[at(handle.0, handle.1), press.clone(), at(handle.0 + 30.0, handle.1 - 5.0), at(handle.0 + 60.0, handle.1 - 10.0), release.clone()]);
+        let big = find(&app, super::Dragged::Timestamp);
+        eprintln!("time {r:?} -> {big:?}, scale {} free {:?} corner {:?}", app.export.ts_scale, app.export.ts_free, app.export.corner);
+        assert!(app.export.ts_scale > 1.1 && big.height > r.height);
+        // Dragged above the cameras: the frame grows up to it.
+        let (cx, cy) = ((big.x + big.width / 2.0) * scale, (big.y + big.height / 2.0) * scale);
+        let top = (app.movables().0.area.y - app.movables().0.view().y) * scale;
+        painter.run(&mut app, view, update, iced::Size::new(SHOWN, 500.0), &[at(cx, cy), press, at(cx, cy - 100.0), at(cx, top - big.height * scale / 2.0 - 4.0), release]);
+        let l = app.movables().0;
+        eprintln!("time at {:?}, frame {:?}, area {:?}", l.timestamp, l.frame, l.area);
+        assert!(app.export.ts_free.is_some() && l.frame.y < l.area.y);
         let _ = std::fs::remove_dir_all(&home);
     }
 
@@ -2929,9 +3184,8 @@ mod tests {
                 let _ = a.export_update(e);
             }
         };
-        let (w, h) = (p.width, p.height);
-        let scale = WIDE / w as f32;
-        let find = |a: &crate::App, what: super::Dragged| a.movables(w, h).into_iter().find(|m| m.what == what).unwrap().rect;
+        let scale = WIDE / app.movables().0.view().w;
+        let find = |a: &crate::App, what: super::Dragged| a.movables().1.into_iter().find(|m| m.what == what).unwrap().rect;
         use iced::mouse::{Button, Event as M};
         let at = |x: f32, y: f32| iced::Event::Mouse(M::CursorMoved { position: iced::Point::new(x, y) });
         let mut painter = crate::export::overlay::Painter::new().unwrap();

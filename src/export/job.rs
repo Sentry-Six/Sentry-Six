@@ -59,34 +59,11 @@ pub struct Tile {
     pub col: u32,
     pub row: u32,
     /// Moved or resized in the editor: its left and top as shares of the
-    /// frame's width and height, and its width as a share of the frame's
-    /// width (its height keeps the camera's shape). The frame keeps the
-    /// grid's size.
+    /// grid's width and height (from the grid's top-left; outside 0-1 when
+    /// moved past it), and its width as a share of the grid's width (its
+    /// height keeps the camera's shape). The frame grows or shrinks to
+    /// the box around everything (see export::layout).
     pub free: Option<(f32, f32, f32)>,
-}
-
-impl Tile {
-    /// Where the camera is drawn (x, y, width, height in pixels), in a
-    /// frame `width` x `height` whose cameras' grid starts at `video_top`
-    /// with cells `cell`, `area_h` high (a moved camera's top is a share
-    /// of that, so Tesla Mobile's bars don't move it). Whole pixels,
-    /// inside the frame.
-    pub fn rect(&self, cell: (u32, u32), width: u32, height: u32, video_top: u32, area_h: u32) -> (f32, f32, f32, f32) {
-        let (cw, ch) = (cell.0 as f32, cell.1 as f32);
-        let Some((x, y, w)) = self.free else {
-            return (self.col as f32 * cw, video_top as f32 + self.row as f32 * ch, cw, ch);
-        };
-        let (fw, fh) = (width as f32, height as f32);
-        let mut tw = (w * fw).round().clamp(16.0, fw);
-        let mut th = (tw * ch / cw).round();
-        if th > fh {
-            th = fh;
-            tw = (th * cw / ch).round().min(fw);
-        }
-        let tx = (x * fw).round().clamp(0.0, fw - tw);
-        let ty = (video_top as f32 + y * area_h as f32).round().clamp(0.0, fh - th);
-        (tx, ty, tw, th)
-    }
 }
 
 /// The plain grid: 1 → 1×1, 2 → 2×1, 3 → 3×1, 4 → 2×2, 5–6 → 3×2,
@@ -139,18 +116,15 @@ pub struct Request {
 /// What an export will make, worked out before it starts.
 #[derive(Debug, Clone)]
 pub struct Plan {
-    /// One camera's size.
+    /// One camera's size (in its grid cell).
     pub cell: (u32, u32),
     /// The whole picture.
     pub width: u32,
     pub height: u32,
     pub codec: Format,
     pub bitrate: u64,
-    /// Where the cameras start, and the bars Tesla Mobile adds (date
-    /// bar on top, data bar above or below the cameras), in pixels.
-    pub video_top: u32,
-    pub date_bar: u32,
-    pub data_bar: u32,
+    /// Where the cameras and overlays go (the frame is its box).
+    pub layout: super::layout::Layout,
     /// For each output frame: the minute and the seconds into it.
     pub frames: Vec<(usize, f64)>,
 }
@@ -277,37 +251,27 @@ pub fn plan(req: &Request) -> Result<Plan> {
     };
     let front_only = req.tiles.len() == 1 && req.tiles[0].camera == Camera::Front;
     let base = if front_only { size_of(true).unwrap_or((2896, 1876)) } else { size_of(false).or_else(|| size_of(true)).unwrap_or((1448, 938)) };
-    let cell = cell_size(base, req.quality, front_only);
-    let cols = req.tiles.iter().map(|t| t.col).max().unwrap_or(0) + 1;
-    let rows = req.tiles.iter().map(|t| t.row).max().unwrap_or(0) + 1;
-    let (width, video_height) = (cell.0 * cols, cell.1 * rows);
-    // Tesla Mobile adds its bars to the frame.
-    let (date_bar, data_bar, video_top) = match req.dashboard {
-        Some(d) if d.style == super::overlay::DashStyle::TeslaMobile => {
-            let (date, data) = super::tesla_mobile::bar_heights(width);
-            (date, data, date + if d.bar_on_top() { data } else { 0 })
-        }
-        _ => (0, 0, 0),
+    // The frame: the box around the cameras and overlays (the grid and
+    // Tesla Mobile's bars when nothing was moved). H.264 encoders stop at
+    // 4096, HEVC and AV1 at 8192: a bigger layout is made smaller to fit,
+    // as earlier versions' editor did.
+    let overlays = super::layout::Overlays { timestamp: req.timestamp.as_ref(), dashboard: req.dashboard.as_ref(), minimap: req.minimap.as_ref(), watermark: req.watermark.as_ref() };
+    let limit = req.format.unwrap_or(Format::Hevc).max_side();
+    let full = cell_size(base, req.quality, front_only);
+    let Some((cell, layout)) = super::layout::fitted(&req.tiles, full, overlays, limit) else {
+        bail!("The layout is too big to export; the most is {limit} on a side.");
     };
-    let height = video_height + date_bar + data_bar;
-    // H.264 encoders stop at 4096; HEVC and AV1 go to 8192.
-    let widest = width.max(height);
+    if cell != full {
+        log::info!("export: the layout was too big for {limit} px; cameras {}x{} instead of {}x{}", cell.0, cell.1, full.0, full.1);
+    }
+    let (width, height) = layout.size();
     let codec = match req.format {
-        Some(f) if widest > f.max_side() => bail!("{width}×{height} is too big for {}; the most is {} on a side.", f.label(), f.max_side()),
         Some(f) => f,
-        None if widest <= Format::H264.max_side() => Format::H264,
-        None if widest <= Format::Hevc.max_side() => Format::Hevc,
-        None => bail!("The layout is too big to export ({width}×{height}); the most is 8192 on a side."),
+        None if width.max(height) <= Format::H264.max_side() => Format::H264,
+        None => Format::Hevc,
     };
     let rate = bitrate(req.quality, front_only, codec, width, height);
-    Ok(Plan { cell, width, height, codec, bitrate: rate, video_top, date_bar, data_bar, frames })
-}
-
-impl Plan {
-    /// The cameras' part of the frame: its height (less Tesla Mobile's bars).
-    pub fn area_height(&self) -> u32 {
-        self.height - self.date_bar - self.data_bar
-    }
+    Ok(Plan { cell, width, height, codec, bitrate: rate, layout, frames })
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -441,7 +405,11 @@ enum Sink {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PieceKind {
     Camera(Camera),
+    Timestamp,
+    /// The compact dashboard, or Tesla Mobile's data bar.
     Dashboard,
+    /// Tesla Mobile's date bar.
+    DateBar,
     Map,
     Watermark,
 }
@@ -478,6 +446,10 @@ pub struct Preview {
     /// The frame without the movable pieces, and the pieces.
     pub base: Vec<u8>,
     pub pieces: Vec<Piece>,
+    /// Where the frame is on the layout's sheet (see export::layout), and
+    /// the grid's size there (the sheet's scale).
+    pub sheet: super::layout::Rect,
+    pub grid: (u32, u32),
 }
 
 /// The part of a BGRA frame `width` wide at `(x, y, w, h)`, as an opaque
@@ -554,7 +526,7 @@ pub fn preview(req: &Request, at: Position, max_width: u32, with_pieces: bool) -
             Some(Piece { kind, shown: size, rgba: img.into_raw() })
         })
         .collect();
-    Ok(Preview { width: w, height: h, shown, rgba, base, pieces })
+    Ok(Preview { width: w, height: h, shown, rgba, base, pieces, sheet: plan.layout.frame, grid: plan.layout.grid })
 }
 
 /// True when finished, false when cancelled; `warnings` gets what was
@@ -640,6 +612,13 @@ fn encode_all(
 
     let cw = plan.cell.0 as f32;
     let total = frames.len();
+    let layout = &plan.layout;
+    // Each camera's place in the frame (x, y, width, height).
+    let rects: Vec<(f32, f32, f32, f32)> = req.tiles.iter().map(|t| layout.camera(t.camera).map(|r| layout.in_frame(r)).unwrap_or_default()).collect();
+    let at = |r: super::layout::Rect| {
+        let (x, y, _, _) = layout.in_frame(r);
+        (x, y)
+    };
 
     // A dashboard with no telemetry anywhere in the range is left out, as
     // earlier versions did (looked for at the start of each minute and in
@@ -658,16 +637,19 @@ fn encode_all(
     }
     // Each camera's mask: its blur zones, and the glass under the
     // dashboard where the dashboard covers it.
-    let frost = dashboard.and_then(|d| d.frost(plan.width, plan.height));
+    let frost = dashboard.zip(layout.dashboard).and_then(|(d, r)| {
+        let (x, y, w, h) = layout.in_frame(r);
+        d.frost([x, y, w, h])
+    });
     let masks: Vec<Option<super::compose::BlurMask>> = req
         .tiles
         .iter()
-        .map(|tile| {
+        .zip(&rects)
+        .map(|(tile, &(tx, ty, tw, _))| {
             let zones: Vec<&super::blur::BlurZone> = req.blur_zones.iter().filter(|z| z.camera == tile.camera && z.points.len() >= 3).collect();
             let privacy = (!zones.is_empty()).then(|| super::blur::mask(&zones, plan.cell.0, plan.cell.1));
             // The glass in the camera's own pixels (it may be drawn bigger
             // or smaller than a cell).
-            let (tx, ty, tw, _) = tile.rect(plan.cell, plan.width, plan.height, plan.video_top, plan.area_height());
             let k = cw / tw.max(1.0);
             let glass = frost.and_then(|([x, y, w, h, r], sigma)| super::blur::rounded_mask([(x - tx) * k, (y - ty) * k, w * k, h * k, r * k], (0.0, 0.0), plan.cell.0, plan.cell.1).map(|m| (m, sigma * k)));
             if privacy.is_none() && glass.is_none() {
@@ -700,10 +682,10 @@ fn encode_all(
     }
     // The watermark: drawn once, the same on every frame.
     let mut wm_picture = None;
-    let watermark = match (req.watermark, painter.as_mut()) {
-        (Some(wm), Some(p)) => {
-            let (x, y) = wm.place_in(plan.width, plan.height, plan.video_top, plan.area_height());
-            let picture = wm.paint(p, plan.width);
+    let watermark = match (req.watermark, layout.watermark, painter.as_mut()) {
+        (Some(wm), Some(r), Some(p)) => {
+            let (x, y) = at(r);
+            let picture = wm.paint(p, layout.grid.0);
             let overlay = compositor.overlay(&picture, None);
             if capture.is_some() {
                 wm_picture = Some(picture);
@@ -714,6 +696,8 @@ fn encode_all(
     };
     let mut dash_picture = None;
     let mut map_picture = None;
+    let mut stamp_picture = None;
+    let mut date_picture = None;
     let mut stamp: Option<(i64, super::compose::Overlay)> = None;
     let mut dash: Option<(String, super::compose::Overlay)> = None;
     let mut date_bar: Option<(String, super::compose::Overlay)> = None;
@@ -738,14 +722,14 @@ fn encode_all(
     let mut blink_from: [Option<usize>; 2] = [None, None];
     let ease = 1.0 - (-45.0f32 * req.speed.max(0.01) as f32 / FPS as f32).exp();
     // The minimap: the route's map, drawn once, and the arrow on it.
-    let minimap = match (&req.minimap, painter.as_mut()) {
-        (Some(mm), Some(p)) => {
-            let side = mm.side(plan.width, plan.height);
+    let minimap = match (&req.minimap, layout.map, painter.as_mut()) {
+        (Some(mm), Some(r), Some(p)) => {
+            let side = r.w as u32;
             let route = route_points(req, plan);
             match mm.fit(&route, side) {
                 Some(fit) if mm.live => {
                     // Drawn frame by frame as the car moves (below).
-                    let (x, y) = mm.place_in(side, plan.width, plan.height, plan.video_top, plan.area_height());
+                    let (x, y) = at(r);
                     log::info!("export: live minimap {side} px, {} route points", route.len());
                     let blank = super::overlay::Picture { width: side, height: side, rgba: vec![0; side as usize * side as usize * 4] };
                     Some((mm, fit, compositor.overlay(&blank, None), x, y, route))
@@ -755,7 +739,7 @@ fn encode_all(
                         log::warn!("export: some map tiles didn't arrive in time; the minimap shows what there is");
                     }
                     let picture = mm.paint_map(p, &route, &fit);
-                    let (x, y) = mm.place_in(side, plan.width, plan.height, plan.video_top, plan.area_height());
+                    let (x, y) = at(r);
                     log::info!("export: minimap {side} px at zoom {:.1}, {} route points", fit.zoom, route.len());
                     Some((mm, fit, compositor.overlay(&picture, None), x, y, route))
                 }
@@ -785,7 +769,7 @@ fn encode_all(
         for (i, ((tile, rx), mask)) in req.tiles.iter().zip(&receivers).zip(&masks).enumerate() {
             let picture = rx.recv().map_err(|_| anyhow!("a camera's decoding stopped"))?;
             if let Some(p) = picture {
-                let (x, y, width, height) = tile.rect(plan.cell, plan.width, plan.height, plan.video_top, plan.area_height());
+                let (x, y, width, height) = rects[i];
                 let place = Placement { x, y, width, height, mirror: req.mirror && tile.camera.mirrored() };
                 if let Some(m) = mask {
                     blurs.push((pictures.len(), m));
@@ -802,7 +786,10 @@ fn encode_all(
             let (segment, secs) = frames[k];
             let wall = req.segments[segment].start + secs.floor() as i64;
             if stamp.as_ref().map(|(w, _)| *w) != Some(wall) {
-                let picture = ts.paint(p, wall, plan.width);
+                let picture = ts.paint(p, wall, layout.grid.0);
+                if capture.is_some() {
+                    stamp_picture = Some(picture.clone());
+                }
                 let old = stamp.take().map(|(_, o)| o);
                 stamp = Some((wall, compositor.overlay(&picture, old)));
             }
@@ -829,20 +816,23 @@ fn encode_all(
                 let state = super::overlay::DashState { telemetry: m.clone(), time: crate::dashboard::time_of_day(wall.rem_euclid(86400), d.h24), steering: angle, blink_ms };
                 let signature = state.signature(d.metric);
                 if dash.as_ref().map(|(s, _)| s) != Some(&signature) {
-                    let picture = match d.style {
-                        super::overlay::DashStyle::Compact => d.paint(p, &state, plan.width),
-                        super::overlay::DashStyle::TeslaMobile => super::tesla_mobile::paint_data(p, plan.width, plan.data_bar, &state, d.metric, !d.bar_on_top()),
+                    let picture = match (d.style, layout.dashboard) {
+                        (super::overlay::DashStyle::TeslaMobile, Some(r)) => super::tesla_mobile::paint_data(p, r.w as u32, r.h as u32, &state, d.metric, !d.bar_on_top(), (d.sizes.label, d.sizes.value)),
+                        _ => d.paint(p, &state, layout.grid.0),
                     };
-                    if capture.is_some() && d.style == super::overlay::DashStyle::Compact {
+                    if capture.is_some() {
                         dash_picture = Some(picture.clone());
                     }
                     let old = dash.take().map(|(_, o)| o);
                     dash = Some((signature, compositor.overlay(&picture, old)));
                 }
-                if d.style == super::overlay::DashStyle::TeslaMobile {
+                if let (super::overlay::DashStyle::TeslaMobile, Some(r)) = (d.style, layout.date_bar) {
                     let line = super::tesla_mobile::date_line(wall, d.h24);
                     if date_bar.as_ref().map(|(l, _)| l) != Some(&line) {
-                        let picture = super::tesla_mobile::paint_date(p, plan.width, plan.date_bar, &line);
+                        let picture = super::tesla_mobile::paint_date(p, r.w as u32, r.h as u32, &line, d.sizes.date);
+                        if capture.is_some() {
+                            date_picture = Some(picture.clone());
+                        }
                         let old = date_bar.take().map(|(_, o)| o);
                         date_bar = Some((line, compositor.overlay(&picture, old)));
                     }
@@ -852,22 +842,20 @@ fn encode_all(
         let mut overlays = Vec::new();
         // Which overlays the editor moves (left out of a preview's base).
         let mut kinds: Vec<Option<(PieceKind, f32, f32)>> = Vec::new();
-        if let (Some(ts), Some((_, o))) = (req.timestamp, stamp.as_ref()) {
-            let (x, y) = super::overlay::corner_in(ts.corner, o.width, o.height, plan.width, plan.video_top, plan.area_height());
+        if let (Some((_, o)), Some(r)) = (stamp.as_ref(), layout.timestamp) {
+            let (x, y) = at(r);
             overlays.push((o, x, y));
-            kinds.push(None);
+            kinds.push(Some((PieceKind::Timestamp, x, y)));
         }
-        if let (Some(d), Some((_, o))) = (dashboard, dash.as_ref()) {
-            let (x, y) = match d.style {
-                super::overlay::DashStyle::Compact => d.place(o.width, o.height, plan.width, plan.height),
-                super::overlay::DashStyle::TeslaMobile => (0.0, if d.bar_on_top() { plan.date_bar } else { plan.height - plan.data_bar } as f32),
-            };
+        if let (Some(_), Some((_, o)), Some(r)) = (dashboard, dash.as_ref(), layout.dashboard) {
+            let (x, y) = at(r);
             overlays.push((o, x, y));
-            kinds.push((d.style == super::overlay::DashStyle::Compact).then_some((PieceKind::Dashboard, x, y)));
+            kinds.push(Some((PieceKind::Dashboard, x, y)));
         }
-        if let Some((_, o)) = date_bar.as_ref() {
-            overlays.push((o, 0.0, 0.0));
-            kinds.push(None);
+        if let (Some((_, o)), Some(r)) = (date_bar.as_ref(), layout.date_bar) {
+            let (x, y) = at(r);
+            overlays.push((o, x, y));
+            kinds.push(Some((PieceKind::DateBar, x, y)));
         }
         // The live map: drawn again when the car moves half a pixel or turns.
         if let (Some((mm, _, map_overlay, _, _, route)), Some((lat, lon, heading)), Some(p)) = (minimap.as_mut(), car, painter.as_mut()) {
@@ -951,17 +939,18 @@ fn encode_all(
                     compositor.draw_to_bytes(plan.width, plan.height, &pictures, base_blurs, &base, &mut c.base)?;
                     // Each camera as a piece of its own (first, so the
                     // overlays sit over them), and the base without them.
-                    let rects: Vec<_> = req.tiles.iter().map(|t| (t.camera, t.rect(plan.cell, plan.width, plan.height, plan.video_top, plan.area_height()))).collect();
-                    for (camera, (x, y, w, h)) in &rects {
+                    for (tile, (x, y, w, h)) in req.tiles.iter().zip(&rects) {
                         let picture = crop_bgra(&c.base, plan.width, (*x as u32, *y as u32, *w as u32, *h as u32));
-                        c.pieces.push((PieceKind::Camera(*camera), picture));
+                        c.pieces.push((PieceKind::Camera(tile.camera), picture));
                     }
-                    for (_, (x, y, w, h)) in &rects {
+                    for (x, y, w, h) in &rects {
                         clear_bgra(&mut c.base, plan.width, (*x as u32, *y as u32, *w as u32, *h as u32));
                     }
                     for (kind, x, _) in kinds.iter().flatten() {
                         let picture = match kind {
+                            PieceKind::Timestamp => stamp_picture.take(),
                             PieceKind::Dashboard => dash_picture.take(),
+                            PieceKind::DateBar => date_picture.take(),
                             PieceKind::Map if x.is_finite() => map_picture.take(),
                             PieceKind::Watermark => wm_picture.take(),
                             _ => None,
@@ -1149,7 +1138,7 @@ mod tests {
                 speed,
                 mirror: true,
                 fast,
-                timestamp: Some(super::super::overlay::Timestamp { corner: super::super::overlay::Corner::BottomCenter, date_format: crate::settings::DateFormat::Ymd, h24: false }),
+                timestamp: Some(super::super::overlay::Timestamp { corner: super::super::overlay::Corner::BottomCenter, date_format: crate::settings::DateFormat::Ymd, h24: false, free: None, scale: 1.0 }),
                 dashboard: None,
                 minimap: None,
             watermark: None,
@@ -1203,6 +1192,9 @@ mod tests {
                 accel: crate::dashboard::AccelMode::IconBar,
                 glass: 0.0,
                 free: None,
+                data_bar: None,
+                date_bar: None,
+                sizes: Default::default(),
             }),
             minimap: None,
             watermark: None,
@@ -1265,6 +1257,68 @@ mod tests {
         let started = std::time::Instant::now();
         assert!(matches!(run(&req, &Arc::new(AtomicBool::new(false)), |_| {}).unwrap(), Outcome::Done { frames: 72, .. }));
         println!("minimap export in {:.1} s: {}", started.elapsed().as_secs_f64(), out.display());
+    }
+
+    /// Front over back (both made smaller), with Tesla Mobile's data bar
+    /// moved under them: the export is the box around them, tall, and
+    /// each is where the layout put it.
+    #[test]
+    fn moved_layout_exports_its_box() {
+        let dir = std::env::temp_dir().join(format!("sentry-studio-moved-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let (w, h, n) = (320usize, 240usize, 18usize);
+        let flat = |v: u8| move |_: usize, _: usize, _: usize| [v, v, v, 255];
+        crate::export::testing::clip(&dir.join("f.mp4"), w, h, n, flat(60));
+        crate::export::testing::clip(&dir.join("b.mp4"), w, h, n, flat(200));
+        let out = dir.join("out.mp4");
+        let mut tiles = grid(&[Camera::Front, Camera::Back]);
+        // Cells 320 x 240, grid 640 x 240, on a 16:9 canvas from -58 to
+        // 302: each 0.3 of 640 = 192 x 144.
+        tiles[0].free = Some((0.0, -54.0 / 240.0, 0.3));
+        tiles[1].free = Some((0.0, 90.0 / 240.0, 0.3));
+        let dashboard = super::super::overlay::Dashboard {
+            style: super::super::overlay::DashStyle::TeslaMobile,
+            corner: super::super::overlay::Corner::BottomCenter,
+            share: 0.35,
+            metric: false,
+            h24: false,
+            accel: crate::dashboard::AccelMode::IconBar,
+            glass: 0.0,
+            free: None,
+            data_bar: Some((0.0, 234.0 / 240.0, 0.3)),
+            date_bar: Some((0.0, -58.0 / 240.0, 0.3)),
+            sizes: Default::default(),
+        };
+        let req = Request {
+            segments: vec![Segment { start: 0, files: [(Camera::Front, dir.join("f.mp4")), (Camera::Back, dir.join("b.mp4"))].into_iter().collect() }],
+            start: Position { segment: 0, secs: 0.0 },
+            end: Position { segment: 0, secs: 0.4 },
+            tiles,
+            quality: Quality::Max,
+            format: None,
+            speed: 1.0,
+            mirror: false,
+            fast: false,
+            timestamp: None,
+            dashboard: Some(dashboard),
+            minimap: None,
+            watermark: None,
+            blur_zones: Vec::new(),
+            output: out.clone(),
+        };
+        let p = plan(&req).unwrap();
+        let l = &p.layout;
+        // Date bar 192 x 4 at -58, front at -54, back at 90, data bar
+        // 192 x 6 at 234: 192 wide, -58 to 240.
+        assert_eq!((l.in_frame(l.date_bar.unwrap()), l.in_frame(l.camera(Camera::Front).unwrap()), l.in_frame(l.camera(Camera::Back).unwrap())), ((0.0, 0.0, 192.0, 4.0), (0.0, 4.0, 192.0, 144.0), (0.0, 148.0, 192.0, 144.0)));
+        assert_eq!(l.in_frame(l.dashboard.unwrap()), (0.0, 292.0, 192.0, 6.0));
+        assert_eq!((p.width, p.height), (192, 298));
+        assert!(matches!(run(&req, &Arc::new(AtomicBool::new(false)), |_| {}).unwrap(), Outcome::Done { .. }));
+        let frames = decode_all(&out);
+        let luma = |y: usize| frames[5][y * 192 + 96] as i32;
+        // Limited-range luma: front ~68, back ~188.
+        assert!((luma(70) - 68).abs() < 12 && (luma(220) - 188).abs() < 12, "front {} back {}", luma(70), luma(220));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

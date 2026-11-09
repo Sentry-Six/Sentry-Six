@@ -1702,6 +1702,8 @@ impl App {
             scale,
             accel: self.settings.accel_mode,
             steering: self.steering,
+            label: 1.0,
+            value: 1.0,
         }
     }
 

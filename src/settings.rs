@@ -107,8 +107,34 @@ pub struct Settings {
     pub export_minimap_live: bool,
     /// The compact dashboard and the map dragged to a place of their own in
     /// the export preview (`exportDashboardFree`, `exportMinimapFree`: the
-    /// top-left as shares of the frame, [x, y]; null for the corner).
+    /// top-left as shares of the cameras' grid, [x, y], outside 0-1 when
+    /// dragged past it; null for the corner).
     pub export_dash_free: Option<(f32, f32)>,
+    /// The timestamp dragged somewhere (`exportTimestampFree`, as above)
+    /// and its size (`exportTimestampScale`, 1 for the usual 36 px type).
+    /// New in this version: earlier versions' editor kept its tiles'
+    /// places only while it was open.
+    pub export_timestamp_free: Option<(f32, f32)>,
+    pub export_timestamp_scale: Option<f64>,
+    /// Tesla Mobile's data bar and date bar moved in the editor
+    /// (`exportDashboardDataBarFree`, `exportDashboardDateBarFree`, as
+    /// above) and their widths as shares of the grid's
+    /// (`exportDashboardDataBarScale`, `exportDashboardDateBarScale`).
+    /// New in this version too.
+    pub export_dash_bar_free: Option<(f32, f32)>,
+    pub export_dash_bar_scale: Option<f64>,
+    pub export_dash_date_free: Option<(f32, f32)>,
+    pub export_dash_date_scale: Option<f64>,
+    /// The dashboard's Label Size and Value Size and Tesla Mobile's date
+    /// bar sizes, as earlier versions' editor saved them
+    /// (`exportDashboardLabelScale`, `exportDashboardValueScale`,
+    /// `exportDashboardDateLabelScale`, `exportDashboardDateValueScale`:
+    /// 0.75, 1, 1.25, 1.5 or 2; 1 by default). The date bar has no
+    /// labels: its Label Size is kept as it was, unused, as there.
+    pub export_dash_label_scale: f64,
+    pub export_dash_value_scale: f64,
+    pub export_dash_date_label_scale: f64,
+    pub export_dash_date_value_scale: f64,
     /// Clips shared from this computer (`sharedClips`, as earlier versions
     /// kept it: code, link, delete token, expiry), newest first.
     pub shared_clips: Vec<crate::share::SharedClip>,
@@ -179,6 +205,16 @@ impl Default for Settings {
             export_minimap_size: "small".into(),
             export_minimap_live: false,
             export_dash_free: None,
+            export_timestamp_free: None,
+            export_timestamp_scale: None,
+            export_dash_bar_free: None,
+            export_dash_bar_scale: None,
+            export_dash_date_free: None,
+            export_dash_date_scale: None,
+            export_dash_label_scale: 1.0,
+            export_dash_value_scale: 1.0,
+            export_dash_date_label_scale: 1.0,
+            export_dash_date_value_scale: 1.0,
             shared_clips: Vec::new(),
             export_watermark: true,
             export_watermark_position: "bottom-right".into(),
@@ -481,14 +517,26 @@ pub fn to_json(s: &Settings) -> Value {
     v["exportDashboardScale"] = scale(s.export_dash_scale);
     v["exportMinimapScale"] = scale(s.export_map_scale);
     v["exportWatermarkScale"] = scale(s.export_watermark_scale);
+    v["exportTimestampFree"] = pair(s.export_timestamp_free);
+    v["exportTimestampScale"] = scale(s.export_timestamp_scale);
+    v["exportDashboardDataBarFree"] = pair(s.export_dash_bar_free);
+    v["exportDashboardDataBarScale"] = scale(s.export_dash_bar_scale);
+    v["exportDashboardDateBarFree"] = pair(s.export_dash_date_free);
+    v["exportDashboardDateBarScale"] = scale(s.export_dash_date_scale);
+    // Numbers, as earlier versions saved them.
+    v["exportDashboardLabelScale"] = serde_json::json!(s.export_dash_label_scale);
+    v["exportDashboardValueScale"] = serde_json::json!(s.export_dash_value_scale);
+    v["exportDashboardDateLabelScale"] = serde_json::json!(s.export_dash_date_label_scale);
+    v["exportDashboardDateValueScale"] = serde_json::json!(s.export_dash_date_value_scale);
     v
 }
 
-/// A dragged overlay's place: [x, y], each 0-1.
+/// A dragged overlay's place: [x, y], shares of the cameras' grid (a
+/// little outside 0-1 when dragged past it, on the editor's canvas).
 fn free_pair(v: Option<&Value>) -> Option<(f32, f32)> {
     let a = v?.as_array()?;
     let (x, y) = (a.first()?.as_f64()? as f32, a.get(1)?.as_f64()? as f32);
-    ((0.0..=1.0).contains(&x) && (0.0..=1.0).contains(&y)).then_some((x, y))
+    ((-2.0..=3.0).contains(&x) && (-2.0..=3.0).contains(&y)).then_some((x, y))
 }
 
 fn apply(s: &mut Settings, v: &Value) {
@@ -583,6 +631,35 @@ fn apply(s: &mut Settings, v: &Value) {
     s.export_dash_scale = scale("exportDashboardScale");
     s.export_map_scale = scale("exportMinimapScale");
     s.export_watermark_scale = scale("exportWatermarkScale");
+    // The timestamp's and Tesla Mobile's bars' sizes go past 1.
+    let size = |k: &str| v.get(k).and_then(Value::as_f64).filter(|x| *x > 0.0 && *x <= 4.0);
+    s.export_timestamp_scale = size("exportTimestampScale");
+    s.export_dash_bar_scale = size("exportDashboardDataBarScale");
+    s.export_dash_date_scale = size("exportDashboardDateBarScale");
+    if v.get("exportTimestampFree").is_some() {
+        s.export_timestamp_free = free_pair(v.get("exportTimestampFree"));
+    }
+    if v.get("exportDashboardDataBarFree").is_some() {
+        s.export_dash_bar_free = free_pair(v.get("exportDashboardDataBarFree"));
+    }
+    if v.get("exportDashboardDateBarFree").is_some() {
+        s.export_dash_date_free = free_pair(v.get("exportDashboardDateBarFree"));
+    }
+    // Label and Value Size: numbers (or text, as the editor's select held
+    // them), the nearest of the sizes offered.
+    let step = |k: &str| v.get(k).and_then(|x| x.as_f64().or_else(|| x.as_str().and_then(|t| t.parse().ok()))).filter(|x: &f64| x.is_finite() && *x > 0.0).map(crate::export::overlay::DashSizes::nearest);
+    if let Some(x) = step("exportDashboardLabelScale") {
+        s.export_dash_label_scale = x;
+    }
+    if let Some(x) = step("exportDashboardValueScale") {
+        s.export_dash_value_scale = x;
+    }
+    if let Some(x) = step("exportDashboardDateLabelScale") {
+        s.export_dash_date_label_scale = x;
+    }
+    if let Some(x) = step("exportDashboardDateValueScale") {
+        s.export_dash_date_value_scale = x;
+    }
     if v.get("exportMinimapFree").is_some() {
         s.export_map_free = free_pair(v.get("exportMinimapFree"));
     }
@@ -723,6 +800,43 @@ mod tests {
         apply(&mut again, &to_json(&s));
         assert_eq!(again.export_blur_zones, s.export_blur_zones);
         assert_eq!((again.export_speed, again.export_dash_size.as_str(), again.export_minimap_position.as_str()), (16.0, "large", "bottom-left"));
+    }
+
+    /// The editor's places and sizes: earlier versions' Label and Value
+    /// Size keys read as they saved them (numbers or text), and this
+    /// version's own keys kept.
+    #[test]
+    fn editor_places_and_sizes_round_trip() {
+        let mut s = Settings::default();
+        assert_eq!((s.export_dash_label_scale, s.export_dash_value_scale, s.export_dash_date_label_scale, s.export_dash_date_value_scale), (1.0, 1.0, 1.0, 1.0));
+        apply(&mut s, &serde_json::json!({
+            "exportDashboardLabelScale": 1.25,
+            "exportDashboardValueScale": "2",
+            "exportDashboardDateLabelScale": 0.75,
+            "exportDashboardDateValueScale": 1.6,
+            "exportTimestampFree": [0.1, -0.05],
+            "exportTimestampScale": 1.8,
+            "exportDashboardDataBarFree": [0.0, 1.02],
+            "exportDashboardDataBarScale": 0.5,
+            "exportDashboardDateBarFree": [9.0, 0.0],
+        }));
+        assert_eq!((s.export_dash_label_scale, s.export_dash_value_scale, s.export_dash_date_label_scale, s.export_dash_date_value_scale), (1.25, 2.0, 0.75, 1.5));
+        assert_eq!((s.export_timestamp_free, s.export_timestamp_scale), (Some((0.1, -0.05)), Some(1.8)));
+        assert_eq!((s.export_dash_bar_free, s.export_dash_bar_scale), (Some((0.0, 1.02)), Some(0.5)));
+        // A place far off the canvas isn't one.
+        assert_eq!(s.export_dash_date_free, None);
+        let json = to_json(&s);
+        assert_eq!(json["exportDashboardValueScale"], serde_json::json!(2.0));
+        let mut again = Settings::default();
+        apply(&mut again, &json);
+        assert_eq!((again.export_dash_label_scale, again.export_dash_value_scale, again.export_dash_date_label_scale, again.export_dash_date_value_scale), (1.25, 2.0, 0.75, 1.5));
+        assert_eq!((again.export_timestamp_free, again.export_timestamp_scale), (Some((0.1, -0.05)), Some(1.8)));
+        assert_eq!((again.export_dash_bar_free, again.export_dash_bar_scale, again.export_dash_date_free), (Some((0.0, 1.02)), Some(0.5), None));
+        // Cleared (back in their corners): saved as null, read back as none.
+        again.export_timestamp_free = None;
+        let mut third = Settings { export_timestamp_free: Some((0.5, 0.5)), ..Default::default() };
+        apply(&mut third, &to_json(&again));
+        assert_eq!(third.export_timestamp_free, None);
     }
 
     use super::*;

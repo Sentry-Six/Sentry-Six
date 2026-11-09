@@ -129,17 +129,6 @@ impl Watermark {
         (w, (w as f32 * Self::DESIGN.1 / Self::DESIGN.0).round() as u32)
     }
 
-    /// Its place in a frame whose cameras are `area_h` high from `top`
-    /// (Tesla Mobile's bars are above and below them): a corner of the
-    /// cameras, or where it was dragged in the frame.
-    pub fn place_in(&self, frame_w: u32, frame_h: u32, top: u32, area_h: u32) -> (f32, f32) {
-        let (w, h) = self.size(frame_w);
-        match self.free {
-            Some(free) => free_place_in(free, w, h, frame_w, frame_h, top, area_h),
-            None => corner_in(self.corner, w, h, frame_w, top, area_h),
-        }
-    }
-
     /// The watermark at its size, faded (colours premultiplied).
     pub fn paint(&self, painter: &mut Painter, frame_w: u32) -> Picture {
         use iced::widget::{column, image, row, text};
@@ -163,7 +152,17 @@ impl Watermark {
         ]
         .spacing(18)
         .align_y(iced::Alignment::Center);
-        let mut picture = painter.paint_scaled::<()>(mark.into(), Size::new(w, h), w as f32 / Self::DESIGN.0);
+        // Smaller than the design (any frame under about 4000 px wide), it
+        // is drawn at the design's size and shrunk: laid out smaller, the
+        // name and "Made with" were cut off (a single side camera's video).
+        let mut picture = if (w as f32) < Self::DESIGN.0 {
+            let full = painter.paint_scaled::<()>(mark.into(), Size::new(Self::DESIGN.0 as u32, Self::DESIGN.1 as u32), 1.0);
+            let image = ::image::RgbaImage::from_raw(full.width, full.height, full.rgba).expect("a picture of its own size");
+            let small = ::image::imageops::resize(&image, w, h, ::image::imageops::FilterType::Lanczos3);
+            Picture { width: w, height: h, rgba: small.into_raw() }
+        } else {
+            painter.paint_scaled::<()>(mark.into(), Size::new(w, h), w as f32 / Self::DESIGN.0)
+        };
         for c in picture.rgba.iter_mut() {
             *c = (*c as f32 * Self::OPACITY).round() as u8;
         }
@@ -254,15 +253,24 @@ impl Corner {
 
 /// The burned-in recording time: 36 px white type on a
 /// 40% black box.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Timestamp {
     pub corner: Corner,
     pub date_format: crate::settings::DateFormat,
     pub h24: bool,
+    /// Dragged somewhere of its own (see Dashboard::free).
+    pub free: Option<(f32, f32)>,
+    /// Its size, 1 for the usual 36 px type. Resized in the editor, the
+    /// type follows the tile's height, as in earlier versions' editor.
+    pub scale: f32,
 }
 
 impl Timestamp {
     pub const SIZE: f32 = 36.0;
+    /// The picture's width at scale 1 (room for the text in any format).
+    pub const WIDTH: f32 = 760.0;
+    /// How small and big it may be made (18 to 108 px type).
+    pub const SCALES: (f32, f32) = (0.5, 3.0);
 
     /// "2026-11-07 01:05:09 PM" (the date in the chosen order).
     pub fn text(&self, t: crate::library::LocalSecs) -> String {
@@ -278,13 +286,15 @@ impl Timestamp {
 
     /// The picture's size: wide enough for the text in any of the formats.
     pub fn size(&self, frame_w: u32) -> Size<u32> {
-        Size::new(760.min(frame_w.saturating_sub(2 * Corner::PAD as u32)).max(1), (Self::SIZE * 1.6) as u32)
+        let s = self.scale;
+        Size::new(((Self::WIDTH * s).round() as u32).min(frame_w.saturating_sub(2 * Corner::PAD as u32)).max(1), ((Self::SIZE * 1.6 * s) as u32).max(1))
     }
 
     /// The time on its dark band, `scale` times its size, filling what
     /// it's given (the export, or the editor while it plays).
     pub fn label<'a, M: 'a>(&self, t: crate::library::LocalSecs, scale: f32) -> iced::Element<'a, M> {
         use iced::widget::{container, text};
+        let scale = scale * self.scale;
         let label = container(text(self.text(t)).size(Self::SIZE * scale).font(crate::theme::INTER).color(Color::WHITE))
             .padding(5.0 * scale)
             .style(|_| container::Style { background: Some(Color::from_rgba(0.0, 0.0, 0.0, 0.4).into()), ..Default::default() });
@@ -374,30 +384,45 @@ pub struct Dashboard {
     /// the dark bar.
     pub glass: f32,
     /// Dragged somewhere of its own: its top-left corner as a share of the
-    /// frame's width and height, instead of `corner`.
+    /// cameras' grid's width and height, from the grid's top-left (see
+    /// export::layout), instead of `corner`.
     pub free: Option<(f32, f32)>,
+    /// Tesla Mobile's data bar and date bar moved or resized in the
+    /// editor: left, top (as `free`) and width as a share of the grid's
+    /// width. None: across the cameras, above or below them.
+    pub data_bar: Option<(f32, f32, f32)>,
+    pub date_bar: Option<(f32, f32, f32)>,
+    /// Label Size, Value Size and the date bar's size, as earlier versions'
+    /// editor had them (0.75 to 2, 1 the usual size).
+    pub sizes: DashSizes,
 }
 
-/// A corner place in the cameras' part of a frame, `area_h` high from `top`.
-pub fn corner_in(corner: Corner, w: u32, h: u32, frame_w: u32, top: u32, area_h: u32) -> (f32, f32) {
-    let (x, y) = corner.place(w, h, frame_w, area_h);
-    (x, y + top as f32)
+/// The dashboard's text sizes (see Dashboard::sizes).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct DashSizes {
+    /// The small words: the speed's unit and the time.
+    pub label: f32,
+    /// The numbers, icons and main data.
+    pub value: f32,
+    /// Tesla Mobile's date bar text.
+    pub date: f32,
 }
 
-/// An overlay dragged to `free`: shares of the frame's width and of the
-/// cameras' part of it (`area_h` from `top`), so Tesla Mobile's bars don't
-/// move it; kept inside the frame.
-pub fn free_place_in(free: (f32, f32), w: u32, h: u32, frame_w: u32, frame_h: u32, top: u32, area_h: u32) -> (f32, f32) {
-    let x = (free.0 * frame_w as f32).clamp(0.0, frame_w.saturating_sub(w) as f32);
-    let y = (top as f32 + free.1 * area_h as f32).clamp(0.0, frame_h.saturating_sub(h) as f32);
-    (x.round(), y.round())
+impl Default for DashSizes {
+    fn default() -> Self {
+        DashSizes { label: 1.0, value: 1.0, date: 1.0 }
+    }
 }
 
-/// An overlay dragged to `free` (shares of the frame), kept inside it.
-pub fn free_place(free: (f32, f32), w: u32, h: u32, frame_w: u32, frame_h: u32) -> (f32, f32) {
-    let x = (free.0 * frame_w as f32).clamp(0.0, frame_w.saturating_sub(w) as f32);
-    let y = (free.1 * frame_h as f32).clamp(0.0, frame_h.saturating_sub(h) as f32);
-    (x.round(), y.round())
+impl DashSizes {
+    /// The sizes earlier versions offered: Small, Medium (the usual),
+    /// Large, Extra Large and Huge.
+    pub const STEPS: [f64; 5] = [0.75, 1.0, 1.25, 1.5, 2.0];
+
+    /// The step nearest `x` (a saved value).
+    pub fn nearest(x: f64) -> f64 {
+        Self::STEPS.into_iter().min_by(|a, b| (a - x).abs().total_cmp(&(b - x).abs())).unwrap_or(1.0)
+    }
 }
 
 /// The dashboard's look (the Style setting).
@@ -491,10 +516,9 @@ impl Dashboard {
         Size::new(w, ((w as f64 / 8.57).round() as u32).max(20))
     }
 
+    /// Its top-left in its corner of a `frame_w` x `frame_h` box (where
+    /// it was dragged is export::layout's).
     pub fn place(&self, w: u32, h: u32, frame_w: u32, frame_h: u32) -> (f32, f32) {
-        if let Some(free) = self.free {
-            return free_place(free, w, h, frame_w, frame_h);
-        }
         let (x, y) = self.corner.place(w, h, frame_w, frame_h);
         // 40 px from the edges instead of the timestamp's 20.
         let dx = match self.corner.horizontal() {
@@ -526,6 +550,8 @@ impl Dashboard {
             scale: inner,
             accel: self.accel,
             steering: state.steering,
+            label: self.sizes.label,
+            value: self.sizes.value,
         });
         painter.paint_scaled::<()>(Self::bar(dash, self.glass > 0.0, height, 6.0), size, scale)
     }
@@ -555,19 +581,18 @@ impl Dashboard {
             .into()
     }
 
-    /// The glass under the dashboard, in the frame's pixels: its rounded
-    /// rectangle (x, y, width, height, corner radius) and blur deviation.
-    /// None without glass or for Tesla Mobile's bars.
-    pub fn frost(&self, frame_w: u32, frame_h: u32) -> Option<([f32; 5], f32)> {
+    /// The glass under the dashboard at `[x, y, width, height]` (its
+    /// place in the frame's pixels): its rounded rectangle (x, y, width,
+    /// height, corner radius) and blur deviation. None without glass or
+    /// for Tesla Mobile's bars.
+    pub fn frost(&self, [x, y, w, h]: [f32; 4]) -> Option<([f32; 5], f32)> {
         if self.glass <= 0.0 || self.style != DashStyle::Compact {
             return None;
         }
-        let size = self.size(frame_w);
-        let (x, y) = self.place(size.width, size.height, frame_w, frame_h);
         // The design is magnified to this size (or shrinks inside it).
-        let scale = (size.width as f32 / Self::DESIGN_WIDTH).max(1.0);
-        let radius = (Self::GLASS_RADIUS * scale).min(size.height as f32 / 2.0);
-        Some(([x, y, size.width as f32, size.height as f32, radius], self.glass * size.width as f32 / Self::DESIGN_WIDTH))
+        let scale = (w / Self::DESIGN_WIDTH).max(1.0);
+        let radius = (Self::GLASS_RADIUS * scale).min(h / 2.0);
+        Some(([x, y, w, h, radius], self.glass * w / Self::DESIGN_WIDTH))
     }
 }
 
@@ -624,15 +649,6 @@ impl MapFit {
 }
 
 impl Minimap {
-    /// Where the map goes in a frame (its side from `side`), as
-    /// Watermark::place_in.
-    pub fn place_in(&self, side: u32, frame_w: u32, frame_h: u32, top: u32, area_h: u32) -> (f32, f32) {
-        match self.free {
-            Some(free) => free_place_in(free, side, side, frame_w, frame_h, top, area_h),
-            None => corner_in(self.corner, side, side, frame_w, top, area_h),
-        }
-    }
-
     pub const SHARES: (f64, f64) = (0.12, 0.60);
 
     /// The square's side: the share of the shorter side, even.
@@ -804,7 +820,7 @@ mod tests {
     fn timestamps_read_right() {
         use crate::settings::DateFormat;
         let t = crate::library::parse_stamp("2026-11-07_13-05-09").unwrap();
-        let ts = |date_format, h24| Timestamp { corner: Corner::BottomCenter, date_format, h24 }.text(t);
+        let ts = |date_format, h24| Timestamp { corner: Corner::BottomCenter, date_format, h24, free: None, scale: 1.0 }.text(t);
         assert_eq!(ts(DateFormat::Ymd, false), "2026-11-07 01:05:09 PM");
         assert_eq!(ts(DateFormat::Mdy, true), "11/07/2026 13:05:09");
         assert_eq!(ts(DateFormat::Dmy, false), "07/11/2026 01:05:09 PM");
@@ -814,7 +830,19 @@ mod tests {
 
     #[test]
     fn dashboards_size_and_draw() {
-        let d = Dashboard { style: DashStyle::Compact, corner: Corner::BottomCenter, share: DashSize::Medium.share(), metric: false, h24: false, accel: crate::dashboard::AccelMode::IconBar, glass: 0.0, free: None };
+        let d = Dashboard {
+            style: DashStyle::Compact,
+            corner: Corner::BottomCenter,
+            share: DashSize::Medium.share(),
+            metric: false,
+            h24: false,
+            accel: crate::dashboard::AccelMode::IconBar,
+            glass: 0.0,
+            free: None,
+            data_bar: None,
+            date_bar: None,
+            sizes: DashSizes::default(),
+        };
         // Medium is 773 x 90 on a wide frame; never wider
         // than the frame less 80 px.
         assert_eq!(d.size(3258), Size::new(773, 90));

@@ -447,6 +447,8 @@ pub fn export_check(dir: &std::path::Path, quality: Option<&str>, speed: Option<
                 corner: crate::export::overlay::Corner::BottomCenter,
                 date_format: crate::settings::DateFormat::Ymd,
                 h24: false,
+                free: None,
+                scale: 1.0,
             }),
             dashboard: dashboard.then_some(crate::export::overlay::Dashboard {
                 // SENTRY_EXPORT_DASHBOARD=tesla-mobile for that style.
@@ -459,6 +461,9 @@ pub fn export_check(dir: &std::path::Path, quality: Option<&str>, speed: Option<
                 // Playback's glass (SENTRY_EXPORT_GLASS=0 for the dark bar).
                 glass: std::env::var("SENTRY_EXPORT_GLASS").ok().and_then(|v| v.parse().ok()).unwrap_or(13.0),
                 free: None,
+                data_bar: None,
+                date_bar: None,
+                sizes: Default::default(),
             }),
             // The minimap with SENTRY_EXPORT_MINIMAP=1.
             minimap: std::env::var_os("SENTRY_EXPORT_MINIMAP").map(|_| crate::export::overlay::Minimap {

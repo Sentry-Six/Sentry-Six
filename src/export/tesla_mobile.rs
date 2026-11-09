@@ -1,6 +1,8 @@
 //! The Tesla Mobile dashboard, as earlier versions exported it: the frame
 //! grows a date bar on top ("Saturday, November 7, 2026   1:05:09 PM")
 //! and a data bar at the bottom or top, dark grey across the whole width.
+//! In the editor each bar can be moved and resized on its own (see
+//! export::layout).
 //! The data bar: brake and gear in circles at the left, steering wheel
 //! and accelerator at the right, and blinkers, speed and the Autopilot
 //! state in the middle.
@@ -36,8 +38,9 @@ pub fn date_line(t: crate::library::LocalSecs, h24: bool) -> String {
     format!("{}, {} {}, {}   {}", date.format("%A"), date.format("%B"), date.day(), date.year(), crate::dashboard::time_of_day(t.rem_euclid(86400), h24))
 }
 
-/// The date bar's drawing, at whatever size it's given.
-struct Date(String);
+/// The date bar's drawing, at whatever size it's given, its text `.1`
+/// times the usual size (the Date Bar Size).
+struct Date(String, f32);
 
 impl<M> canvas::Program<M> for Date {
     type State = ();
@@ -49,7 +52,8 @@ impl<M> canvas::Program<M> for Date {
             content: self.0.to_string(),
             position: Point::new(b.width / 2.0, b.height / 2.0),
             color: Color::WHITE,
-            size: (b.height * 0.55).into(),
+            // Bigger than usual, kept inside the bar.
+            size: (b.height * 0.55 * self.1).min(b.height * 0.85).into(),
             font: crate::theme::INTER,
             align_x: iced::widget::text::Alignment::Center,
             align_y: iced::alignment::Vertical::Center,
@@ -60,14 +64,14 @@ impl<M> canvas::Program<M> for Date {
 }
 
 /// The date bar, filling what it's given (the export, or the editor
-/// while it plays).
-pub fn date_bar<'a, M: 'a>(line: String) -> iced::Element<'a, M> {
-    iced::widget::canvas(Date(line)).width(iced::Length::Fill).height(iced::Length::Fill).into()
+/// while it plays); `size`: the Date Bar Size.
+pub fn date_bar<'a, M: 'a>(line: String, size: f32) -> iced::Element<'a, M> {
+    iced::widget::canvas(Date(line, size)).width(iced::Length::Fill).height(iced::Length::Fill).into()
 }
 
 /// The date bar.
-pub fn paint_date(painter: &mut Painter, width: u32, height: u32, line: &str) -> Picture {
-    let c = iced::widget::canvas(Date(line.to_string())).width(width as f32).height(height as f32);
+pub fn paint_date(painter: &mut Painter, width: u32, height: u32, line: &str, size: f32) -> Picture {
+    let c = iced::widget::canvas(Date(line.to_string(), size)).width(width as f32).height(height as f32);
     painter.paint::<()>(c.into(), Size::new(width, height))
 }
 
@@ -76,6 +80,9 @@ struct DataBar {
     metric: bool,
     /// The separator on the bar's top edge (bar at the bottom) or bottom.
     line_on_top: bool,
+    /// Label Size (the speed's unit) and Value Size (the speed, gear and
+    /// Autopilot words); the circles and icons keep to the bar.
+    sizes: (f32, f32),
 }
 
 impl<M> canvas::Program<M> for DataBar {
@@ -113,6 +120,11 @@ impl<M> canvas::Program<M> for DataBar {
         let accel_x = w - edge - r;
         let steer_x = w - edge - diam - gap - r;
         let spacing = w * 0.32 / 3.0;
+        let (label, value) = self.sizes;
+        // Bigger than usual, text keeps to its place in the middle group
+        // (about `chars` characters in `room`), as earlier versions' editor
+        // capped it.
+        let fit = |size: f32, scale: f32, chars: f32, room: f32| if scale > 1.0 { (size * scale).min((room / (chars * 0.55)).max(size)) } else { size * scale };
         let cx = w / 2.0;
         let (left_x, speed_x, ap_x, right_x) = (cx - spacing * 1.5, cx - spacing * 0.5, cx + spacing * 0.5, cx + spacing * 1.5);
         let icons = icon_set();
@@ -127,7 +139,7 @@ impl<M> canvas::Program<M> for DataBar {
         image(&mut f, brake_x, diam * 0.6, if m.brake_applied { &icons.brake_on } else { &icons.brake_off }, 0.0);
         // Gear: blue under Autopilot.
         circle(&mut f, gear_x, if ap_on { BLUE } else { grey(0x40) });
-        text(&mut f, gear_letter(m.gear_state).to_string(), gear_x, diam * 0.70, Color::WHITE, Center, true);
+        text(&mut f, gear_letter(m.gear_state).to_string(), gear_x, (diam * 0.70 * value).min(diam * 0.85), Color::WHITE, Center, true);
         // Blinkers (on for the first 400 of 700 ms).
         let blink = self.state.blink_ms < 400;
         for (on, x, handle) in [(m.blinker_on_left, left_x, &icons.blink_left), (m.blinker_on_right, right_x, &icons.blink_right)] {
@@ -146,10 +158,10 @@ impl<M> canvas::Program<M> for DataBar {
         let speed = if self.metric { (mps * 3.6).round() } else { (mps * 2.236_936_292_054_402).round() };
         let unit = crate::i18n::t(if self.metric { "ui.dashboard.kmh" } else { "ui.dashboard.mph" });
         let speed_gap = diam * 0.08;
-        text(&mut f, format!("{speed}"), speed_x - speed_gap, (diam * 0.95).min(h * 0.85), Color::WHITE, Right, true);
-        text(&mut f, unit.to_string(), speed_x + speed_gap, (diam * 0.65).min(h * 0.85), grey(0x80), Left, false);
+        text(&mut f, format!("{speed}"), speed_x - speed_gap, fit(diam * 0.95, value, 5.0, spacing).min(h * 0.85), Color::WHITE, Right, true);
+        text(&mut f, unit.to_string(), speed_x + speed_gap, fit(diam * 0.65, label, 4.0, spacing * 0.7).min(h * 0.85), grey(0x80), Left, false);
         // Autopilot state.
-        text(&mut f, autopilot_words(m.autopilot_state).to_string(), ap_x, (diam * 0.65).min(h * 0.85), if ap_on { BLUE } else { grey(0x80) }, Center, false);
+        text(&mut f, autopilot_words(m.autopilot_state).to_string(), ap_x, fit(diam * 0.65, value, 16.0, spacing).min(h * 0.85), if ap_on { BLUE } else { grey(0x80) }, Center, false);
         // Steering wheel, turned.
         image(&mut f, steer_x, diam, if ap_on { &icons.wheel_on } else { &icons.wheel_off }, self.state.steering);
         // Accelerator: lighter when pressed past 5%.
@@ -160,14 +172,15 @@ impl<M> canvas::Program<M> for DataBar {
     }
 }
 
-/// The data bar, filling what it's given.
-pub fn data_bar<'a, M: 'a>(state: DashState, metric: bool, line_on_top: bool) -> iced::Element<'a, M> {
-    iced::widget::canvas(DataBar { state, metric, line_on_top }).width(iced::Length::Fill).height(iced::Length::Fill).into()
+/// The data bar, filling what it's given; `sizes`: Label Size and Value
+/// Size.
+pub fn data_bar<'a, M: 'a>(state: DashState, metric: bool, line_on_top: bool, sizes: (f32, f32)) -> iced::Element<'a, M> {
+    iced::widget::canvas(DataBar { state, metric, line_on_top, sizes }).width(iced::Length::Fill).height(iced::Length::Fill).into()
 }
 
 /// The data bar.
-pub fn paint_data(painter: &mut Painter, width: u32, height: u32, state: &DashState, metric: bool, line_on_top: bool) -> Picture {
-    let c = iced::widget::canvas(DataBar { state: state.clone(), metric, line_on_top }).width(width as f32).height(height as f32);
+pub fn paint_data(painter: &mut Painter, width: u32, height: u32, state: &DashState, metric: bool, line_on_top: bool, sizes: (f32, f32)) -> Picture {
+    let c = iced::widget::canvas(DataBar { state: state.clone(), metric, line_on_top, sizes }).width(width as f32).height(height as f32);
     painter.paint::<()>(c.into(), Size::new(width, height))
 }
 
@@ -188,7 +201,7 @@ mod tests {
             steering: 15.0,
             blink_ms: 0,
         };
-        let pic = paint_data(&mut p, 3258, 86, &state, false, true);
+        let pic = paint_data(&mut p, 3258, 86, &state, false, true, (1.0, 1.0));
         assert_eq!((pic.width, pic.height), (3258, 86));
         // Opaque bar colour away from everything drawn on it.
         let at = |x: usize, y: usize| pic.rgba[(y * 3258 + x) * 4..(y * 3258 + x) * 4 + 4].to_vec();
@@ -196,7 +209,7 @@ mod tests {
         if let Some(path) = std::env::var_os("SENTRY_DUMP_OVERLAY") {
             ::image::RgbaImage::from_raw(3258, 86, pic.rgba.clone()).unwrap().save(path).unwrap();
         }
-        let date = paint_date(&mut p, 3258, 72, &date_line(t, false));
+        let date = paint_date(&mut p, 3258, 72, &date_line(t, false), 1.0);
         assert_eq!(date.rgba.len(), 3258 * 72 * 4);
     }
 }
