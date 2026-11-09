@@ -119,7 +119,7 @@ VIAddVersionKey /LANG=${LANG_ENGLISH} "ProductVersion" "${VERSION}"
 VIAddVersionKey /LANG=${LANG_ENGLISH} "FileVersion" "${VERSION}"
 VIAddVersionKey /LANG=${LANG_ENGLISH} "CompanyName" "${PUBLISHER}"
 VIAddVersionKey /LANG=${LANG_ENGLISH} "FileDescription" "${DESCRIPTION}"
-VIAddVersionKey /LANG=${LANG_ENGLISH} "LegalCopyright" "Copyright (c) 2025-2026 Chad and Scott Vandereems"
+VIAddVersionKey /LANG=${LANG_ENGLISH} "LegalCopyright" "Copyright (c) 2025-2026 Jhoan Romero and Scott Vandereems"
 
 !macro readCommandLine
   ${GetParameters} $R0

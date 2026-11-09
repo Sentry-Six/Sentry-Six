@@ -37,7 +37,7 @@ jobs:
     if: github.event_name == 'release'
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Fill release notes from changelog.json
         env:
@@ -117,7 +117,7 @@ jobs:
       HAS_MAC_CERTIFICATE: ${{ secrets.MAC_CERTIFICATE_P12 != '' }}
       HAS_APPLE_API_KEY: ${{ secrets.APPLE_API_KEY != '' }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Rust
         run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
@@ -176,7 +176,7 @@ jobs:
             xcrun stapler validate "$CHECK/Sentry Studio.app"
           fi
 
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: macos
           retention-days: 30
@@ -210,20 +210,23 @@ jobs:
     # The Azure app's federated credential trusts this environment's OIDC
     # token (repo:Sentry-Six/Sentry-Six:environment:windows-signing), and the
     # job waits for one of its required reviewers to approve it.
-    environment: windows-signing
+    # Only a release tag signs: a run by hand from a branch builds unsigned,
+    # outside the environment (whose deployment rule allows only v* tags).
+    environment: ${{ startsWith(github.ref, 'refs/tags/v') && 'windows-signing' || '' }}
     permissions:
       contents: read
       id-token: write
     env:
-      # Without the Azure variables (a fork, say) the build is unsigned.
-      HAS_SIGNING: ${{ vars.AZURE_CLIENT_ID != '' && vars.ARTIFACT_SIGNING_ACCOUNT != '' }}
+      # Without the Azure variables (a fork, say) or a release tag, the build
+      # is unsigned.
+      HAS_SIGNING: ${{ startsWith(github.ref, 'refs/tags/v') && vars.AZURE_CLIENT_ID != '' && vars.ARTIFACT_SIGNING_ACCOUNT != '' }}
       ARTIFACT_SIGNING_ENDPOINT: ${{ vars.ARTIFACT_SIGNING_ENDPOINT }}
       ARTIFACT_SIGNING_ACCOUNT: ${{ vars.ARTIFACT_SIGNING_ACCOUNT }}
       ARTIFACT_SIGNING_PROFILE: ${{ vars.ARTIFACT_SIGNING_PROFILE }}
       JSIGN_VERSION: '7.6'
       JSIGN_SHA256: 6cf58aa080e7ff82656f320cff8d4a3bff30408df8766806dcba3740dd839fa5
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up the toolchain
         run: |
@@ -238,13 +241,13 @@ jobs:
 
       - name: Build
         run: |
-          cargo build --release --target x86_64-pc-windows-gnu
+          cargo build --locked --release --target x86_64-pc-windows-gnu
           mkdir -p to-sign
           cp target/x86_64-pc-windows-gnu/release/sentry-studio.exe to-sign/
 
       - name: Sign in to Azure
         if: env.HAS_SIGNING == 'true'
-        uses: azure/login@v3
+        uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
         with:
           client-id: ${{ vars.AZURE_CLIENT_ID }}
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
@@ -260,6 +263,20 @@ jobs:
           echo "$JSIGN_SHA256  $RUNNER_TEMP/jsign.jar" | sha256sum -c -
           echo "JSIGN_JAR=$RUNNER_TEMP/jsign.jar" >> "$GITHUB_ENV"
           java -version
+
+      # The installer and uninstaller unpack NSIS's plugin DLLs (System,
+      # nsExec, nsDialogs) to a temporary folder and run them, so they're
+      # signed too: all of the Unicode plugins, in place, before any
+      # installer is built.
+      - name: Sign the installer's plugins
+        if: env.HAS_SIGNING == 'true'
+        run: |
+          PLUGINS=/usr/share/nsis/Plugins/x86-unicode
+          test -f "$PLUGINS/System.dll"
+          mkdir -p "$RUNNER_TEMP/plugins"
+          cp "$PLUGINS"/*.dll "$RUNNER_TEMP/plugins/"
+          tools/sign-windows.sh "$RUNNER_TEMP"/plugins/*.dll
+          sudo cp "$RUNNER_TEMP"/plugins/*.dll "$PLUGINS/"
 
       # NSIS writes the uninstaller into the installer, so a first installer
       # build only copies it out, to be signed with the app.
@@ -290,7 +307,7 @@ jobs:
           tools/sign-windows.sh "target/windows/SentryStudioSetup$VERSION.exe"
           python3 -I tools/update-manifest.py target/windows/latest.yml "$VERSION" "target/windows/SentryStudioSetup$VERSION.exe"
 
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: windows
           retention-days: 30
@@ -309,7 +326,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: windows
           path: dist
@@ -385,10 +402,12 @@ jobs:
           Check (Test-Path "$dir\sentry-studio.exe") 'fresh install in %LOCALAPPDATA%\Programs\Sentry Studio'
           Check (Test-Path (Join-Path ([Environment]::GetFolderPath('Desktop')) 'Sentry Studio.lnk')) 'desktop shortcut on a first install'
 
-      # Every program in the download (the installer, and each .exe or .dll
-      # in the zip and in the installed copy) must have a valid, timestamped
-      # signature from Scott Vandereems: sentry-six.com/code-signing says so.
-      # A release fails without; a run by hand only reports.
+      # Every program in the download (the installer, each .exe or .dll in
+      # the zip and in the installed copy, and the plugin DLLs the installer
+      # and uninstaller unpack and run, read out with 7-Zip) must have a
+      # valid, timestamped signature from Scott Vandereems:
+      # sentry-six.com/code-signing says so. A release fails without; a run
+      # by hand only reports.
       - name: Check the signatures
         shell: pwsh
         env:
@@ -397,11 +416,17 @@ jobs:
           $zip = Join-Path $env:RUNNER_TEMP 'zip'
           Expand-Archive -Force (Get-ChildItem dist\*.zip | Select-Object -First 1).FullName $zip
           $installed = Join-Path $env:LOCALAPPDATA 'Programs\Sentry Studio'
-          $files = @(Get-ChildItem dist\SentryStudioSetup*.exe) +
-            @(Get-ChildItem -Recurse -File $zip, $installed -Include *.exe, *.dll)
-          $names = $files | ForEach-Object Name
+          $setup = (Get-ChildItem dist\SentryStudioSetup*.exe | Select-Object -First 1).FullName
+          $unpacked = Join-Path $env:RUNNER_TEMP 'unpacked'
           $bad = 0
-          foreach ($expected in 'sentry-studio.exe', 'Uninstall Sentry Studio.exe') {
+          foreach ($exe in @(@($setup, 'installer'), @((Join-Path $installed 'Uninstall Sentry Studio.exe'), 'uninstaller'))) {
+            & 7z x -y "-o$unpacked\$($exe[1])" $exe[0] | Out-Null
+            if ($LASTEXITCODE -ne 0) { Write-Host "UNREADABLE: 7-Zip couldn't unpack the $($exe[1]) ($LASTEXITCODE)"; $bad++ }
+          }
+          $files = @(Get-ChildItem dist\SentryStudioSetup*.exe) +
+            @(Get-ChildItem -Recurse -File $zip, $installed, $unpacked -Include *.exe, *.dll)
+          $names = $files | ForEach-Object Name
+          foreach ($expected in 'sentry-studio.exe', 'Uninstall Sentry Studio.exe', 'System.dll', 'nsExec.dll', 'nsDialogs.dll') {
             if ($names -notcontains $expected) { Write-Host "MISSING: $expected"; $bad++ }
           }
           foreach ($f in $files) {
@@ -429,7 +454,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # zig links against glibc 2.28, so the binary runs on older distributions
       # than the runner's.
@@ -458,7 +483,7 @@ jobs:
           ARCH=x64 tools/package-linux.sh
           ARCH=arm64 tools/package-linux.sh
 
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: linux
           retention-days: 30
