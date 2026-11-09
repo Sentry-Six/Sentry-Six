@@ -3115,7 +3115,7 @@ name = "sentry-studio"
 version = "2026.46.1"
 dependencies = [
  "anyhow",
- "base64 0.22.1",
+ "base64 0.23.1",
  "bytemuck",
  "chrono",
  "dispatch2",

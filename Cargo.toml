@@ -23,7 +23,7 @@ serde = { version = "1", features = ["derive"] }
 # JavaScript does, so drives measure the same as in earlier versions.
 serde_json = { version = "1", features = ["preserve_order", "float_roundtrip"] }
 chrono = { version = "0.4", features = ["unstable-locales"] }
-base64 = "0.22"
+base64 = "0.23"
 libm = "0.2"
 ureq = "3"
 regex = "1"
