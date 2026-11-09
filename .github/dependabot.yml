@@ -18,6 +18,10 @@ updates:
     commit-message:
       prefix: "deps(cargo)"
       include: "scope"
+    ignore:
+      # Must match the metal version wgpu uses (0.32); lift when wgpu moves on.
+      - dependency-name: "metal"
+        versions: [">= 0.33"]
     groups:
       cargo-minor-and-patch:
         update-types:
