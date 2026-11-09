@@ -12,6 +12,14 @@
 //! minute of driving (`measure`) and taken off. A camera whose counter
 //! can't be compared at all (an HW3 car's back camera) is lined up by the
 //! telemetry's timing instead (`measure_times`).
+//!
+//! The car closes a minute's clips together, so each clip's length also
+//! says when it started: a clip a third of a second shorter than the front
+//! one started a third of a second later. That holds to about a frame on
+//! HW3 and HW4 cars, needs no telemetry (a parked car's minutes have none)
+//! and no driving to match by, so it lines a camera up until its lag or
+//! timing has been measured, and catches an HW3 back camera's counter that
+//! only happens to land near the front's.
 
 use crate::library::Camera;
 use crate::mp4::VideoTrack;
@@ -19,11 +27,13 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
 
-/// A clip's first frame number and the time between its frames.
+/// A clip's first frame number (0 without telemetry), the time between
+/// its frames and its length.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Start {
     pub seq: f64,
     pub interval: f64,
+    pub duration: f64,
 }
 
 /// Bytes of the first frame read for its telemetry (it comes first).
@@ -31,6 +41,12 @@ const HEAD: usize = 16 * 1024;
 /// Further apart than this, the counters aren't comparable (not Tesla's,
 /// or a clip from another drive): no adjustment.
 const MOST: f64 = 3.0;
+/// Clips of one minute start at most this far apart by their lengths
+/// (2 in 1,000 are further: a clip cut short, so its length says nothing).
+const END_MOST: f64 = 0.7;
+/// A counter more than this from the clips' lengths only landed near the
+/// front's by chance (an HW3 back camera's counter runs on its own).
+const AGREE: f64 = 0.25;
 
 /// Frames each camera's counter runs ahead of the front camera's for the
 /// same moment, until measured (an HW4 car's).
@@ -50,7 +66,11 @@ fn measured() -> &'static Mutex<HashMap<Camera, f64>> {
 
 /// Frames `camera`'s counter runs ahead of the front's for the same moment.
 pub fn lag(camera: Camera) -> f64 {
-    measured().lock().unwrap_or_else(|e| e.into_inner()).get(&camera).copied().unwrap_or_else(|| default_lag(camera))
+    measured_lag(camera).unwrap_or_else(|| default_lag(camera))
+}
+
+fn measured_lag(camera: Camera) -> Option<f64> {
+    measured().lock().unwrap_or_else(|e| e.into_inner()).get(&camera).copied()
 }
 
 /// New footage (perhaps another car's): measure again.
@@ -87,9 +107,12 @@ pub fn start_from(track: &VideoTrack, read: impl FnOnce(u64, usize) -> Option<Ve
     if n < 2 || track.duration <= 0.0 {
         return None;
     }
-    let data = read(first.offset, (first.size as usize).min(HEAD))?;
-    let m = crate::telemetry::sample_telemetry(&data, track.nal_length_size as usize, track.codec)?;
-    (m.frame_seq_no > 0.0).then_some(Start { seq: m.frame_seq_no, interval: track.duration / n as f64 })
+    let seq = read(first.offset, (first.size as usize).min(HEAD))
+        .and_then(|data| crate::telemetry::sample_telemetry(&data, track.nal_length_size as usize, track.codec))
+        .map(|m| m.frame_seq_no)
+        .filter(|s| *s > 0.0)
+        .unwrap_or(0.0);
+    Some(Start { seq, interval: track.duration / n as f64, duration: track.duration })
 }
 
 /// A clip's start, reading the file (its index and first frame).
@@ -109,27 +132,60 @@ pub fn start(path: &Path) -> Option<Start> {
 
 /// Seconds `camera`'s clip at `path`, starting at `own`, begins after the
 /// minute's reference clip (its front camera's) starting at `reference`:
-/// by the counter with its lag taken off or, when the counters aren't
-/// comparable (an HW3 car's back camera), as measured from the
-/// telemetry's timing (`measure_times`); 0 until then, or without either.
+/// by the counter with this car's measured lag taken off or, when the
+/// counters aren't comparable (an HW3 car's back camera), as measured from
+/// the telemetry's timing (`measure_times`). Until either is known, by the
+/// clips' lengths; without those either, by the counter with the usual
+/// lag, or 0.
 pub fn offset(path: &Path, own: Option<Start>, reference: Option<Start>, camera: Camera) -> f64 {
-    if comparable(own, reference) {
-        offset_with(own, reference, lag(camera))
-    } else {
-        timed().lock().unwrap_or_else(|e| e.into_inner()).get(path).copied().flatten().unwrap_or(0.0)
+    let comparable = comparable(own, reference, camera);
+    if comparable {
+        if let Some(lag) = measured_lag(camera) {
+            return offset_with(own, reference, lag);
+        }
+    } else if let Some(t) = timed().lock().unwrap_or_else(|e| e.into_inner()).get(path).copied().flatten() {
+        return t;
+    }
+    match end_offset(own, reference) {
+        Some(o) => o,
+        None if comparable => offset_with(own, reference, lag(camera)),
+        None => 0.0,
     }
 }
 
-/// Whether two clips' counters can be compared (both have one, close).
-pub fn comparable(own: Option<Start>, reference: Option<Start>) -> bool {
-    matches!((own, reference), (Some(a), Some(r)) if ((a.seq - r.seq) * r.interval).abs() < MOST)
+/// Seconds a clip starts after the minute's front clip by their lengths
+/// (the car closes them together); None for a clip cut short.
+pub fn end_offset(own: Option<Start>, reference: Option<Start>) -> Option<f64> {
+    let (a, r) = (own?, reference?);
+    let o = r.duration - a.duration;
+    (o.abs() <= END_MOST).then_some(o)
+}
+
+/// Whether both clips carry the car's frame counter.
+pub fn counted(own: Option<Start>, reference: Option<Start>) -> bool {
+    matches!((own, reference), (Some(a), Some(r)) if a.seq > 0.0 && r.seq > 0.0)
+}
+
+/// Whether `camera`'s counter can be compared with the front's: both have
+/// one, close, and (when the clips' lengths tell) saying about the same
+/// start.
+pub fn comparable(own: Option<Start>, reference: Option<Start>, camera: Camera) -> bool {
+    let (Some(a), Some(r)) = (own, reference) else { return false };
+    if !counted(own, reference) || ((a.seq - r.seq) * r.interval).abs() >= MOST {
+        return false;
+    }
+    end_offset(own, reference).is_none_or(|e| (offset_with_unchecked(a, r, lag(camera)) - e).abs() < AGREE)
 }
 
 fn offset_with(own: Option<Start>, reference: Option<Start>, lag: f64) -> f64 {
     match (own, reference) {
-        (Some(a), Some(r)) if comparable(own, reference) => (a.seq - lag - r.seq) * r.interval,
+        (Some(a), Some(r)) if counted(own, reference) && ((a.seq - r.seq) * r.interval).abs() < MOST => offset_with_unchecked(a, r, lag),
         _ => 0.0,
     }
+}
+
+fn offset_with_unchecked(a: Start, r: Start, lag: f64) -> f64 {
+    (a.seq - lag - r.seq) * r.interval
 }
 
 /// Offsets measured from the telemetry's timing, per clip (None: being
@@ -251,10 +307,10 @@ pub fn measure_times(files: std::collections::BTreeMap<Camera, PathBuf>) {
     let Some(front) = files.get(&Camera::Front).cloned() else { return };
     // Only bookkeeping here (playback's thread): the clips are read on the
     // measuring thread.
-    let todo: Vec<PathBuf> = {
+    let todo: Vec<(Camera, PathBuf)> = {
         let mut t = timed().lock().unwrap_or_else(|e| e.into_inner());
-        let todo: Vec<PathBuf> = files.into_values().filter(|p| *p != front && !t.contains_key(p)).collect();
-        for p in &todo {
+        let todo: Vec<(Camera, PathBuf)> = files.into_iter().filter(|(_, p)| *p != front && !t.contains_key(p)).collect();
+        for (_, p) in &todo {
             t.insert(p.clone(), None);
         }
         todo
@@ -263,7 +319,7 @@ pub fn measure_times(files: std::collections::BTreeMap<Camera, PathBuf>) {
         return;
     }
     let _ = std::thread::Builder::new().name("camera-sync-time".into()).spawn(move || {
-        let todo: Vec<PathBuf> = todo.into_iter().filter(|p| !comparable(start(p), start(&front))).collect();
+        let todo: Vec<PathBuf> = todo.into_iter().filter(|(c, p)| counted(start(p), start(&front)) && !comparable(start(p), start(&front), *c)).map(|(_, p)| p).collect();
         if todo.is_empty() {
             return;
         }
@@ -319,15 +375,53 @@ mod tests {
 
     #[test]
     fn offsets_from_frame_numbers() {
-        let front = Some(Start { seq: 1_804_980.0, interval: 1.0 / 36.0 });
-        let back = Some(Start { seq: 1_805_004.0, interval: 1.0 / 36.0 });
+        let front = Some(Start { seq: 1_804_980.0, interval: 1.0 / 36.0, duration: 60.0 });
+        let back = Some(Start { seq: 1_805_004.0, interval: 1.0 / 36.0, duration: 60.0 });
         assert!((offset_with(back, front, 0.0) - 24.0 / 36.0).abs() < 1e-9);
         assert!((offset_with(front, back, 0.0) + 24.0 / 36.0).abs() < 1e-9);
         // The back camera's counter 13 frames ahead: 11 frames later.
         assert!((offset_with(back, front, 13.0) - 11.0 / 36.0).abs() < 1e-9);
         assert_eq!(offset_with(None, front, 0.0), 0.0);
         // Not comparable.
-        assert_eq!(offset_with(Some(Start { seq: 10.0, interval: 1.0 / 36.0 }), front, 0.0), 0.0);
+        assert_eq!(offset_with(Some(Start { seq: 10.0, interval: 1.0 / 36.0, duration: 60.0 }), front, 0.0), 0.0);
+    }
+
+    fn clip(seq: f64, duration: f64) -> Option<Start> {
+        Some(Start { seq, interval: 1.0 / 36.0, duration })
+    }
+
+    #[test]
+    fn offsets_from_clip_lengths() {
+        // A clip a third of a second shorter started a third of a second later.
+        assert!((end_offset(clip(0.0, 59.4), clip(0.0, 59.733)).unwrap() - 0.333).abs() < 1e-9);
+        assert!((end_offset(clip(0.0, 60.1), clip(0.0, 59.6)).unwrap() + 0.5).abs() < 1e-9);
+        // A clip cut short says nothing.
+        assert_eq!(end_offset(clip(0.0, 45.0), clip(0.0, 59.6)), None);
+        assert_eq!(end_offset(None, clip(0.0, 59.6)), None);
+    }
+
+    #[test]
+    fn counters_must_agree_with_lengths() {
+        // An HW4 back camera: counter 19 ahead, lag 13, lengths say 0.17 s.
+        let front = clip(1_000.0, 60.0);
+        assert!(comparable(clip(1_019.0, 59.83), front, Camera::Back));
+        // An HW3 back camera whose own counter lands 52 frames from the
+        // front's while its clip started 0.34 s later: not comparable.
+        assert!(!comparable(clip(1_052.0, 59.66), front, Camera::Back));
+        // No telemetry: not counted, not comparable.
+        assert!(!counted(clip(0.0, 59.7), front));
+        assert!(!comparable(clip(0.0, 59.7), front, Camera::Back));
+    }
+
+    #[test]
+    fn offset_until_measured_is_by_lengths() {
+        let p = Path::new("/nonexistent/2026-01-01_00-00-00-back.mp4");
+        // Not comparable, not timed: by the lengths, not 0.
+        assert!((offset(p, clip(5_000.0, 59.66), clip(1_000.0, 60.0), Camera::Back) - 0.34).abs() < 1e-9);
+        // No telemetry at all (parked): still by the lengths.
+        assert!((offset(p, clip(0.0, 59.8), clip(0.0, 60.0), Camera::RightRepeater) - 0.2).abs() < 1e-9);
+        // A clip cut short and no counters: 0, as before.
+        assert_eq!(offset(p, clip(0.0, 30.0), clip(0.0, 60.0), Camera::Back), 0.0);
     }
 
     /// Each camera's measured lag in a minute of driving (SENTRY_SYNC_DIR,
@@ -360,7 +454,18 @@ mod tests {
         let front = series(&file("front"), STRIDE).unwrap();
         for c in ["back", "left_repeater", "right_repeater", "left_pillar", "right_pillar"] {
             let Some(s) = series(&file(c), STRIDE) else { continue };
-            println!("{c:15} time {:?}  counter comparable {}", best_time(&front, &s).map(|o| (o * 1000.0).round()), comparable(start(&file(c)), start(&file("front"))));
+            println!("{c:15} time {:?}  counter comparable {}", best_time(&front, &s).map(|o| (o * 1000.0).round()), comparable(start(&file(c)), start(&file("front")), camera_named(c)));
+        }
+    }
+
+    fn camera_named(c: &str) -> Camera {
+        match c {
+            "back" => Camera::Back,
+            "left_repeater" => Camera::LeftRepeater,
+            "right_repeater" => Camera::RightRepeater,
+            "left_pillar" => Camera::LeftPillar,
+            "right_pillar" => Camera::RightPillar,
+            _ => Camera::Front,
         }
     }
 }
