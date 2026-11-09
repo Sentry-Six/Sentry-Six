@@ -1,5 +1,5 @@
-//! The playback timeline: a thin grey rail, a white round handle and red
-//! event markers.
+//! The playback timeline: a thin grey rail and a white round handle; the
+//! event's marker is stacked over it (`marker_at`).
 //!
 //! The handle's centre moves between `HANDLE_R` and `width - HANDLE_R`,
 //! and a click or drag maps onto that same span, so the handle lands right
@@ -12,13 +12,13 @@ use iced::{Background, Border, Color, Element, Event, Length, Rectangle, Shadow,
 
 const HANDLE_R: f32 = 7.0;
 const RAIL: f32 = 6.0;
-const MARKER: f32 = 10.0;
 const HEIGHT: f32 = 22.0;
+/// The event marker's box, as wide as the handle.
+const MARKER_HIT: f32 = 14.0;
 
 pub struct Timeline<'a, Message> {
     max: f64,
     value: f64,
-    markers: Vec<f64>,
     /// Export start and end markers.
     range: (Option<f64>, Option<f64>),
     on_change: Box<dyn Fn(f64) -> Message + 'a>,
@@ -27,7 +27,7 @@ pub struct Timeline<'a, Message> {
 
 impl<'a, Message> Timeline<'a, Message> {
     pub fn new(max: f64, value: f64, on_change: impl Fn(f64) -> Message + 'a) -> Self {
-        Self { max, value, markers: Vec::new(), range: (None, None), on_change: Box::new(on_change), on_release: None }
+        Self { max, value, range: (None, None), on_change: Box::new(on_change), on_release: None }
     }
 
     pub fn on_release(mut self, message: Message) -> Self {
@@ -42,11 +42,26 @@ impl<'a, Message> Timeline<'a, Message> {
         self
     }
 
-    /// Positions (same units as the value) of red event markers.
-    pub fn markers(mut self, markers: Vec<f64>) -> Self {
-        self.markers = markers;
-        self
+}
+
+/// `content` (`MARKER_HIT` px wide) centred over the timeline's point for
+/// `value`: a row whose two spaces split the span the handle's centre moves
+/// along, so it lines up with `x_of`. Stacked over the timeline; it takes no
+/// clicks, so a click on it seeks there.
+pub fn marker_at<'a, Message: 'a>(value: f64, max: f64, content: impl Into<Element<'a, Message>>) -> Element<'a, Message> {
+    use iced::widget::{container, row, space};
+    let p = if max > 0.0 { (value / max).clamp(0.0, 1.0) } else { 0.0 };
+    let before = (p * 10_000.0).round() as u16;
+    let after = 10_000 - before;
+    let mut r = row![];
+    if before > 0 {
+        r = r.push(space().width(Length::FillPortion(before)));
     }
+    r = r.push(container(content).center_x(MARKER_HIT).center_y(HEIGHT));
+    if after > 0 {
+        r = r.push(space().width(Length::FillPortion(after)));
+    }
+    container(r).padding([0.0, HANDLE_R - MARKER_HIT / 2.0]).height(HEIGHT).into()
 }
 
 /// Value under `x`, using the span the handle's centre moves along.
@@ -147,19 +162,6 @@ where
             ),
             Background::Color(Color { a: 0.16, ..Color::WHITE }),
         );
-
-        // Event markers.
-        for &m in &self.markers {
-            let cx = x_of(m, b, self.max);
-            renderer.fill_quad(
-                quad(
-                    Rectangle { x: cx - MARKER / 2.0, y: mid - MARKER / 2.0, width: MARKER, height: MARKER },
-                    Border { color: Color { a: 0.35, ..Color::WHITE }, width: 1.0, radius: (MARKER / 2.0).into() },
-                    Shadow { color: Color::from_rgba(1.0, 0.0, 0.0, 0.35), offset: Vector::ZERO, blur_radius: 10.0 },
-                ),
-                Background::Color(Color::from_rgba(1.0, 0.0, 0.0, 0.9)),
-            );
-        }
 
         // Export range, as earlier versions drew it: a green band between
         // a green start bar and a red end bar (4 x 22 px, glowing).

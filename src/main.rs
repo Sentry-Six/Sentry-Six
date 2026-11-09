@@ -60,6 +60,7 @@ mod video;
 
 use iced::widget::{button, column, container, mouse_area, pick_list, row, scrollable, sensor, shader, space, stack, text, text_input, Column};
 use iced::alignment::{Horizontal, Vertical};
+use iced::widget::tooltip::Position::{Bottom, Right, Top};
 use iced::{Alignment, Element, Length, Padding, Rectangle, Size, Subscription, Task};
 use library::{Camera, ClipItem, Collection, Kind, GRID};
 use player::Player;
@@ -68,14 +69,27 @@ use theme::{bold, icon, semibold, INTER, MONO};
 
 /// The map's re-centre icon (a crosshair) and its north-up compass.
 const RECENTER_SVG: &str = r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="white"><path d="M12 8c-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4-1.79-4-4-4zm8.94 3A8.994 8.994 0 0 0 13 3.06V1h-2v2.06A8.994 8.994 0 0 0 3.06 11H1v2h2.06A8.994 8.994 0 0 0 11 20.94V23h2v-2.06A8.994 8.994 0 0 0 20.94 13H23v-2h-2.06zM12 19c-3.87 0-7-3.13-7-7s3.13-7 7-7 7 3.13 7 7-3.13 7-7 7z"/></svg>"#;
+/// Timeline markers for a Sentry event (a warning triangle) and a Saved one
+/// (a bookmark), as earlier versions had them.
+const SENTRY_MARKER_SVG: &str = r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="white"><path d="M12 2L1 21h22L12 2zm0 3.5L19.5 19h-15L12 5.5zM11 10v4h2v-4h-2zm0 6v2h2v-2h-2z"/></svg>"#;
+const SAVED_MARKER_SVG: &str = r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="white"><path d="M17 3H7c-1.1 0-2 .9-2 2v16l7-3 7 3V5c0-1.1-.9-2-2-2z"/></svg>"#;
 const COMPASS_SVG: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><polygon points="12,2 16,10 12,8 8,10" fill="#5ce483"/><polygon points="12,22 8,14 12,16 16,14" fill="#b8bfcf"/></svg>"##;
 
-/// The OS folder picker; `then` receives the folder (or None).
-fn pick_folder(then: fn(Option<PathBuf>) -> Message) -> Task<Message> {
+/// "Learn more about SentryUSB", under the Drives tab without drive data.
+const SENTRY_USB_URL: &str = "https://sentry-six.com/sentry-usb";
+/// Where the map's credit line leads.
+const MAP_CREDITS_URL: &str = "https://www.openstreetmap.org/copyright";
+
+/// The OS folder picker, opening in `start` (the default folder, as
+/// earlier versions did) when it's there; `then` receives the folder (or None).
+fn pick_folder(start: Option<&PathBuf>, then: fn(Option<PathBuf>) -> Message) -> Task<Message> {
+    let mut dialog = rfd::AsyncFileDialog::new().set_title(i18n::t("app.chooseFolderTitle"));
+    if let Some(dir) = start.filter(|d| d.is_dir()) {
+        dialog = dialog.set_directory(dir);
+    }
     Task::perform(
-        async {
-            rfd::AsyncFileDialog::new()
-                .set_title(i18n::t("app.chooseFolderTitle"))
+        async move {
+            dialog
                 .pick_folder()
                 .await
                 .map(|h| h.path().to_path_buf())
@@ -514,6 +528,9 @@ struct App {
     tiles: map::tiles::Tiles,
     map_zoom: f32,
     map_pan: (f64, f64),
+    /// The map follows the car; a drag stops that until Re-centre or the
+    /// next clip (earlier versions pulled it back to the car every frame).
+    map_follow: bool,
     map_heading_up: bool,
     map_bearing: f32,
     map_offset: iced::Vector,
@@ -558,9 +575,6 @@ struct App {
     /// The update dialog, and the bytes downloaded so far.
     update: Option<update_view::Dialog>,
     update_progress: std::sync::Arc<std::sync::atomic::AtomicU64>,
-    /// Back on stable after pre-releases: the stable version is offered
-    /// even though it is older.
-    update_downgrade: bool,
     /// "Switch to pre-release builds?" is up.
     prerelease_question: bool,
     /// Settings › View Changelog is open.
@@ -576,7 +590,6 @@ struct App {
     /// The drive-data.json loaded or loading.
     drives_path: Option<PathBuf>,
     /// The units shortcut's choice, for this session only.
-    metric_override: Option<bool>,
     overlay_size: Option<Size>,
     dialog_size: Option<Size>,
     /// Settings' size (other dialogs can open over it).
@@ -621,6 +634,7 @@ impl App {
             tiles: map::tiles::Tiles::new(settings::data_dir().map(|d| d.join("map"))),
             map_zoom: map::DEFAULT_ZOOM,
             map_pan: (0.0, 0.0),
+            map_follow: true,
             map_heading_up: true,
             map_bearing: 0.0,
             map_offset: iced::Vector::ZERO,
@@ -651,7 +665,6 @@ impl App {
             deleting: false,
             update: None,
             update_progress: Default::default(),
-            update_downgrade: false,
             prerelease_question: false,
             changelog: None,
             chat: Default::default(),
@@ -659,7 +672,6 @@ impl App {
             update_check_id: 0,
             scanning_path: None,
             drives_path: None,
-            metric_override: None,
             overlay_size: None,
             dialog_size: None,
             settings_size: None,
@@ -669,6 +681,7 @@ impl App {
             }),
         };
         let mut app = app;
+        app.panel_open = !app.settings.clips_collapsed;
         app.shortcuts = shortcuts::Shortcuts::new(&app.settings.keybinds);
         i18n::set_language(&app.settings.language);
         theme::set_solid_dialogs(app.settings.solid_dialogs);
@@ -694,7 +707,7 @@ impl App {
 
     fn update(&mut self, message: Message) -> Task<Message> {
         match message {
-            Message::OpenFolder => return pick_folder(Message::FolderPicked),
+            Message::OpenFolder => return pick_folder(self.settings.default_folder.as_ref(), Message::FolderPicked),
             Message::FolderPicked(Some(path)) => {
                 self.error = None;
                 self.scanning = true;
@@ -806,6 +819,8 @@ impl App {
                 // Events open 15 s before the event.
                 let start = event.map(|e| (e - 15.0).max(0.0)).unwrap_or(0.0);
                 self.player.load(item.segments.clone(), start);
+                self.map_follow = true;
+                self.map_pan = (0.0, 0.0);
                 self.export.clear_markers();
                 self.player.set_playing(true);
             }
@@ -839,13 +854,22 @@ impl App {
             }
             Message::DashDetails => self.dash_details = !self.dash_details,
             Message::MapPan(dx, dy) => {
+                self.map_follow = false;
                 let world_px = 256.0 * 2f64.powf(self.map_zoom_effective() as f64);
                 self.map_pan.0 -= dx as f64 / world_px;
                 self.map_pan.1 -= dy as f64 / world_px;
             }
             Message::MapZoom(steps) => self.map_zoom = (self.map_zoom + steps).clamp(map::MIN_ZOOM, map::MAX_ZOOM),
             Message::MapRecenter => {
-                self.map_pan = (0.0, 0.0);
+                self.map_follow = true;
+                // The event's pin first, as earlier versions did; else the car.
+                self.map_pan = match (self.event_pin(), self.map_base()) {
+                    (Some((lat, lon)), Some(base)) => {
+                        let at = map::world(lat, lon);
+                        (at.0 - base.0, at.1 - base.1)
+                    }
+                    _ => (0.0, 0.0),
+                };
                 self.map_zoom = map::DEFAULT_ZOOM;
             }
             Message::MapOrientation => self.map_heading_up = !self.map_heading_up,
@@ -872,7 +896,12 @@ impl App {
                 }
             }
             Message::ShowTab(tab) => self.tab = tab,
-            Message::TogglePanel => self.panel_open = !self.panel_open,
+            Message::TogglePanel => {
+                // Remembered, as earlier versions did.
+                self.panel_open = !self.panel_open;
+                self.settings.clips_collapsed = !self.panel_open;
+                settings::save(&self.settings);
+            }
             Message::PanelSized(size) => self.panel_size = Some(size),
             Message::OverlaySized(size) => self.overlay_size = Some(size),
             Message::DialogSized(size) => self.dialog_size = Some(size),
@@ -1021,7 +1050,6 @@ impl App {
                 match change {
                     Change::Metric(b) => {
                         self.settings.metric = b;
-                        self.metric_override = None;
                         self.relayout_drives();
                     }
                     Change::Mirror(b) => self.settings.mirror_cameras = b,
@@ -1063,7 +1091,7 @@ impl App {
                         }
                         self.shortcuts = shortcuts::Shortcuts::new(&self.settings.keybinds);
                     }
-                    Change::BrowseFolder => return pick_folder(Message::DefaultFolderPicked),
+                    Change::BrowseFolder => return pick_folder(self.settings.default_folder.as_ref(), Message::DefaultFolderPicked),
                     Change::ClearFolder => self.settings.default_folder = None,
                     Change::BrowseDriveData => return Task::done(Message::PickDriveData),
                     Change::ClearDriveData => {
@@ -1086,7 +1114,7 @@ impl App {
                     }
                     Change::Prerelease(false) => {
                         self.settings.prerelease = false;
-                        self.update_downgrade = true;
+                        self.settings.pending_downgrade = true;
                         settings::save(&self.settings);
                         return Task::done(Message::UpdateCheck(true));
                     }
@@ -1185,7 +1213,7 @@ impl App {
                     self.settings_ui.update_check = settings_view::CheckState::Checking;
                 }
                 let channel = if self.settings.prerelease { update::Channel::Prerelease } else { update::Channel::Stable };
-                let downgrade = self.update_downgrade;
+                let downgrade = self.settings.pending_downgrade && !self.settings.prerelease;
                 return Task::perform(
                     off_thread_or(update::Outcome::Failed("the check stopped".into()), move || update::check(channel, downgrade)),
                     move |outcome| Message::UpdateChecked(asked, outcome),
@@ -1270,6 +1298,12 @@ impl App {
                 match result {
                     Ok(()) => {
                         log::info!(target: "update", "installing {}: quitting", offer.version);
+                        // Back on stable once this installs: an ordinary
+                        // check never offers an older version again.
+                        if self.settings.pending_downgrade {
+                            self.settings.pending_downgrade = false;
+                            settings::save(&self.settings);
+                        }
                         applog::end();
                         return iced::exit();
                     }
@@ -1286,7 +1320,7 @@ impl App {
                 self.prerelease_question = false;
                 if yes {
                     self.settings.prerelease = true;
-                    self.update_downgrade = false;
+                    self.settings.pending_downgrade = false;
                     settings::save(&self.settings);
                     return Task::done(Message::UpdateCheck(true));
                 }
@@ -1369,6 +1403,9 @@ impl App {
             // Nothing else until the privacy notice is accepted.
             Message::Input(..)
                 if self.privacy_pending() || self.delete_confirm.is_some() || self.update.is_some() || self.prerelease_question || self.changelog.is_some() => {}
+            // Settings open: only a shortcut being recorded, as earlier
+            // versions did (Space doesn't play the video underneath).
+            Message::Input(..) if self.settings_open && self.settings_ui.recording.is_none() => {}
             Message::Input(id, repeat) => {
                 // Settings › Keyboard Shortcuts is waiting for a key: bind it
                 // (taking it off any other action).
@@ -1805,6 +1842,36 @@ impl App {
         (&self.clip_route, &[])
     }
 
+    /// Where the map centres before panning (world units): the car, else the
+    /// event's pin (a parked Sentry event's video can have no GPS), else the
+    /// middle of the route.
+    fn map_base(&self) -> Option<(f64, f64)> {
+        if let Some((lat, lon, _)) = self.front_telemetry().and_then(map::car) {
+            return Some(map::world(lat, lon));
+        }
+        if let Some((lat, lon)) = self.event_pin() {
+            return Some(map::world(lat, lon));
+        }
+        let (route, _) = self.map_route();
+        let mid = route.get(route.len() / 2)?;
+        Some(map::world(mid.0 as f64, mid.1 as f64))
+    }
+
+    /// Where the selected Sentry or Saved event happened (event.json's
+    /// estimate), moved onto the route's nearest point within 500 m, as
+    /// earlier versions did: the estimate can land a little off the road.
+    fn event_pin(&self) -> Option<(f64, f64)> {
+        if self.selected_drive.is_some() {
+            return None;
+        }
+        let item = self.items.get(self.selected?)?;
+        if !matches!(item.collection.kind, Kind::Sentry | Kind::Saved) {
+            return None;
+        }
+        let (lat, lon) = item.location?;
+        Some(map::snap_to_route(lat, lon, &self.clip_route, 500.0))
+    }
+
     /// Once a frame: follow the car (playing undoes panning),
     /// ease the map's turn towards the heading, and read the new clip's
     /// route when playback moves to another clip.
@@ -1812,7 +1879,7 @@ impl App {
         if !self.map_visible() {
             return Task::none();
         }
-        if self.player.is_playing() {
+        if self.player.is_playing() && self.map_follow {
             self.map_pan = (0.0, 0.0);
         }
         if let Some((_, _, heading)) = self.front_telemetry().and_then(map::car) {
@@ -1853,10 +1920,8 @@ impl App {
         let sei = self.front_telemetry();
         let car = sei.and_then(map::car);
         let (route, events) = self.map_route();
-        let base = car.map(|(lat, lon, _)| map::world(lat, lon)).or_else(|| {
-            let mid = route.get(route.len() / 2)?;
-            Some(map::world(mid.0 as f64, mid.1 as f64))
-        })?;
+        let base = self.map_base()?;
+        let pin = self.event_pin();
         // Back from world units to latitude/longitude, panned.
         let (wx, wy) = (base.0 + self.map_pan.0, base.1 + self.map_pan.1);
         let lon = wx * 360.0 - 180.0;
@@ -1869,6 +1934,7 @@ impl App {
             car,
             route,
             events,
+            pin,
             arrow: &self.arrow,
             on_pan: Message::MapPan,
             on_zoom: Message::MapZoom,
@@ -1891,8 +1957,12 @@ impl App {
         ];
         let attribution = self.tiles.index().map(|i| i.attribution).unwrap_or_default();
         if !attribution.is_empty() {
+            // Opens the credits' page, as the links in earlier versions did.
+            let credit = mouse_area(container(text(attribution).size(8).center().color(iced::Color { a: 0.75, ..iced::Color::WHITE })).padding([1, 4]).style(theme::map_credit))
+                .interaction(iced::mouse::Interaction::Pointer)
+                .on_press(Message::Setting(settings_view::Change::OpenLink(MAP_CREDITS_URL)));
             layers = layers.push(
-                container(container(text(attribution).size(8).center().color(iced::Color { a: 0.75, ..iced::Color::WHITE })).padding([1, 4]).style(theme::map_credit))
+                container(credit)
                     .width(Length::Fill)
                     .height(Length::Fill)
                     // At most the panel's width less 28 px (14 px a side), which
@@ -1915,6 +1985,7 @@ impl App {
                 .padding(0)
                 .style(theme::map_button)
                 .on_press(Message::MapRecenter);
+            let recenter = theme::tip(recenter, i18n::t("ui.map.recenter"), Top);
             // The compass turns with the map (north-up shows it upright).
             let turn = if self.map_heading_up { -self.map_bearing } else { 0.0 };
             let compass = button(
@@ -1931,6 +2002,7 @@ impl App {
             .padding(0)
             .style(theme::map_button)
             .on_press(Message::MapOrientation);
+            let compass = theme::tip(compass, i18n::t(if self.map_heading_up { "ui.map.headingUp" } else { "ui.map.northUp" }), Top);
             layers = layers.push(
                 container(row![compass, recenter].spacing(4))
                     .width(Length::Fill)
@@ -1970,6 +2042,29 @@ impl App {
     /// The selected event's camera glows (the event camera highlight):
     /// red for Sentry, yellow for Saved, each with its own setting; not
     /// while a camera is focused.
+    /// The selected event's timeline marker, as earlier versions drew it: a
+    /// warning triangle for Sentry, a bookmark for Saved, and on hover the
+    /// reason and when it happened.
+    fn event_marker(&self) -> Option<(&'static str, iced::Color, String)> {
+        let item = self.items.get(self.selected?)?;
+        let (svg, color, kind) = match item.collection.kind {
+            Kind::Sentry => (SENTRY_MARKER_SVG, theme::ERROR, "ui.clipBrowser.sentry"),
+            Kind::Saved => (SAVED_MARKER_SVG, theme::WARNING, "ui.clipBrowser.saved"),
+            _ => return None,
+        };
+        let reason = match item.reason.as_deref() {
+            Some(r) => library::reason_label(r).0,
+            None if item.collection.kind == Kind::Saved => i18n::t("ui.eventTypes.manualSave").to_string(),
+            None => library::reason_label("unknown").0,
+        };
+        let mut label = i18n::tf("ui.timeline.event", &[("type", i18n::t(kind)), ("reason", &reason)]);
+        if let Some(t) = item.event_time {
+            let stamp = library::format_local(t);
+            label = format!("{label}\n{} {}", self.settings.date_format.show(&stamp[..10]), dashboard::time_of_day(t.rem_euclid(86400), self.settings.time_24h));
+        }
+        Some((svg, color, label))
+    }
+
     fn glow(&self) -> Option<(Camera, iced::Color, iced::Color)> {
         if self.focus.is_some() {
             return None;
@@ -2058,12 +2153,18 @@ impl App {
                 self.settings.dashboard_enabled = !self.settings.dashboard_enabled;
                 settings::save(&self.settings);
             }
-            // For this session only; the saved setting is not changed.
+            // Saved, as the Settings toggle is.
             Action::ToggleMetric => {
-                self.metric_override = Some(!self.metric());
+                self.settings.metric = !self.settings.metric;
+                settings::save(&self.settings);
                 self.relayout_drives();
             }
-            Action::ToggleClips => self.panel_open = !self.panel_open,
+            Action::ToggleClips => return Task::done(Message::TogglePanel),
+            // As the Start and End buttons by the timeline, which are only
+            // there where this computer can export.
+            Action::SetMarkerIn if export::job::AVAILABLE => return Task::done(Message::Export(export_view::ExportMsg::SetStart)),
+            Action::SetMarkerOut if export::job::AVAILABLE => return Task::done(Message::Export(export_view::ExportMsg::SetEnd)),
+            Action::SetMarkerIn | Action::SetMarkerOut => {}
             Action::ToggleMap => {
                 self.settings.map_enabled = !self.settings.map_enabled;
                 settings::save(&self.settings);
@@ -2311,9 +2412,9 @@ impl App {
     // Clip browser
     // ---------------------------------------------------------------------
 
-    /// km/h: the setting, unless the shortcut flipped it for this session.
+    /// km/h.
     fn metric(&self) -> bool {
-        self.metric_override.unwrap_or(self.settings.metric)
+        self.settings.metric
     }
 
     /// Whose footage the folder holds: GM's (Continuous recordings) or Tesla's.
@@ -2364,8 +2465,16 @@ impl App {
         .spacing(8)
         .align_y(Alignment::Center);
         let actions = row![
-            button(icon(theme::icon::CHEVRON_LEFT, 20.0)).padding(6).style(theme::icon_button).on_press(Message::TogglePanel),
-            button(icon(theme::icon::FOLDER_OPEN, 20.0)).padding(6).style(theme::icon_button).on_press(Message::OpenFolder),
+            theme::tip(
+                button(icon(theme::icon::CHEVRON_LEFT, 20.0)).padding(6).style(theme::icon_button).on_press(Message::TogglePanel),
+                i18n::t("ui.clipBrowser.collapsePanel"),
+                Bottom,
+            ),
+            theme::tip(
+                button(icon(theme::icon::FOLDER_OPEN, 20.0)).padding(6).style(theme::icon_button).on_press(Message::OpenFolder),
+                i18n::t("ui.clipBrowser.chooseFolder"),
+                Bottom,
+            ),
         ]
         .spacing(2);
         let header = container(
@@ -2420,11 +2529,20 @@ impl App {
             Tab::Drives if self.drives.is_empty() => {
                 let mut c = column![
                     placeholder(i18n::t("app.noDriveData")),
+                    container(text(i18n::t("app.noDriveDataDesc")).size(11).color(theme::TEXT_MUTED).center()).padding([0, 16]).center_x(Length::Fill),
                     container(
                         button(text(i18n::t("app.selectDriveData")).size(12))
                             .padding([8, 14])
                             .style(theme::accent_button)
                             .on_press(Message::PickDriveData)
+                    )
+                    .padding(Padding { top: 8.0, ..Padding::ZERO })
+                    .center_x(Length::Fill),
+                    container(
+                        button(text(i18n::t("app.learnMoreSentryUsb")).size(11).color(theme::ACCENT))
+                            .padding([4, 8])
+                            .style(button::text)
+                            .on_press(Message::Setting(settings_view::Change::OpenLink(SENTRY_USB_URL)))
                     )
                     .center_x(Length::Fill),
                 ]
@@ -2434,6 +2552,8 @@ impl App {
                 }
                 c.into()
             }
+            // A TAG filter that matches none of them.
+            Tab::Drives if self.drive_shown.is_empty() => placeholder(i18n::t("app.noDrivesMatch")),
             Tab::Drives => {
                 let list = drive_list::view(
                     drive_list::ListView {
@@ -2502,14 +2622,16 @@ impl App {
 
     /// The collapsed panel: a 44 px glass square with the chevron.
     fn collapsed_browser(&self) -> Element<'_, Message> {
-        container(
+        container(theme::tip(
             button(container(icon(theme::icon::CHEVRON_LEFT, 20.0)).center(Length::Fill))
                 .width(44)
                 .height(44)
                 .padding(0)
                 .style(theme::collapsed_button)
                 .on_press(Message::TogglePanel),
-        )
+            i18n::t("ui.clipBrowser.expandPanel"),
+            Right,
+        ))
         .width(44)
         .height(44)
         .style(theme::panel_radius(COLLAPSED_RADIUS))
@@ -2762,10 +2884,17 @@ impl App {
                 .style(theme::select)
                 .into()
         };
+        let speed = theme::tip(speed, i18n::t("ui.playback.playbackSpeed"), Top);
 
         // A glass button with the skip length in small type at the bottom right.
         let skip = |glyph: char, by: f64| {
-            glass(
+            let label = format!(
+                "{} {} {}",
+                i18n::t(if by < 0.0 { "ui.settings.skipBackward" } else { "ui.settings.skipForward" }),
+                skip_secs as u32,
+                i18n::t("ui.settings.seconds")
+            );
+            let face = glass(
                 stack![
                     container(icon(glyph, 20.0)).center(24),
                     container(text(format!("{}", skip_secs as u32)).size(9).font(bold(INTER)))
@@ -2777,7 +2906,8 @@ impl App {
                 6,
                 10.0,
             )
-            .on_press_maybe(has_media.then_some(Message::Skip(by)))
+            .on_press_maybe(has_media.then_some(Message::Skip(by)));
+            theme::tip(face, label, Top)
         };
         let play = glass(
             container(icon(if self.player.is_playing() { theme::icon::PAUSE } else { theme::icon::PLAY }, 26.0)).center(28),
@@ -2791,13 +2921,18 @@ impl App {
 
         let timeline: Element<'_, Message> = timeline::Timeline::new(total, position, Message::Seek)
             .on_release(Message::SeekDone)
-            .markers(self.event_offset.filter(|_| has_media).into_iter().collect())
             .range(if has_media { self.export_markers() } else { (None, None) })
             .into();
+        let timeline: Element<'_, Message> = match self.event_offset.filter(|_| has_media).zip(self.event_marker()) {
+            Some((at, (svg, color, label))) => stack![timeline, timeline::marker_at(at, total, theme::tip(svg_icon(svg, 14.0, color), label, Top))].into(),
+            None => timeline,
+        };
 
         // Export: Start and End markers at the playhead, and the dialog
         // (with the progress on the button while an export runs).
-        let marker = |label: &'static str, tip: Message| glass(text(label).size(11).font(semibold(INTER)), [7, 10], 10.0).on_press_maybe(has_media.then_some(tip));
+        let marker = |label: &'static str, hover: &'static str, press: Message| {
+            theme::tip(glass(text(label).size(11).font(semibold(INTER)), [7, 10], 10.0).on_press_maybe(has_media.then_some(press)), i18n::t(hover), Top)
+        };
         let export_face: Element<'_, Message> = match self.export.fraction() {
             Some(f) => text(format!("{}%", (f * 100.0).floor() as u32)).size(11).font(semibold(INTER)).color(theme::ACCENT).into(),
             None => svg_icon(export_view::DOWNLOAD_SVG, 18.0, theme::TEXT),
@@ -2805,9 +2940,13 @@ impl App {
         let export_open = has_media || self.export.running();
         let export_controls: Element<'_, Message> = if export::job::AVAILABLE {
             row![
-                marker(i18n::t("ui.export.start"), Message::Export(export_view::ExportMsg::SetStart)),
-                marker(i18n::t("ui.export.end"), Message::Export(export_view::ExportMsg::SetEnd)),
-                glass(container(export_face).center(24), 6, 10.0).on_press_maybe(export_open.then_some(Message::Export(export_view::ExportMsg::Open))),
+                marker(i18n::t("ui.export.start"), "ui.playback.setStartMarker", Message::Export(export_view::ExportMsg::SetStart)),
+                marker(i18n::t("ui.export.end"), "ui.playback.setEndMarker", Message::Export(export_view::ExportMsg::SetEnd)),
+                theme::tip(
+                    glass(container(export_face).center(24), 6, 10.0).on_press_maybe(export_open.then_some(Message::Export(export_view::ExportMsg::Open))),
+                    i18n::t(if self.export.running() { "ui.playback.openExportDetails" } else { "ui.playback.exportVideo" }),
+                    Top,
+                ),
             ]
             .spacing(6)
             .align_y(Alignment::Center)
@@ -2817,8 +2956,12 @@ impl App {
         };
 
         // Support chat and settings at the right end.
-        let chat = glass(container(svg_icon(CHAT_SVG, 18.0, theme::TEXT)).center(24), 6, 10.0).on_press(Message::Chat(support_view::ChatMsg::Toggle));
-        let gear = glass(container(icon(theme::icon::SETTINGS, 20.0)).center(24), 6, 10.0).on_press(Message::OpenSettings);
+        let chat = theme::tip(
+            glass(container(svg_icon(CHAT_SVG, 18.0, theme::TEXT)).center(24), 6, 10.0).on_press(Message::Chat(support_view::ChatMsg::Toggle)),
+            i18n::t("ui.playback.supportChat"),
+            Top,
+        );
+        let gear = theme::tip(glass(container(icon(theme::icon::SETTINGS, 20.0)).center(24), 6, 10.0).on_press(Message::OpenSettings), i18n::t("ui.playback.settings"), Top);
         let bar = container(
             row![time, speed, playback, timeline, export_controls, chat, gear]
                 .spacing(14)
@@ -3014,6 +3157,7 @@ mod tests {
             reason: None,
             event_time: None,
             camera: None,
+            location: None,
         }
     }
 

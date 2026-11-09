@@ -61,6 +61,10 @@ pub struct Settings {
     pub support_chat: Option<SavedChat>,
     /// `devDisableApiRequests`: no update check at startup.
     pub no_startup_check: bool,
+    /// Back on stable after pre-releases, until an update installs: the
+    /// stable version is offered even though it's older (`pendingDowngrade`,
+    /// kept across launches as earlier versions kept it).
+    pub pending_downgrade: bool,
     /// Glow on the camera that triggered a Sentry / Saved event
     /// (`sentryCameraHighlight` / `savedCameraHighlight`, on by default).
     pub sentry_glow: bool,
@@ -124,6 +128,8 @@ pub struct Settings {
     /// The last export's blur zones (`exportLastBlurZones`: camera and
     /// coordinates, as earlier versions saved them), offered again.
     pub export_blur_zones: Vec<crate::export::blur::BlurZone>,
+    /// The clips panel collapsed to its bar (`clipsPanelCollapsed`).
+    pub clips_collapsed: bool,
 }
 
 impl Default for Settings {
@@ -149,6 +155,7 @@ impl Default for Settings {
             prerelease: false,
             support_chat: None,
             no_startup_check: false,
+            pending_downgrade: false,
             map_enabled: true,
             map_dark: false,
             show_fsd_events: true,
@@ -181,6 +188,7 @@ impl Default for Settings {
             export_map_scale: None,
             export_watermark_scale: None,
             export_blur_zones: Vec::new(),
+            clips_collapsed: false,
         }
     }
 }
@@ -295,13 +303,17 @@ fn read_json(p: &std::path::Path) -> Option<Value> {
 
 pub fn load() -> Settings {
     let mut s = Settings::default();
+    let mut language_saved = false;
+    let has_language = |v: &Value| v.get("language").and_then(Value::as_str).is_some_and(|l| !l.is_empty());
     if let Some(v) = earlier_settings_paths().into_iter().find_map(|p| read_json(&p)) {
+        language_saved |= has_language(&v);
         apply(&mut s, &v);
         // Earlier versions had place names opt-in; this version has them
         // on by default, so only its own setting turns them off.
         s.place_names = true;
     }
     if let Some(v) = own_settings_path().and_then(|p| read_json(&p)) {
+        language_saved |= has_language(&v);
         apply(&mut s, &v);
         if let Some(b) = v.get("placeNameLookup").and_then(Value::as_bool) {
             s.place_names = b;
@@ -312,7 +324,68 @@ pub fn load() -> Settings {
             s.privacy_accepted = n as u32;
         }
     }
+    // A first launch: the system's language, as earlier versions picked it,
+    // kept once the settings are first saved.
+    if !language_saved {
+        s.language = supported_language(&system_languages());
+    }
     s
+}
+
+/// The first of the system's preferred languages this version has ("fr" for
+/// "fr-CA" or "fr_FR.UTF-8", "zh" for "zh-Hans-CN"), else English.
+fn supported_language(preferred: &[String]) -> String {
+    preferred
+        .iter()
+        .filter_map(|l| {
+            let base = l.split(['-', '_', '.', '@']).next()?.to_ascii_lowercase();
+            crate::i18n::LANGUAGES.iter().find(|(code, _)| *code == base).map(|(code, _)| code.to_string())
+        })
+        .next()
+        .unwrap_or_else(|| "en".into())
+}
+
+/// The system's preferred languages, most preferred first.
+#[cfg(target_os = "macos")]
+fn system_languages() -> Vec<String> {
+    // ( "fr-CA", "en-CA" ), as `defaults` prints AppleLanguages.
+    std::process::Command::new("/usr/bin/defaults")
+        .args(["read", "-g", "AppleLanguages"])
+        .output()
+        .ok()
+        .map(|o| String::from_utf8_lossy(&o.stdout).split([',', '(', ')', '\n']).map(|l| l.trim().trim_matches('"').to_string()).filter(|l| !l.is_empty()).collect())
+        .unwrap_or_default()
+}
+
+#[cfg(windows)]
+fn system_languages() -> Vec<String> {
+    use windows::Win32::Globalization::{GetUserPreferredUILanguages, MUI_LANGUAGE_NAME};
+    let (mut count, mut len) = (0u32, 0u32);
+    if unsafe { GetUserPreferredUILanguages(MUI_LANGUAGE_NAME, &mut count, None, &mut len) }.is_err() || len == 0 {
+        return Vec::new();
+    }
+    let mut buf = vec![0u16; len as usize];
+    if unsafe { GetUserPreferredUILanguages(MUI_LANGUAGE_NAME, &mut count, Some(windows::core::PWSTR(buf.as_mut_ptr())), &mut len) }.is_err() {
+        return Vec::new();
+    }
+    // Names separated by NULs, ending with two.
+    String::from_utf16_lossy(&buf).split('\0').filter(|l| !l.is_empty()).map(str::to_string).collect()
+}
+
+#[cfg(all(unix, not(target_os = "macos")))]
+fn system_languages() -> Vec<String> {
+    // As gettext reads them: LANGUAGE (a list), then the locale.
+    let mut out: Vec<String> = std::env::var("LANGUAGE").map(|l| l.split(':').map(str::to_string).collect()).unwrap_or_default();
+    for var in ["LC_ALL", "LC_MESSAGES", "LANG"] {
+        if let Ok(v) = std::env::var(var) {
+            if !v.is_empty() {
+                out.push(v);
+                break;
+            }
+        }
+    }
+    out.retain(|l| !l.is_empty() && l != "C" && l != "POSIX");
+    out
 }
 
 /// Saves what the Settings window changes, to this version's own
@@ -347,6 +420,8 @@ pub fn to_json(s: &Settings) -> Value {
         "customCameraOrdersByProfile": { "tesla": order_json(&s.camera_order) },
         "language": s.language,
         "showDriveStats": s.show_drive_stats,
+        "clipsPanelCollapsed": s.clips_collapsed,
+        "pendingDowngrade": s.pending_downgrade,
         "acceptedPrivacyVersion": s.privacy_accepted,
         "updateChannel": if s.prerelease { "prerelease" } else { "stable" },
         "aiSupportConversation": s.support_chat.as_ref().map(|c| serde_json::json!({
@@ -539,6 +614,9 @@ fn apply(s: &mut Settings, v: &Value) {
     if let Some(lang) = v.get("language").and_then(Value::as_str).filter(|l| !l.is_empty()) {
         s.language = lang.to_string();
     }
+    if let Some(b) = v.get("clipsPanelCollapsed").and_then(Value::as_bool) {
+        s.clips_collapsed = b;
+    }
     if let Some(b) = v.get("showDriveStats").and_then(Value::as_bool) {
         s.show_drive_stats = b;
     }
@@ -566,6 +644,9 @@ fn apply(s: &mut Settings, v: &Value) {
     }
     if let Some(b) = v.get("devDisableApiRequests").and_then(Value::as_bool) {
         s.no_startup_check = b;
+    }
+    if let Some(b) = v.get("pendingDowngrade").and_then(Value::as_bool) {
+        s.pending_downgrade = b;
     }
     if let Some(b) = v.get("mapEnabled").and_then(Value::as_bool) {
         s.map_enabled = b;
@@ -688,5 +769,17 @@ mod tests {
         assert_eq!(s.default_folder, Some(PathBuf::from("/footage")));
         apply(&mut s, &serde_json::json!({ "defaultFolder": "" }));
         assert_eq!(s.default_folder, None);
+    }
+
+    #[test]
+    fn system_language_picks_a_supported_one() {
+        let l = |v: &[&str]| supported_language(&v.iter().map(|s| s.to_string()).collect::<Vec<_>>());
+        assert_eq!(l(&["fr-CA", "en-CA"]), "fr");
+        assert_eq!(l(&["fr_FR.UTF-8"]), "fr");
+        assert_eq!(l(&["zh-Hans-CN"]), "zh");
+        assert_eq!(l(&["pt-BR"]), "pt");
+        assert_eq!(l(&["sv-SE", "de-DE"]), "de");
+        assert_eq!(l(&["sv-SE"]), "en");
+        assert_eq!(l(&[]), "en");
     }
 }

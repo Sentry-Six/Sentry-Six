@@ -8,6 +8,7 @@
 
 use crate::telemetry::SeiMetadata;
 use crate::theme;
+use iced::widget::tooltip::Position;
 use iced::widget::{button, canvas, column, container, image, row, svg, text, Space};
 use iced::{Alignment, Color, Element, Length, Point, Radians, Rectangle, Renderer, Theme};
 use std::sync::OnceLock;
@@ -527,12 +528,16 @@ pub fn full<'a, M: Clone + 'a>(d: Dash<'_>, f: Full<'_, M>) -> Element<'a, M> {
         .height(16)
         .rotation(Radians(if f.details_open { std::f32::consts::PI } else { 0.0 }))
         .style(move |_, _| svg::Style { color: Some(grey(0x66)) });
-    let toggle = button(container(chevron).center_x(Length::Fill))
-    .width(Length::Fill)
-    .height(20)
-    .padding(0)
-    .style(theme::details_toggle)
-    .on_press(f.on_toggle_details.clone());
+    let toggle = theme::tip(
+        button(container(chevron).center_x(Length::Fill))
+            .width(Length::Fill)
+            .height(20)
+            .padding(0)
+            .style(theme::details_toggle)
+            .on_press(f.on_toggle_details.clone()),
+        crate::i18n::t("ui.playback.toggleDetails"),
+        Position::Bottom,
+    );
     let hairline = || container(Space::new()).width(Length::Fill).height(1).style(|_| container::Style {
         background: Some(Color { a: 0.1, ..Color::WHITE }.into()),
         ..Default::default()
@@ -633,10 +638,18 @@ pub fn full<'a, M: Clone + 'a>(d: Dash<'_>, f: Full<'_, M>) -> Element<'a, M> {
     let cardinal = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"][((heading / 45.0).round() as usize) % 8];
     let instruments = row![
         canvas(GForceMeter { trail: f.trail.to_vec(), color: dot, pulse }).width(50).height(50),
-        column![gvalue(gx), gvalue(gy)].spacing(2),
+        column![
+            theme::tip(gvalue(gx), crate::i18n::t("ui.playback.lateralG"), Position::Top),
+            theme::tip(gvalue(gy), crate::i18n::t("ui.playback.longitudinalG"), Position::Bottom),
+        ]
+        .spacing(2),
         Space::new().width(12),
         canvas(Compass { heading: heading as f32 }).width(45).height(45),
-        text(format!("{}° {cardinal}", heading.round())).size(11).font(theme::semibold(theme::MONO)).color(grey(0x88)),
+        theme::tip(
+            text(format!("{}° {cardinal}", heading.round())).size(11).font(theme::semibold(theme::MONO)).color(grey(0x88)),
+            crate::i18n::t("ui.playback.heading"),
+            Position::Top,
+        ),
     ]
     .spacing(6)
     .align_y(Alignment::Center);

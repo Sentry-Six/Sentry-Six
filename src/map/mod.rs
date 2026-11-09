@@ -33,6 +33,24 @@ const RED: Color = Color { r: 0xef as f32 / 255.0, g: 0x44 as f32 / 255.0, b: 0x
 const AMBER: Color = Color { r: 0xf5 as f32 / 255.0, g: 0x9e as f32 / 255.0, b: 0x0b as f32 / 255.0, a: 1.0 };
 
 /// Web Mercator: a position in "world" units, 0..1 across and down.
+/// The event pin's red (earlier versions' #e53935).
+const PIN: Color = Color::from_rgb(0xe5 as f32 / 255.0, 0x39 as f32 / 255.0, 0x35 as f32 / 255.0);
+
+/// `(lat, lon)` moved onto the route's nearest point if one is within
+/// `within_m` metres; else unchanged.
+pub fn snap_to_route(lat: f64, lon: f64, route: &[RoutePoint], within_m: f64) -> (f64, f64) {
+    let cos_lat = lat.to_radians().cos();
+    route
+        .iter()
+        .map(|p| {
+            let (dy, dx) = ((p.0 as f64 - lat) * 111_000.0, (p.1 as f64 - lon) * 111_000.0 * cos_lat);
+            (dy * dy + dx * dx, p)
+        })
+        .filter(|(d, _)| *d < within_m * within_m)
+        .min_by(|a, b| a.0.total_cmp(&b.0))
+        .map_or((lat, lon), |(_, p)| (p.0 as f64, p.1 as f64))
+}
+
 pub fn world(lat: f64, lon: f64) -> (f64, f64) {
     let lat = lat.clamp(-85.051_128, 85.051_128).to_radians();
     let x = (lon + 180.0) / 360.0;
@@ -79,6 +97,8 @@ pub struct MapView<'a, M> {
     pub car: Option<(f64, f64, f32)>,
     pub route: &'a [RoutePoint],
     pub events: &'a [(f32, f32, bool)],
+    /// Where a Sentry or Saved event happened: a red pin.
+    pub pin: Option<(f64, f64)>,
     pub arrow: &'a iced::widget::image::Handle,
     pub on_pan: fn(f32, f32) -> M,
     pub on_zoom: fn(f32) -> M,
@@ -224,6 +244,30 @@ impl<M: Clone> canvas::Program<M> for MapView<'_, M> {
             }
         }
 
+        // The event's pin (32 px, its tip on the spot), kept upright as
+        // the map turns.
+        if let Some((lat, lon)) = self.pin {
+            let p = to_screen(lat, lon);
+            frame.with_save(|f| {
+                f.translate(Vector::new(p.x, p.y));
+                f.rotate(Radians(self.bearing.to_radians()));
+                let s = 32.0 / 24.0;
+                // Earlier versions' pin, 24 x 24 with its tip at (12, 22).
+                let at = |x: f32, y: f32| Point::new((x - 12.0) * s, (y - 22.0) * s);
+                let pin = Path::new(|b| {
+                    b.move_to(at(12.0, 2.0));
+                    b.bezier_curve_to(at(8.13, 2.0), at(5.0, 5.13), at(5.0, 9.0));
+                    b.bezier_curve_to(at(5.0, 14.25), at(12.0, 22.0), at(12.0, 22.0));
+                    b.bezier_curve_to(at(12.0, 22.0), at(19.0, 14.25), at(19.0, 9.0));
+                    b.bezier_curve_to(at(19.0, 5.13), at(15.87, 2.0), at(12.0, 2.0));
+                    b.close();
+                });
+                f.fill(&pin, PIN);
+                f.stroke(&pin, Stroke::default().with_width(1.0).with_color(Color { a: 0.35, ..Color::BLACK }));
+                f.fill(&Path::circle(at(12.0, 9.0), 2.5 * s), Color::WHITE);
+            });
+        }
+
         // The car's arrow: sized for the zoom (28-120 px), pointing
         // along the heading (straight up in heading-up mode).
         if let Some((lat, lon, heading)) = self.car {
@@ -364,5 +408,16 @@ mod tests {
         // 40°N 100°W at zoom 10 is in OSM tile x 227, y 387.
         let (x, y) = world(40.0, -100.0);
         assert_eq!(((x * 1024.0) as u32, (y * 1024.0) as u32), (227, 387));
+    }
+
+    #[test]
+    fn pins_snap_to_a_close_route() {
+        let route = [(37.0f32, -122.0f32, false), (37.001, -122.0, false)];
+        // About 55 m from the second point: moved onto it.
+        let (lat, lon) = snap_to_route(37.0015, -122.0, &route, 500.0);
+        assert!((lat - 37.001).abs() < 1e-4 && (lon + 122.0).abs() < 1e-4);
+        // Kilometres away: left where it is.
+        assert_eq!(snap_to_route(37.1, -122.0, &route, 500.0), (37.1, -122.0));
+        assert_eq!(snap_to_route(37.1, -122.0, &[], 500.0), (37.1, -122.0));
     }
 }

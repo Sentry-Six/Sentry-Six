@@ -725,7 +725,7 @@ impl Minimap {
         let radius = 0.0;
         let corner = side * 24.0 / 260.0;
         let tiles = crate::map::TileLayer { tiles: &self.tiles.0, style: self.style(), center, zoom: fit.zoom, bearing: 0.0, radius };
-        let view = crate::map::MapView::<()> { center, zoom: fit.zoom, bearing: 0.0, car, route, events: &[], arrow: &arrow, on_pan: |_, _| (), on_zoom: |_| () };
+        let view = crate::map::MapView::<()> { center, zoom: fit.zoom, bearing: 0.0, car, route, events: &[], pin: None, arrow: &arrow, on_pan: |_, _| (), on_zoom: |_| () };
         let mut layers = stack![canvas(tiles).width(side).height(side), canvas(view).width(side).height(side)];
         let attribution = self.tiles.0.index().map(|i| i.attribution).unwrap_or_default();
         if !attribution.is_empty() {

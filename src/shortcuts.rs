@@ -25,6 +25,8 @@ pub enum Action {
     ToggleMap,
     ToggleMetric,
     ToggleClips,
+    SetMarkerIn,
+    SetMarkerOut,
     NextClip,
     PrevClip,
 }
@@ -44,9 +46,10 @@ impl Action {
             "toggleMap" => Action::ToggleMap,
             "toggleMetric" => Action::ToggleMetric,
             "toggleClips" => Action::ToggleClips,
+            "setMarkerIn" => Action::SetMarkerIn,
+            "setMarkerOut" => Action::SetMarkerOut,
             "nextClip" => Action::NextClip,
             "prevClip" => Action::PrevClip,
-            // setMarkerIn/Out: export markers, which this version doesn't have.
             _ => return None,
         })
     }
@@ -65,6 +68,8 @@ impl Action {
             Action::ToggleMap => "toggleMap",
             Action::ToggleMetric => "toggleMetric",
             Action::ToggleClips => "toggleClips",
+            Action::SetMarkerIn => "setMarkerIn",
+            Action::SetMarkerOut => "setMarkerOut",
             Action::NextClip => "nextClip",
             Action::PrevClip => "prevClip",
         }
@@ -87,8 +92,8 @@ impl Action {
 }
 
 /// The actions in Settings › Keyboard Shortcuts, in the order earlier
-/// versions used (without their export marker rows).
-pub const EDITABLE: [Action; 13] = [
+/// versions used.
+pub const EDITABLE: [Action; 15] = [
     Action::PlayPause,
     Action::SkipForward,
     Action::SkipBackward,
@@ -96,6 +101,8 @@ pub const EDITABLE: [Action; 13] = [
     Action::ToggleMap,
     Action::ToggleMetric,
     Action::ToggleClips,
+    Action::SetMarkerIn,
+    Action::SetMarkerOut,
     Action::NextClip,
     Action::PrevClip,
     Action::SpeedUp,
@@ -264,5 +271,21 @@ mod tests {
         assert_eq!(s.action("space"), None); // play/pause already has a key
         assert_eq!(s.action("arrowright"), Some(Action::NextClip)); // key taken
         assert_eq!(s.action("arrowleft"), Some(Action::SkipBackward));
+    }
+
+    #[test]
+    fn export_marker_keys_carry_over() {
+        // As earlier versions saved them.
+        let mut saved = HashMap::new();
+        saved.insert("setMarkerIn".to_string(), "keyi".to_string());
+        saved.insert("setMarkerOut".to_string(), "keyo".to_string());
+        let s = Shortcuts::new(&saved);
+        assert_eq!(s.action("keyi"), Some(Action::SetMarkerIn));
+        assert_eq!(s.action("keyo"), Some(Action::SetMarkerOut));
+        assert_eq!(Action::SetMarkerIn.setting_name(), "setMarkerIn");
+        assert!(EDITABLE.contains(&Action::SetMarkerOut));
+        for a in EDITABLE {
+            assert_eq!(Action::from_setting_name(a.setting_name()), Some(a));
+        }
     }
 }

@@ -170,6 +170,8 @@ pub enum ExportMsg {
     Poll(u64),
     Finished(u64, Result<job::Outcome, String>),
     Cancel,
+    /// The answer to "Cancel this export?": yes stops it.
+    CancelAnswer(bool),
     Reveal,
     /// Opens the finished video in the system's player.
     Play,
@@ -255,6 +257,8 @@ pub struct Export {
     /// was let go and the exact render is on its way.
     pub dragging: bool,
     pub drag_wait: bool,
+    /// Cancel was pressed while it runs: asking first, as earlier versions did.
+    pub confirm_cancel: bool,
     /// Time left: when it was last estimated, and the seconds left then.
     /// It counts down between estimates, and each new one only nudges it,
     /// so it doesn't flicker as the frame rate wobbles.
@@ -329,6 +333,7 @@ impl Default for Export {
             total: Arc::new(AtomicUsize::new(0)),
             cancel: Arc::new(AtomicBool::new(false)),
             next_id: 1,
+            confirm_cancel: false,
         }
     }
 }
@@ -1136,6 +1141,7 @@ impl App {
                 if self.export.running() || self.export_cameras().is_empty() {
                     return Task::none();
                 }
+                self.export.confirm_cancel = false;
                 let Some((start, _)) = self.export_range() else { return Task::none() };
                 if self.range_secs() < 0.1 {
                     return self.notify(t("ui.export.exportRangeTooShort").to_string(), true);
@@ -1252,9 +1258,15 @@ impl App {
             }
             ExportMsg::Cancel => {
                 if matches!(self.export.state, State::Running { .. }) {
-                    self.export.cancel.store(true, Ordering::Relaxed);
+                    self.export.confirm_cancel = true;
                 } else {
                     self.export.open = false;
+                }
+            }
+            ExportMsg::CancelAnswer(yes) => {
+                self.export.confirm_cancel = false;
+                if yes && matches!(self.export.state, State::Running { .. }) {
+                    self.export.cancel.store(true, Ordering::Relaxed);
                 }
             }
             ExportMsg::Reveal => {
@@ -1599,7 +1611,7 @@ impl App {
                 let corner = side * 24.0 / 260.0;
                 let style = if self.settings.map_dark { crate::map::tiles::Style::Dark } else { crate::map::tiles::Style::Light };
                 let tiles = crate::map::TileLayer { tiles: &self.tiles, style, center, zoom, bearing: 0.0, radius: corner };
-                let view = crate::map::MapView { center, zoom, bearing: 0.0, car, route, events: &[], arrow: &self.arrow, on_pan: |_, _| wrap(ExportMsg::Nothing), on_zoom: |_| wrap(ExportMsg::Nothing) };
+                let view = crate::map::MapView { center, zoom, bearing: 0.0, car, route, events: &[], pin: None, arrow: &self.arrow, on_pan: |_, _| wrap(ExportMsg::Nothing), on_zoom: |_| wrap(ExportMsg::Nothing) };
                 let map: Element<'a, Message> = container(stack![iced::widget::canvas(tiles).width(side).height(side), iced::widget::canvas(view).width(side).height(side)])
                     .style(move |_| container::Style { border: Border { color: Color::from_rgba(1.0, 1.0, 1.0, 0.25), width: 1.0, radius: corner.into() }, ..Default::default() })
                     .into();
@@ -2018,7 +2030,22 @@ impl App {
                 if let Some(l) = left {
                     words = format!("{words}  ·  {} left", clock(l));
                 }
-                row![column![text(words).size(11).color(theme::TEXT_SECONDARY), progress_bar(frac)].spacing(6).width(260), secondary(t("ui.export.cancel"), Some(wrap(ExportMsg::Cancel)))]
+                let buttons: Element<'_, Message> = if e.confirm_cancel {
+                    row![
+                        text(t("ui.export.cancelConfirm")).size(12).color(theme::TEXT),
+                        secondary(t("ui.export.keepExporting"), Some(wrap(ExportMsg::CancelAnswer(false)))),
+                        button(text(t("ui.export.stopExport")).size(12).font(theme::semibold(theme::INTER)))
+                            .padding([8, 14])
+                            .style(theme::danger_button)
+                            .on_press(wrap(ExportMsg::CancelAnswer(true))),
+                    ]
+                    .spacing(8)
+                    .align_y(Alignment::Center)
+                    .into()
+                } else {
+                    secondary(t("ui.export.cancel"), Some(wrap(ExportMsg::Cancel)))
+                };
+                row![column![text(words).size(11).color(theme::TEXT_SECONDARY), progress_bar(frac)].spacing(6).width(260), buttons]
                     .spacing(12)
                     .align_y(Alignment::Center)
                     .into()

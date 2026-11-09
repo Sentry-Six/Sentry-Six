@@ -1089,3 +1089,25 @@ pub fn day_select(_: &Theme, status: pick_list::Status) -> pick_list::Style {
         border: Border { color: white(0.18), width: 1.0, radius: 999.0.into() },
     }
 }
+
+/// A hover label on a control, as earlier versions' title text: small text
+/// on a dark rounded box, after a short pause.
+pub fn tip<'a, M: 'a>(content: impl Into<iced::Element<'a, M>>, label: impl Into<String>, position: iced::widget::tooltip::Position) -> iced::Element<'a, M> {
+    iced::widget::tooltip(content, text(label.into()).size(11).color(TEXT), position)
+        .gap(6)
+        .padding(6)
+        .delay(std::time::Duration::from_millis(500))
+        .snap_within_viewport(true)
+        .style(tooltip)
+        .into()
+}
+
+/// The box behind a hover label.
+pub fn tooltip(_: &Theme) -> container::Style {
+    container::Style {
+        background: Some(Color::from_rgba8(20, 22, 28, 0.95).into()),
+        border: Border { color: white(0.1), width: 1.0, radius: 6.0.into() },
+        shadow: Shadow { color: black(0.4), offset: Vector::new(0.0, 2.0), blur_radius: 8.0 },
+        ..Default::default()
+    }
+}

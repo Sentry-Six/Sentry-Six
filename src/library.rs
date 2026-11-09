@@ -139,6 +139,9 @@ pub struct ClipItem {
     /// event.json `camera`: the camera that triggered the event (for the
     /// Sentry/Saved camera glow).
     pub camera: Option<Camera>,
+    /// event.json `est_lat`/`est_lon`: roughly where it happened (for the
+    /// map's pin).
+    pub location: Option<(f64, f64)>,
 }
 
 /// The days that have footage, newest first.
@@ -178,18 +181,37 @@ fn load_item(c: &Collection) -> Option<ClipItem> {
         return None;
     }
     let cameras = segments.iter().map(|s| s.files.len()).max().unwrap_or(0);
-    let (reason, event_time, camera) = match c.kind {
+    let (reason, event_time, camera, location) = match c.kind {
         Kind::Saved | Kind::Sentry => {
             let text = std::fs::read_to_string(c.dir.join("event.json")).unwrap_or_default();
             (
                 json_str(&text, "reason"),
                 json_str(&text, "timestamp").and_then(|t| parse_iso_local(&t)),
                 json_value(&text, "camera").and_then(|v| event_camera(&v)),
+                event_location(&text),
             )
         }
-        _ => (None, None, None),
+        _ => (None, None, None, None),
     };
-    Some(ClipItem { collection: c.clone(), segments, cameras, reason, event_time, camera })
+    Some(ClipItem { collection: c.clone(), segments, cameras, reason, event_time, camera, location })
+}
+
+/// event.json's `est_lat` and `est_lon` (text or numbers), unless missing
+/// or 0, 0.
+pub fn event_location(text: &str) -> Option<(f64, f64)> {
+    let number = |key: &str| -> Option<f64> {
+        if let Some(s) = json_str(text, key) {
+            return s.trim().parse().ok();
+        }
+        let at = text.find(&format!("\"{key}\""))? + key.len() + 2;
+        let rest = &text[at..];
+        let rest = rest[rest.find(':')? + 1..].trim_start();
+        let end = rest.find(|c: char| !(c.is_ascii_digit() || matches!(c, '-' | '+' | '.' | 'e' | 'E'))).unwrap_or(rest.len());
+        rest[..end].parse().ok()
+    };
+    let (lat, lon) = (number("est_lat")?, number("est_lon")?);
+    let valid = lat.is_finite() && lon.is_finite() && lat.abs() <= 90.0 && lon.abs() <= 180.0 && (lat.abs() >= 0.001 || lon.abs() >= 0.001);
+    valid.then_some((lat, lon))
 }
 
 /// Tesla's camera numbers in event.json: 0-2 are the front cameras.
@@ -580,6 +602,10 @@ mod tests {
         assert_eq!(json_str(j, "street"), None);
         assert_eq!(reason_label("trick_or_treat"), ("Trick Or Treat".to_string(), false));
         assert_eq!(reason_label("vehicle_auto_emergency_braking"), ("Emergency Braking".to_string(), true));
+        assert_eq!(event_location(r#"{ "est_lat": "37.4219", "est_lon": "-122.0840" }"#), Some((37.4219, -122.084)));
+        assert_eq!(event_location(r#"{"est_lat":37.5,"est_lon":-122.25}"#), Some((37.5, -122.25)));
+        assert_eq!(event_location(r#"{ "est_lat": "0.0000", "est_lon": "0.0000" }"#), None);
+        assert_eq!(event_location(j), None);
     }
 
     #[test]

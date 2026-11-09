@@ -280,6 +280,8 @@ pub fn action_label(action: Action) -> &'static str {
         Action::ToggleMap => "ui.settings.toggleMap",
         Action::ToggleMetric => "ui.settings.toggleMphKmh",
         Action::ToggleClips => "ui.settings.toggleClipsPanel",
+        Action::SetMarkerIn => "ui.settings.setExportMarkerIn",
+        Action::SetMarkerOut => "ui.settings.setExportMarkerOut",
         Action::NextClip => "ui.settings.nextClip",
         Action::PrevClip => "ui.settings.prevClip",
         Action::SpeedUp => "ui.settings.speedUp",
