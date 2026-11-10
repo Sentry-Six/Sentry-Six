@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- The Mac App Store build runs in the App Sandbox. -->
+  <key>com.apple.security.app-sandbox</key><true/>
+  <!-- Map tiles, place names, sharing, support chat. -->
+  <key>com.apple.security.network.client</key><true/>
+  <!-- Footage folders and drive data the user picks or drops, and exports
+       saved where the user chooses. -->
+  <key>com.apple.security.files.user-selected.read-write</key><true/>
+  <!-- Bookmarks that reopen the default folder and drive data at launch. -->
+  <key>com.apple.security.files.bookmarks.app-scope</key><true/>
+  <!-- The App ID and team, matching the provisioning profile
+       (tools/package-macos-app-store.sh fills these in). -->
+  <key>com.apple.application-identifier</key><string>TEAM_ID.BUNDLE_ID</string>
+  <key>com.apple.developer.team-identifier</key><string>TEAM_ID</string>
+</dict>
+</plist>

@@ -149,6 +149,8 @@ fn settings_lines(s: &crate::settings::Settings) -> Vec<String> {
                     Some(p) => format!("set, on {}", system::volume(Path::new(p))),
                     None => "not set".into(),
                 },
+                // Where the folders are, in a form only this Mac can read.
+                "defaultFolderBookmark" | "sentryUsbDataBookmark" => if value.is_null() { "none".into() } else { "set".into() },
                 // Its token opens the chat: never in a report.
                 "aiSupportConversation" => if value.is_null() { "none".into() } else { "a chat is saved".into() },
                 // Each one's delete token deletes it, and its link opens it:

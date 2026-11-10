@@ -30,6 +30,8 @@ mod sei;
 mod drive_data;
 mod crmath;
 mod crmath_tables;
+#[cfg(target_os = "macos")]
+mod mac;
 mod settings;
 mod settings_view;
 mod share;
@@ -108,13 +110,19 @@ pub(crate) fn svg_icon<'a>(source: &'static str, size: f32, color: iced::Color) 
 
 /// Opens a web page in the default browser.
 fn open_url(url: &str) {
-    let result = if cfg!(target_os = "macos") {
-        std::process::Command::new("open").arg(url).spawn()
-    } else if cfg!(target_os = "windows") {
+    #[cfg(target_os = "macos")]
+    {
+        if !mac::open(url) {
+            log::warn!("could not open a link or file");
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    let result = if cfg!(target_os = "windows") {
         std::process::Command::new("explorer").arg(url).spawn()
     } else {
         std::process::Command::new("xdg-open").arg(url).spawn()
     };
+    #[cfg(not(target_os = "macos"))]
     if let Err(e) = result {
         log::warn!("could not open a link or file: {e}");
     }
@@ -1018,11 +1026,13 @@ impl App {
             }
             Message::DriveDataPicked(Some(p)) => {
                 // Remembered in the settings for next time.
+                self.settings.drive_data_bookmark = settings::bookmark_for(&p);
                 self.settings.drive_data = Some(p.clone());
                 settings::save(&self.settings);
                 return self.load_drives(p);
             }
             Message::DefaultFolderPicked(Some(p)) => {
+                self.settings.default_folder_bookmark = settings::bookmark_for(&p);
                 self.settings.default_folder = Some(p);
                 settings::save(&self.settings);
             }
@@ -1092,10 +1102,14 @@ impl App {
                         self.shortcuts = shortcuts::Shortcuts::new(&self.settings.keybinds);
                     }
                     Change::BrowseFolder => return pick_folder(self.settings.default_folder.as_ref(), Message::DefaultFolderPicked),
-                    Change::ClearFolder => self.settings.default_folder = None,
+                    Change::ClearFolder => {
+                        self.settings.default_folder = None;
+                        self.settings.default_folder_bookmark = None;
+                    }
                     Change::BrowseDriveData => return Task::done(Message::PickDriveData),
                     Change::ClearDriveData => {
                         self.settings.drive_data = None;
+                        self.settings.drive_data_bookmark = None;
                         self.clear_drives();
                     }
                     Change::LearnMore => {
@@ -1205,6 +1219,8 @@ impl App {
                     return self.startup_update_check();
                 }
             }
+            // The App Store updates the App Store build.
+            Message::UpdateCheck(_) if settings_view::APP_STORE => {}
             Message::UpdateCheck(asked) => {
                 if self.update.as_ref().is_some_and(|d| d.busy()) {
                     return Task::none();
@@ -1651,7 +1667,7 @@ impl App {
     /// The update check at startup, 2 s in, once the privacy notice is
     /// accepted (and unless devDisableApiRequests is set).
     fn startup_update_check(&self) -> Task<Message> {
-        if self.privacy_pending() || self.settings.no_startup_check {
+        if self.privacy_pending() || self.settings.no_startup_check || settings_view::APP_STORE {
             return Task::none();
         }
         Task::perform(off_thread(|| std::thread::sleep(std::time::Duration::from_secs(2))), |_| Message::UpdateCheck(false))

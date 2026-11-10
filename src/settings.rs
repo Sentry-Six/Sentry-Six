@@ -7,6 +7,7 @@
 //! (on, like Sentry Drive).
 
 use crate::library::{Camera, GRID, SLOT_KEYS};
+use base64::Engine;
 use serde_json::Value;
 use std::path::PathBuf;
 
@@ -156,6 +157,12 @@ pub struct Settings {
     pub export_blur_zones: Vec<crate::export::blur::BlurZone>,
     /// The clips panel collapsed to its bar (`clipsPanelCollapsed`).
     pub clips_collapsed: bool,
+    /// The App Store build's sandbox lets it into a picked folder or file
+    /// for one session only: these bookmarks (`defaultFolderBookmark`,
+    /// `sentryUsbDataBookmark`, base64) open the default folder and the
+    /// drive data again at the next launch. Unused elsewhere.
+    pub default_folder_bookmark: Option<Vec<u8>>,
+    pub drive_data_bookmark: Option<Vec<u8>>,
 }
 
 impl Default for Settings {
@@ -225,6 +232,8 @@ impl Default for Settings {
             export_watermark_scale: None,
             export_blur_zones: Vec::new(),
             clips_collapsed: false,
+            default_folder_bookmark: None,
+            drive_data_bookmark: None,
         }
     }
 }
@@ -365,7 +374,46 @@ pub fn load() -> Settings {
     if !language_saved {
         s.language = supported_language(&system_languages());
     }
+    reopen_bookmarks(&mut s);
     s
+}
+
+/// A bookmark for a file or folder the user just picked, in the App Store
+/// build (see `Settings::default_folder_bookmark`); None elsewhere.
+pub fn bookmark_for(path: &std::path::Path) -> Option<Vec<u8>> {
+    #[cfg(all(target_os = "macos", feature = "app-store"))]
+    return crate::mac::bookmark(path);
+    #[cfg(not(all(target_os = "macos", feature = "app-store")))]
+    {
+        let _ = path;
+        None
+    }
+}
+
+/// The App Store build: opens the sandbox to the default folder and the
+/// drive data through their bookmarks, taking their paths from them (a
+/// folder that was moved is found where it is now), and makes a stale
+/// bookmark again.
+fn reopen_bookmarks(s: &mut Settings) {
+    #[cfg(all(target_os = "macos", feature = "app-store"))]
+    {
+        let mut changed = false;
+        for (bookmark, path) in [(&mut s.default_folder_bookmark, &mut s.default_folder), (&mut s.drive_data_bookmark, &mut s.drive_data)] {
+            let Some(data) = bookmark.as_ref() else { continue };
+            if let Some((p, stale)) = crate::mac::resolve(data) {
+                if stale {
+                    *bookmark = crate::mac::bookmark(&p);
+                    changed = true;
+                }
+                *path = Some(p);
+            }
+        }
+        if changed {
+            save(s);
+        }
+    }
+    #[cfg(not(all(target_os = "macos", feature = "app-store")))]
+    let _ = s;
 }
 
 /// The first of the system's preferred languages this version has ("fr" for
@@ -384,13 +432,7 @@ fn supported_language(preferred: &[String]) -> String {
 /// The system's preferred languages, most preferred first.
 #[cfg(target_os = "macos")]
 fn system_languages() -> Vec<String> {
-    // ( "fr-CA", "en-CA" ), as `defaults` prints AppleLanguages.
-    std::process::Command::new("/usr/bin/defaults")
-        .args(["read", "-g", "AppleLanguages"])
-        .output()
-        .ok()
-        .map(|o| String::from_utf8_lossy(&o.stdout).split([',', '(', ')', '\n']).map(|l| l.trim().trim_matches('"').to_string()).filter(|l| !l.is_empty()).collect())
-        .unwrap_or_default()
+    crate::mac::preferred_languages()
 }
 
 #[cfg(windows)]
@@ -457,6 +499,8 @@ pub fn to_json(s: &Settings) -> Value {
         "language": s.language,
         "showDriveStats": s.show_drive_stats,
         "clipsPanelCollapsed": s.clips_collapsed,
+        "defaultFolderBookmark": s.default_folder_bookmark.as_ref().map(|b| base64::engine::general_purpose::STANDARD.encode(b)),
+        "sentryUsbDataBookmark": s.drive_data_bookmark.as_ref().map(|b| base64::engine::general_purpose::STANDARD.encode(b)),
         "pendingDowngrade": s.pending_downgrade,
         "acceptedPrivacyVersion": s.privacy_accepted,
         "updateChannel": if s.prerelease { "prerelease" } else { "stable" },
@@ -693,6 +737,13 @@ fn apply(s: &mut Settings, v: &Value) {
     }
     if let Some(b) = v.get("clipsPanelCollapsed").and_then(Value::as_bool) {
         s.clips_collapsed = b;
+    }
+    let bookmark = |key: &str| v.get(key).and_then(Value::as_str).and_then(|t| base64::engine::general_purpose::STANDARD.decode(t).ok());
+    if v.get("defaultFolderBookmark").is_some() {
+        s.default_folder_bookmark = bookmark("defaultFolderBookmark");
+    }
+    if v.get("sentryUsbDataBookmark").is_some() {
+        s.drive_data_bookmark = bookmark("sentryUsbDataBookmark");
     }
     if let Some(b) = v.get("showDriveStats").and_then(Value::as_bool) {
         s.show_drive_stats = b;

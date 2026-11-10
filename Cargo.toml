@@ -40,6 +40,12 @@ log = "0.4"
 # AI support chat: message IDs (src/support.rs).
 uuid = { version = "1", features = ["v4"] }
 
+[features]
+# The Mac App Store build: sandboxed (picked folders are remembered with
+# bookmarks), and updated by the App Store, so without the app's own
+# updater. tools/package-macos.sh builds it with APP_STORE=1.
+app-store = []
+
 [target.'cfg(unix)'.dependencies]
 # Linux video decoding loads GStreamer at run time (src/decode/gstreamer.rs).
 libloading = "0.9"

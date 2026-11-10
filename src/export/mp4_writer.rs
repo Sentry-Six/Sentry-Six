@@ -360,9 +360,20 @@ pub fn fast_start(path: &Path) -> std::io::Result<()> {
     // stco offsets are 32-bit: if one would overflow, use co64 instead
     // (not needed for the sizes exported here; refuse rather than corrupt).
     shift_offsets(&mut moov[8..], shift).map_err(|e| bad(&e))?;
-    let tmp = path.with_extension("faststart.tmp");
+    // Written beside the video and renamed over it; where a sandbox (the
+    // Mac App Store build) only allows the video itself, written in the
+    // temporary folder and copied back over it instead.
+    let mut tmp = path.with_extension("faststart.tmp");
+    let created = match File::create(&tmp) {
+        Ok(f) => f,
+        Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
+            tmp = std::env::temp_dir().join(format!("sentry-studio-faststart-{}-{}.mp4", std::process::id(), path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()));
+            File::create(&tmp)?
+        }
+        Err(e) => return Err(e),
+    };
     {
-        let mut out = BufWriter::with_capacity(4 << 20, File::create(&tmp)?);
+        let mut out = BufWriter::with_capacity(4 << 20, created);
         file.seek(SeekFrom::Start(0))?;
         std::io::copy(&mut (&mut file).take(first_media), &mut out)?;
         out.write_all(&moov)?;
@@ -378,7 +389,12 @@ pub fn fast_start(path: &Path) -> std::io::Result<()> {
         out.into_inner().map_err(|e| e.into_error())?.sync_all()?;
     }
     drop(file);
-    std::fs::rename(&tmp, path)
+    if tmp.parent() == path.parent() {
+        return std::fs::rename(&tmp, path);
+    }
+    let copied = std::fs::copy(&tmp, path).map(|_| ());
+    let _ = std::fs::remove_file(&tmp);
+    copied
 }
 
 /// Adds `by` to every chunk offset (stco / co64) inside these boxes.

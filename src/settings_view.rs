@@ -271,6 +271,10 @@ fn keybind_row<'a>(action: Action, keys: &Shortcuts, recording: Option<Action>) 
     .into()
 }
 
+/// The Mac App Store build: the App Store updates it, so no update
+/// settings or checks.
+pub const APP_STORE: bool = cfg!(feature = "app-store");
+
 pub fn action_label(action: Action) -> &'static str {
     t(match action {
         Action::PlayPause => "ui.settings.playPause",
@@ -371,8 +375,14 @@ fn system_section<'a>(s: &'a Settings, ui: &'a Ui) -> Element<'a, Message> {
                 s.map_enabled,
                 t("app.mapTilesDesc"),
             ))
-            .push(privacy_row(t("ui.settings.updateReporting"), t("ui.settings.statusActive"), true, t("ui.settings.updateReportingDesc")))
-            .push(privacy_row(t("ui.settings.deviceHash"), t("ui.settings.hashedSha256"), true, t("ui.settings.deviceHashDesc")));
+            ;
+        // The App Store build makes no update checks (the App Store
+        // updates it), so it sends neither.
+        if !APP_STORE {
+            col = col
+                .push(privacy_row(t("ui.settings.updateReporting"), t("ui.settings.statusActive"), true, t("ui.settings.updateReportingDesc")))
+                .push(privacy_row(t("ui.settings.deviceHash"), t("ui.settings.hashedSha256"), true, t("ui.settings.deviceHashDesc")));
+        }
     }
     let check_label = match ui.update_check {
         CheckState::Idle => t("ui.settings.checkNow").to_string(),
@@ -391,9 +401,12 @@ fn system_section<'a>(s: &'a Settings, ui: &'a Ui) -> Element<'a, Message> {
             .padding([8, 0])
             .align_y(Alignment::Center)
     };
+    if !APP_STORE {
+        col = col
+            .push(update_row(t("ui.settings.prereleaseUpdates"), t("ui.settings.prereleaseUpdatesDesc"), toggle(s.prerelease, Change::Prerelease)))
+            .push(update_row(t("ui.settings.checkForUpdates"), t("ui.settings.checkForUpdatesDesc"), check.into()));
+    }
     col = col
-        .push(update_row(t("ui.settings.prereleaseUpdates"), t("ui.settings.prereleaseUpdatesDesc"), toggle(s.prerelease, Change::Prerelease)))
-        .push(update_row(t("ui.settings.checkForUpdates"), t("ui.settings.checkForUpdatesDesc"), check.into()))
         .push(
             container(
                 row![

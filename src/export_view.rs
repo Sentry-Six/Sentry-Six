@@ -2260,7 +2260,7 @@ fn reveal_label() -> String {
 /// Opens a file in its usual app (the video player).
 fn open_file(path: &std::path::Path) {
     #[cfg(target_os = "macos")]
-    let r = std::process::Command::new("open").arg(path).spawn();
+    let r: std::io::Result<()> = if crate::mac::open(&path.to_string_lossy()) { Ok(()) } else { Err(std::io::Error::other("the system didn't open it")) };
     #[cfg(target_os = "windows")]
     let r = std::process::Command::new("explorer").arg(path).spawn();
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
@@ -2272,7 +2272,10 @@ fn open_file(path: &std::path::Path) {
 
 fn reveal(path: &std::path::Path) {
     #[cfg(target_os = "macos")]
-    let r = std::process::Command::new("open").arg("-R").arg(path).spawn();
+    let r: std::io::Result<()> = {
+        crate::mac::reveal(path);
+        Ok(())
+    };
     #[cfg(target_os = "windows")]
     let r = std::process::Command::new("explorer").arg(format!("/select,{}", path.display())).spawn();
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
