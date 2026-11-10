@@ -40,7 +40,13 @@ pub fn view<'a>(elapsed: f32) -> Element<'a, Message> {
     let body = column![
         container(crate::svg_icon(SHIELD_SVG, 48.0 * pulse, theme::ACCENT)).center_x(Length::Fill).height(54),
         text(t("welcomeScreen.privacyTitle")).size(18).font(theme::semibold(theme::INTER)).color(theme::ACCENT),
-        text(t("app.privacySummary")).size(14).line_height(1.7).center().width(380),
+        // The App Store build makes no update checks, so its notice
+        // leaves that sentence out.
+        text(t(if crate::settings_view::APP_STORE { "app.privacySummaryAppStore" } else { "app.privacySummary" }))
+            .size(14)
+            .line_height(1.7)
+            .center()
+            .width(380),
         row![
             link(DOC_SVG, "welcomeScreen.termsLink", crate::settings_view::TERMS_URL),
             link(LOCK_SVG, "welcomeScreen.privacyLink", crate::settings_view::PRIVACY_URL),

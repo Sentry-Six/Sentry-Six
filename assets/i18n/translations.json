@@ -374,7 +374,8 @@
     "ui.playback.openExportDetails": "Open export details",
     "ui.map.headingUp": "Heading up — click for north up",
     "ui.map.northUp": "North up — click for heading up",
-    "ui.timeline.event": "{type} event: {reason}"
+    "ui.timeline.event": "{type} event: {reason}",
+    "app.privacySummaryAppStore": "By using Sentry Studio, you agree to our Terms of Service and Privacy Policy. Your dashcam footage stays on your device. Map tiles come from tiles.sentryusb.com, which sees roughly where you drive. To show place names, drive start and end points are sent to OpenStreetMap Nominatim; you can turn this off in Settings › Playback & Overlays › Map."
   },
   "es": {
     "app.arrived": "Llegada",
@@ -751,7 +752,8 @@
     "ui.playback.openExportDetails": "Abrir detalles de exportación",
     "ui.map.headingUp": "Rumbo arriba — clic para norte arriba",
     "ui.map.northUp": "Norte arriba — clic para rumbo arriba",
-    "ui.timeline.event": "Evento {type}: {reason}"
+    "ui.timeline.event": "Evento {type}: {reason}",
+    "app.privacySummaryAppStore": "Al usar Sentry Studio, aceptas nuestros Términos del servicio y nuestra Política de privacidad. Tus grabaciones de la dashcam se quedan en tu dispositivo. Los mapas vienen de tiles.sentryusb.com, que ve aproximadamente por dónde conduces. Para mostrar los nombres de los lugares, los puntos de inicio y fin de cada viaje se envían a OpenStreetMap Nominatim; puedes desactivarlo en Ajustes."
   },
   "fr": {
     "app.arrived": "Arrivée",
@@ -1128,7 +1130,8 @@
     "ui.playback.openExportDetails": "Ouvrir les détails d'exportation",
     "ui.map.headingUp": "Cap en haut — cliquez pour le nord en haut",
     "ui.map.northUp": "Nord en haut — cliquez pour le cap en haut",
-    "ui.timeline.event": "Événement {type} : {reason}"
+    "ui.timeline.event": "Événement {type} : {reason}",
+    "app.privacySummaryAppStore": "En utilisant Sentry Studio, vous acceptez nos Conditions d'utilisation et notre Politique de confidentialité. Vos vidéos de dashcam restent sur votre appareil. Les cartes viennent de tiles.sentryusb.com, qui voit à peu près où vous roulez. Pour afficher les noms de lieux, les points de départ et d'arrivée des trajets sont envoyés à OpenStreetMap Nominatim ; vous pouvez désactiver cela dans les Paramètres."
   },
   "de": {
     "app.arrived": "Ankunft",
@@ -1505,7 +1508,8 @@
     "ui.playback.openExportDetails": "Exportdetails öffnen",
     "ui.map.headingUp": "Fahrtrichtung oben — klicken für Norden oben",
     "ui.map.northUp": "Norden oben — klicken für Fahrtrichtung oben",
-    "ui.timeline.event": "{type}-Ereignis: {reason}"
+    "ui.timeline.event": "{type}-Ereignis: {reason}",
+    "app.privacySummaryAppStore": "Mit der Nutzung von Sentry Studio stimmen Sie unseren Nutzungsbedingungen und unserer Datenschutzerklärung zu. Ihre Dashcam-Aufnahmen bleiben auf Ihrem Gerät. Kartenbilder kommen von tiles.sentryusb.com, das ungefähr sieht, wo Sie fahren. Für Ortsnamen werden Start- und Endpunkte von Fahrten an OpenStreetMap Nominatim gesendet; das können Sie in den Einstellungen ausschalten."
   },
   "zh": {
     "app.arrived": "到达",
@@ -1882,7 +1886,8 @@
     "ui.playback.openExportDetails": "打开导出详情",
     "ui.map.headingUp": "航向朝上 — 点击切换为北朝上",
     "ui.map.northUp": "北朝上 — 点击切换为航向朝上",
-    "ui.timeline.event": "{type}事件：{reason}"
+    "ui.timeline.event": "{type}事件：{reason}",
+    "app.privacySummaryAppStore": "使用 Sentry Studio 即表示你同意我们的服务条款和隐私政策。你的行车记录仪录像会保留在你的设备上。地图图像来自 tiles.sentryusb.com，该服务器能大致看到你的行驶位置。为了显示地名，行程的起点和终点会发送到 OpenStreetMap Nominatim；你可以在设置中关闭此功能。"
   },
   "ja": {
     "app.arrived": "到着",
@@ -2259,7 +2264,8 @@
     "ui.playback.openExportDetails": "エクスポート詳細を開く",
     "ui.map.headingUp": "進行方向が上 — クリックで北が上",
     "ui.map.northUp": "北が上 — クリックで進行方向が上",
-    "ui.timeline.event": "{type}イベント: {reason}"
+    "ui.timeline.event": "{type}イベント: {reason}",
+    "app.privacySummaryAppStore": "Sentry Studio を使用すると、利用規約とプライバシーポリシーに同意したことになります。ドライブレコーダーの映像はお使いのデバイスに保存されたままです。地図画像は tiles.sentryusb.com から取得され、おおよその走行場所が伝わります。地名を表示するため、走行の出発地点と到着地点が OpenStreetMap Nominatim に送信されます。この機能は設定でオフにできます。"
   },
   "ko": {
     "app.arrived": "도착",
@@ -2636,7 +2642,8 @@
     "ui.playback.openExportDetails": "내보내기 세부정보 열기",
     "ui.map.headingUp": "진행 방향 위 — 클릭하면 북쪽 위",
     "ui.map.northUp": "북쪽 위 — 클릭하면 진행 방향 위",
-    "ui.timeline.event": "{type} 이벤트: {reason}"
+    "ui.timeline.event": "{type} 이벤트: {reason}",
+    "app.privacySummaryAppStore": "Sentry Studio를 사용하면 서비스 약관 및 개인정보 처리방침에 동의하는 것입니다. 블랙박스 영상은 기기에만 저장됩니다. 지도 이미지는 tiles.sentryusb.com에서 받아오며, 대략적인 주행 위치가 전달됩니다. 장소 이름을 표시하기 위해 주행의 출발 및 도착 지점이 OpenStreetMap Nominatim으로 전송되며, 설정에서 끌 수 있습니다."
   },
   "pt": {
     "app.arrived": "Chegada",
@@ -3013,7 +3020,8 @@
     "ui.playback.openExportDetails": "Abrir detalhes de exportação",
     "ui.map.headingUp": "Direção para cima — clique para norte para cima",
     "ui.map.northUp": "Norte para cima — clique para direção para cima",
-    "ui.timeline.event": "Evento {type}: {reason}"
+    "ui.timeline.event": "Evento {type}: {reason}",
+    "app.privacySummaryAppStore": "Ao usar o Sentry Studio, você concorda com nossos Termos de Serviço e nossa Política de Privacidade. Suas gravações da dashcam ficam no seu dispositivo. As imagens do mapa vêm de tiles.sentryusb.com, que vê aproximadamente por onde você dirige. Para mostrar nomes de lugares, os pontos de início e fim das viagens são enviados ao OpenStreetMap Nominatim; você pode desativar isso nas Configurações."
   },
   "ru": {
     "app.arrived": "Прибытие",
@@ -3390,7 +3398,8 @@
     "ui.playback.openExportDetails": "Открыть детали экспорта",
     "ui.map.headingUp": "По курсу — нажмите для севера сверху",
     "ui.map.northUp": "Север сверху — нажмите для ориентации по курсу",
-    "ui.timeline.event": "Событие {type}: {reason}"
+    "ui.timeline.event": "Событие {type}: {reason}",
+    "app.privacySummaryAppStore": "Используя Sentry Studio, вы принимаете наши Условия использования и Политику конфиденциальности. Записи видеорегистратора остаются на вашем устройстве. Изображения карты загружаются с tiles.sentryusb.com, который видит, где вы примерно ездите. Чтобы показывать названия мест, начальные и конечные точки поездок отправляются в OpenStreetMap Nominatim; это можно отключить в настройках."
   },
   "it": {
     "app.arrived": "Arrivo",
@@ -3767,7 +3776,8 @@
     "ui.playback.openExportDetails": "Apri dettagli esportazione",
     "ui.map.headingUp": "Direzione in alto — clic per nord in alto",
     "ui.map.northUp": "Nord in alto — clic per direzione in alto",
-    "ui.timeline.event": "Evento {type}: {reason}"
+    "ui.timeline.event": "Evento {type}: {reason}",
+    "app.privacySummaryAppStore": "Usando Sentry Studio accetti i nostri Termini di servizio e la nostra Informativa sulla privacy. I filmati della dashcam restano sul tuo dispositivo. Le immagini della mappa arrivano da tiles.sentryusb.com, che vede più o meno dove guidi. Per mostrare i nomi dei luoghi, i punti di partenza e di arrivo dei viaggi vengono inviati a OpenStreetMap Nominatim; puoi disattivarlo nelle Impostazioni."
   },
   "nl": {
     "app.arrived": "Aankomst",
@@ -4144,7 +4154,8 @@
     "ui.playback.openExportDetails": "Exportdetails openen",
     "ui.map.headingUp": "Rijrichting boven — klik voor noorden boven",
     "ui.map.northUp": "Noorden boven — klik voor rijrichting boven",
-    "ui.timeline.event": "{type}-gebeurtenis: {reason}"
+    "ui.timeline.event": "{type}-gebeurtenis: {reason}",
+    "app.privacySummaryAppStore": "Door Sentry Studio te gebruiken ga je akkoord met onze Servicevoorwaarden en ons Privacybeleid. Je dashcambeelden blijven op je apparaat. Kaartbeelden komen van tiles.sentryusb.com, dat ongeveer ziet waar je rijdt. Om plaatsnamen te tonen, worden begin- en eindpunten van ritten naar OpenStreetMap Nominatim gestuurd; dit kun je uitzetten in de Instellingen."
   },
   "pl": {
     "app.arrived": "Przyjazd",
@@ -4521,7 +4532,8 @@
     "ui.playback.openExportDetails": "Otwórz szczegóły eksportu",
     "ui.map.headingUp": "Kierunek jazdy u góry — kliknij, by północ była u góry",
     "ui.map.northUp": "Północ u góry — kliknij, by kierunek jazdy był u góry",
-    "ui.timeline.event": "Zdarzenie {type}: {reason}"
+    "ui.timeline.event": "Zdarzenie {type}: {reason}",
+    "app.privacySummaryAppStore": "Korzystając z Sentry Studio, akceptujesz nasze Warunki korzystania z usługi i Politykę prywatności. Nagrania z kamery pozostają na Twoim urządzeniu. Obrazy mapy pochodzą z tiles.sentryusb.com, który widzi mniej więcej, gdzie jeździsz. Aby wyświetlać nazwy miejsc, punkty początkowe i końcowe przejazdów są wysyłane do OpenStreetMap Nominatim; możesz to wyłączyć w Ustawieniach."
   },
   "tr": {
     "app.arrived": "Varış",
@@ -4898,6 +4910,7 @@
     "ui.playback.openExportDetails": "Dışa aktarma detaylarını aç",
     "ui.map.headingUp": "Yön yukarı — kuzey yukarı için tıklayın",
     "ui.map.northUp": "Kuzey yukarı — yön yukarı için tıklayın",
-    "ui.timeline.event": "{type} olayı: {reason}"
+    "ui.timeline.event": "{type} olayı: {reason}",
+    "app.privacySummaryAppStore": "Sentry Studio'yu kullanarak Hizmet Şartlarımızı ve Gizlilik Politikamızı kabul etmiş olursunuz. Araç kamerası kayıtlarınız cihazınızda kalır. Harita görüntüleri tiles.sentryusb.com'dan gelir; bu sunucu aşağı yukarı nerede sürdüğünüzü görür. Yer adlarını göstermek için sürüşlerin başlangıç ve bitiş noktaları OpenStreetMap Nominatim'e gönderilir; bunu Ayarlar'dan kapatabilirsiniz."
   }
 }

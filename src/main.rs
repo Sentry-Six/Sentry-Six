@@ -2225,8 +2225,9 @@ impl App {
             .align_x(Horizontal::Left)
             .align_y(Vertical::Top);
         let mut stage = stack![container(self.camera_grid()).padding(video::MARGIN)].height(Length::Fill);
-        // No folder open yet: a click anywhere picks one.
-        if self.root.is_none() && !self.scanning {
+        // No folder open yet: a click anywhere picks one (not under the
+        // first-run notice, whose glass would show it through).
+        if self.root.is_none() && !self.scanning && !self.privacy_pending() {
             let prompt = column![
                 icon(theme::icon::FOLDER, 48.0).color(theme::TEXT_MUTED),
                 text(i18n::t("ui.dropOverlay.message")).size(14),
