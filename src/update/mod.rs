@@ -612,7 +612,10 @@ mod tests {
     fn the_built_in_changelog_reads() {
         let notes = changelog();
         assert!(notes.len() > 30);
-        assert_eq!(notes[0].version, current());
+        // The newest entry is this version, or an earlier one when this is
+        // an App Store-only version (its changelog stays at the last full
+        // release); never a later one.
+        assert!(!compare(&notes[0].version, current()).is_gt(), "changelog.json is ahead of the app: {}", notes[0].version);
         assert!(notes.windows(2).all(|w| compare(&w[0].version, &w[1].version).is_gt()));
     }
 }
