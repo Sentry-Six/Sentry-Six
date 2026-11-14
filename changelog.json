@@ -1,6 +1,21 @@
 {
   "versions": [
     {
+      "version": "2026.46.5",
+      "date": "2026-11-14",
+      "title": "Date and Korean Text",
+      "changes": [
+        {
+          "type": "improvement",
+          "description": "The compact dashboard shows the date beside the time again, in playback and in exports."
+        },
+        {
+          "type": "fix",
+          "description": "Korean, Japanese and Chinese text in menus and labels is readable again on Windows."
+        }
+      ]
+    },
+    {
       "version": "2026.46.2",
       "date": "2026-11-09",
       "title": "Layouts and Polish",
