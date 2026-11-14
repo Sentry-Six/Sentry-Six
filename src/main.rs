@@ -1711,7 +1711,12 @@ impl App {
     fn dash(&self, scale: f32) -> dashboard::Dash<'_> {
         dashboard::Dash {
             telemetry: self.front_telemetry(),
-            time: self.player.wall_clock().map(|t| dashboard::time_of_day(t, self.settings.time_24h)).unwrap_or_else(|| "--:--".into()),
+            // The compact dashboard has room for the date too.
+            time: self
+                .player
+                .wall_clock()
+                .map(|t| if self.settings.dashboard_compact { dashboard::date_and_time(t, self.settings.time_24h, self.settings.date_format) } else { dashboard::time_of_day(t, self.settings.time_24h) })
+                .unwrap_or_else(|| "--:--".into()),
             metric: self.metric(),
             playing: self.player.is_playing(),
             blink_ms: self.epoch.elapsed().as_millis() % 700,

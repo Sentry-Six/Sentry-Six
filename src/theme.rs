@@ -38,10 +38,26 @@ pub const MONO: Font = Font::with_name("JetBrains Mono");
 pub const ICONS: Font = Font::with_name("Material Symbols Outlined");
 
 pub fn medium(f: Font) -> Font {
-    Font { weight: Weight::Medium, ..f }
+    Font { weight: cjk_weight(Weight::Medium), ..f }
 }
 pub fn semibold(f: Font) -> Font {
-    Font { weight: Weight::Semibold, ..f }
+    Font { weight: cjk_weight(Weight::Semibold), ..f }
+}
+
+/// On Windows, Korean, Japanese and Chinese text falls back to Malgun
+/// Gothic, Yu Gothic or Microsoft YaHei, which have no Medium or Semibold
+/// face; asked for one at small sizes, Korean came out squashed and
+/// unreadable. In those languages the weights they have are used instead.
+fn cjk_weight(w: Weight) -> Weight {
+    if cfg!(windows) && matches!(crate::i18n::language(), "ko" | "ja" | "zh") {
+        match w {
+            Weight::Medium => Weight::Normal,
+            Weight::Semibold => Weight::Bold,
+            other => other,
+        }
+    } else {
+        w
+    }
 }
 pub fn bold(f: Font) -> Font {
     Font { weight: Weight::Bold, ..f }

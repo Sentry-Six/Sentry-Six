@@ -234,6 +234,13 @@ fn autopilot_label(a: i32) -> &'static str {
     }
 }
 
+/// The compact dashboard's line under the Autopilot state: the date (in
+/// the Date Format setting) and the time, as earlier versions showed them.
+pub fn date_and_time(t: crate::library::LocalSecs, h24: bool, date_format: crate::settings::DateFormat) -> String {
+    let stamp = crate::library::format_local(t);
+    format!("{}  {}", date_format.show(&stamp[..10]), time_of_day(t.rem_euclid(86400), h24))
+}
+
 /// 12-hour (default) or 24-hour time of day.
 pub fn time_of_day(secs_of_day: i64, h24: bool) -> String {
     let t = secs_of_day.rem_euclid(86400);

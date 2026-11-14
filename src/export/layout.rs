@@ -241,6 +241,7 @@ mod tests {
             share: DashSize::Medium.share(),
             metric: false,
             h24: false,
+            date_format: crate::settings::DateFormat::Ymd,
             accel: crate::dashboard::AccelMode::IconBar,
             glass: 0.0,
             free: None,

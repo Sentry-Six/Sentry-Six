@@ -379,6 +379,8 @@ pub struct Dashboard {
     pub share: f64,
     pub metric: bool,
     pub h24: bool,
+    /// For the date beside the time (the compact style).
+    pub date_format: crate::settings::DateFormat,
     pub accel: crate::dashboard::AccelMode,
     /// Playback's glass blur in its pixels (the Glass Blur setting); 0 for
     /// the dark bar.
@@ -836,6 +838,7 @@ mod tests {
             share: DashSize::Medium.share(),
             metric: false,
             h24: false,
+            date_format: crate::settings::DateFormat::Ymd,
             accel: crate::dashboard::AccelMode::IconBar,
             glass: 0.0,
             free: None,

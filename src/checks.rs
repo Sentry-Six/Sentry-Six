@@ -457,6 +457,7 @@ pub fn export_check(dir: &std::path::Path, quality: Option<&str>, speed: Option<
                 share: crate::export::overlay::DashSize::Medium.share(),
                 metric: false,
                 h24: false,
+                date_format: crate::settings::DateFormat::Ymd,
                 accel: crate::dashboard::AccelMode::IconBar,
                 // Playback's glass (SENTRY_EXPORT_GLASS=0 for the dark bar).
                 glass: std::env::var("SENTRY_EXPORT_GLASS").ok().and_then(|v| v.parse().ok()).unwrap_or(13.0),

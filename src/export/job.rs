@@ -813,7 +813,13 @@ fn encode_all(
                         blink_ms = ((k - from) as u128 * 1000 / FPS as u128) % 700;
                     }
                 }
-                let state = super::overlay::DashState { telemetry: m.clone(), time: crate::dashboard::time_of_day(wall.rem_euclid(86400), d.h24), steering: angle, blink_ms };
+                // The compact style shows the date with the time (Tesla Mobile has a
+                // date bar of its own).
+                let time = match d.style {
+                    super::overlay::DashStyle::Compact => crate::dashboard::date_and_time(wall, d.h24, d.date_format),
+                    _ => crate::dashboard::time_of_day(wall.rem_euclid(86400), d.h24),
+                };
+                let state = super::overlay::DashState { telemetry: m.clone(), time, steering: angle, blink_ms };
                 let signature = state.signature(d.metric);
                 if dash.as_ref().map(|(s, _)| s) != Some(&signature) {
                     let picture = match (d.style, layout.dashboard) {
@@ -1189,6 +1195,7 @@ mod tests {
                 share: super::super::overlay::DashSize::Medium.share(),
                 metric: false,
                 h24: false,
+                date_format: crate::settings::DateFormat::Ymd,
                 accel: crate::dashboard::AccelMode::IconBar,
                 glass: 0.0,
                 free: None,
@@ -1282,6 +1289,7 @@ mod tests {
             share: 0.35,
             metric: false,
             h24: false,
+            date_format: crate::settings::DateFormat::Ymd,
             accel: crate::dashboard::AccelMode::IconBar,
             glass: 0.0,
             free: None,

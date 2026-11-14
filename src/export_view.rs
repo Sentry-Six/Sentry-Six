@@ -602,6 +602,7 @@ impl App {
             share: e.dash_share,
             metric: self.settings.metric,
             h24: self.settings.time_24h,
+            date_format: self.settings.date_format,
             accel: self.settings.accel_mode,
             glass: self.settings.glass_blur,
             free: e.dash_free.filter(|_| e.dash_style == DashStyle::Compact),
