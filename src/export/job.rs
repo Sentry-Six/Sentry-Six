@@ -319,7 +319,25 @@ pub fn run(req: &Request, cancel: &Arc<AtomicBool>, mut progress: impl FnMut(Pro
     );
     progress(Progress::Frames { done: 0, total });
     let mut warnings = Vec::new();
-    let result = encode_all(req, &plan, cancel, &mut progress, &mut warnings, None);
+    #[cfg_attr(not(windows), allow(unused_mut))]
+    let mut result = encode_all(req, &plan, cancel, &mut progress, &mut warnings, None);
+    // Windows: the GPU's encoder can fail partway (Media Foundation error
+    // 0x80004005 on some drivers). H.264 and HEVC are tried again with
+    // Microsoft's software encoder: slower, but it finishes.
+    #[cfg(windows)]
+    if let Err(e) = &result {
+        use std::sync::atomic::Ordering;
+        let gpu = super::encode::support(plan.codec) == super::encode::Support::Hardware;
+        if gpu && plan.codec != super::encode::Format::Av1 && !cancel.load(Ordering::Relaxed) && format!("{e:#}").contains("Media Foundation error") {
+            log::warn!("export: the GPU's encoder failed ({e:#}); trying again in software");
+            let _ = std::fs::remove_file(&req.output);
+            warnings.clear();
+            progress(Progress::Frames { done: 0, total });
+            super::encode::media_foundation::SOFTWARE.store(true, Ordering::Relaxed);
+            result = encode_all(req, &plan, cancel, &mut progress, &mut warnings, None);
+            super::encode::media_foundation::SOFTWARE.store(false, Ordering::Relaxed);
+        }
+    }
     match result {
         Ok(true) => {
             let bytes = std::fs::metadata(&req.output).map(|m| m.len()).unwrap_or(0);

@@ -494,7 +494,7 @@ fn scene<'a>(
 pub fn view<'a, M: 'a>(
     vector: &'a VectorTiles,
     raster: super::TileLayer<'a>,
-    side: f32,
+    viewport: iced::Size,
 ) -> iced::Element<'a, M> {
     let prepared = (|| {
         if !vector.enabled {
@@ -511,16 +511,18 @@ pub fn view<'a, M: 'a>(
             LngLat::new(lon, lat),
             f64::from(raster.zoom) - 1.0,
             -f64::from(raster.bearing),
-            Size::new(side.into(), side.into()),
+            Size::new(viewport.width.into(), viewport.height.into()),
         );
         // Leave enough space to place labels outside the visible map. This
         // keeps their collision decisions stable as they cross the panel edge.
         let zoom = layout_zoom(&camera);
         let center = LngLat::from_world(layout_center(&camera, zoom));
-        let padded_side = f64::from(side) + LABEL_PADDING * 2.0;
-        let padded = Size::new(padded_side, padded_side);
+        let padded = Size::new(
+            camera.size.width + LABEL_PADDING * 2.0,
+            camera.size.height + LABEL_PADDING * 2.0,
+        );
         let placement = Camera::with_bearing(center, zoom, camera.bearing, padded);
-        let diagonal = padded_side * std::f64::consts::SQRT_2;
+        let diagonal = padded.width.hypot(padded.height);
         let coverage = Camera::new(center, zoom, Size::new(diagonal, diagonal));
         let (tiles, has_basemap) = vector.scene_tiles(theme, &style, &placement, &coverage);
         if !has_basemap {
@@ -542,12 +544,19 @@ pub fn view<'a, M: 'a>(
     })();
     match prepared {
         Some((base, labels)) => iced::widget::stack![
-            canvas::Canvas::new(base).width(side).height(side),
-            canvas::Canvas::new(labels).width(side).height(side),
+            canvas::Canvas::new(base)
+                .width(viewport.width)
+                .height(viewport.height),
+            canvas::Canvas::new(labels)
+                .width(viewport.width)
+                .height(viewport.height),
         ]
         .clip(true)
         .into(),
-        None => canvas::Canvas::new(raster).width(side).height(side).into(),
+        None => canvas::Canvas::new(raster)
+            .width(viewport.width)
+            .height(viewport.height)
+            .into(),
     }
 }
 
@@ -795,8 +804,8 @@ mod tests {
         };
         let mut painter = crate::export::overlay::Painter::new().unwrap();
         let image = painter.paint::<()>(
-            super::view(&vector, raster, 258.0),
-            iced::Size::new(258, 258),
+            super::view(&vector, raster, iced::Size::new(258.0, 190.0)),
+            iced::Size::new(258, 190),
         );
         assert!(vector.base.borrow().is_some());
         assert!(

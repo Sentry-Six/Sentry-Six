@@ -527,6 +527,7 @@ const CHEVRON_SVG: &str = r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 
 
 /// What only the full dashboard shows.
 pub struct Full<'a, M> {
+    pub width: f32,
     /// The G-force meter's last positions, newest first.
     pub trail: &'a [(f32, f32)],
     /// Seconds since start (the dot's pulse).
@@ -554,7 +555,11 @@ fn gforce_value_color(g: f64) -> Color {
 pub fn full<'a, M: Clone + 'a>(d: Dash<'_>, f: Full<'_, M>) -> Element<'a, M> {
     let icons = icons();
     let grey = |v: u8| Color::from_rgb8(v, v, v);
-    let time = text(d.time.clone()).size(14).font(theme::medium(theme::INTER)).color(theme::TEXT_SECONDARY);
+    let time = || text(d.time.clone()).size(14).font(theme::medium(theme::INTER)).color(theme::TEXT_SECONDARY).wrapping(text::Wrapping::None);
+    // Narrower than it floats (docked in the sidebar): the time moves up
+    // beside the gear, so the wheel, blinkers and speed keep the row, and
+    // below 330 px the wheel steps aside too.
+    let narrow = f.width < 440.0;
     // The drawer's chevron, turned over while the drawer is open.
     let chevron = svg(svg::Handle::from_memory(CHEVRON_SVG.as_bytes()))
         .width(16)
@@ -582,7 +587,7 @@ pub fn full<'a, M: Clone + 'a>(d: Dash<'_>, f: Full<'_, M>) -> Element<'a, M> {
             row![
                 Space::new().width(Length::Fill),
                 text(crate::i18n::t("app.parked")).size(20).font(theme::bold(theme::INTER)).color(Color::WHITE),
-                time,
+                time(),
                 Space::new().width(Length::Fill),
             ]
             .spacing(16)
@@ -623,7 +628,7 @@ pub fn full<'a, M: Clone + 'a>(d: Dash<'_>, f: Full<'_, M>) -> Element<'a, M> {
             container::Style::default()
         }
     }))
-    .center_x(120)
+    .center_x((f.width * 0.25).clamp(70.0, 120.0))
     .center_y(Length::Fill);
 
     // Centre: blinker, gear / speed / unit / Autopilot line, blinker.
@@ -636,8 +641,9 @@ pub fn full<'a, M: Clone + 'a>(d: Dash<'_>, f: Full<'_, M>) -> Element<'a, M> {
     ]
     .spacing(6)
     .align_y(Alignment::Center);
+    let header: Element<'a, M> = if narrow { row![gear, time()].spacing(10).align_y(Alignment::Center).into() } else { gear.into() };
     let speed_box = column![
-        gear,
+        header,
         text(format!("{speed}")).size(36).color(Color::WHITE),
         text(crate::i18n::t(if d.metric { "ui.dashboard.kmh" } else { "ui.dashboard.mph" }))
             .size(11)
@@ -648,10 +654,23 @@ pub fn full<'a, M: Clone + 'a>(d: Dash<'_>, f: Full<'_, M>) -> Element<'a, M> {
     .spacing(2)
     .align_x(Alignment::Center);
     let centre = row![blinker(&icons.blink_left, sei.blinker_on_left), speed_box, blinker(&icons.blink_right, sei.blinker_on_right)]
-        .spacing(16)
+        .spacing(if narrow { 10 } else { 16 })
         .align_y(Alignment::Center);
 
-    let top = row![wheel, container(centre).center_x(Length::Fill), container(time).center_x(110)].align_y(Alignment::Center).height(108);
+    let show_wheel = f.width >= 330.0;
+    let mut top = row![].align_y(Alignment::Center).height(108);
+    if show_wheel {
+        top = top.push(wheel);
+    }
+    top = top.push(container(centre).center_x(Length::Fill));
+    if narrow {
+        if show_wheel {
+            // A little room on the right, across from the wheel.
+            top = top.push(Space::new().width(14));
+        }
+    } else {
+        top = top.push(container(time()).center_x(110));
+    }
 
     // Instruments: G-force with its two values, then the compass.
     let gx = sei.linear_acceleration_mps2_x / 9.81;

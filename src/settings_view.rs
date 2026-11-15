@@ -61,6 +61,7 @@ pub enum Change {
     Metric(bool),
     Mirror(bool),
     Blur(f32),
+    DockPlaybackPanels(bool),
     PlaceNames(bool),
     ShowDriveStats(bool),
     SentryGlow(bool),
@@ -76,6 +77,7 @@ pub enum Change {
     ResetCameraOrder,
     ViewChangelog,
     OpenSupportChat,
+    SaveDiagnostics,
     /// The list of clips shared from this computer.
     OpenSharedClips,
     /// Opens the licences (this app's and the third-party notices).
@@ -411,10 +413,13 @@ fn system_section<'a>(s: &'a Settings, ui: &'a Ui) -> Element<'a, Message> {
             container(
                 row![
                     small_button(t("ui.settings.openSupportChat"), Change::OpenSupportChat),
+                    small_button(t("ui.settings.saveDiagnostics"), Change::SaveDiagnostics),
                     small_button(t("ui.settings.viewChangelog"), Change::ViewChangelog),
                     small_button(t("ui.sharedClips.title"), Change::OpenSharedClips),
                 ]
-                .spacing(8),
+                .spacing(8)
+                .wrap()
+                .vertical_spacing(8),
             )
                 .padding([8, 0]),
         );
@@ -453,6 +458,7 @@ fn rows<'a>(s: &'a Settings, ui: &'a Ui, keys: &'a Shortcuts) -> Vec<Row<'a>> {
             select(s, Menu::TimeFormat),
         ),
         setting(Display, None, t("ui.settings.dateFormat"), None, select(s, Menu::DateFormat)),
+        setting(Display, None, t("ui.settings.dockPlaybackPanels"), None, toggle(s.dock_playback_panels, Change::DockPlaybackPanels)),
         setting(Display, None, t("ui.settings.dialogStyle"), Some(t("ui.settings.dialogStyleDesc")), select(s, Menu::DialogStyle)),
         setting(
             Display,
@@ -520,10 +526,10 @@ fn rows<'a>(s: &'a Settings, ui: &'a Ui, keys: &'a Shortcuts) -> Vec<Row<'a>> {
         ),
     ];
     // Fixed to Front Camera: only for the compact style (after its row).
-    if s.dashboard_compact {
-        // Language, metric, time, date, blur, overlay, style: then this.
+    if s.dashboard_compact && !s.dock_playback_panels {
+        // After the dashboard style.
         list.insert(
-            7,
+            9,
             setting(Playback, Some(Subtab::Dashboard), t("ui.settings.fixedToFrontCamera"), None, toggle(s.compact_fixed, Change::CompactFixed)),
         );
     }
@@ -563,7 +569,7 @@ fn rows<'a>(s: &'a Settings, ui: &'a Ui, keys: &'a Shortcuts) -> Vec<Row<'a>> {
         toggle(s.show_fsd_events, Change::ShowFsdEvents),
     ));
     list.push(Row { section: System, subtab: None, words: format!(
-            "{} {} {} {} {} {} {} {}",
+            "{} {} {} {} {} {} {} {} {}",
             t("ui.sharedClips.title"),
             t("ui.settings.appVersion"),
             t("ui.settings.architecture"),
@@ -571,7 +577,8 @@ fn rows<'a>(s: &'a Settings, ui: &'a Ui, keys: &'a Shortcuts) -> Vec<Row<'a>> {
             t("ui.settings.checkForUpdates"),
             t("ui.settings.viewChangelog"),
             t("ui.settings.openSource"),
-            t("ui.settings.openSupportChat")
+            t("ui.settings.openSupportChat"),
+            t("ui.settings.saveDiagnostics")
         ),
         view: system_section(s, ui),
     });

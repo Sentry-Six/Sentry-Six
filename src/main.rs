@@ -300,9 +300,10 @@ fn main() -> iced::Result {
         .title("Sentry Studio")
         .subscription(App::subscription)
         .theme(|_: &App| theme::theme())
+        .scale_factor(|_: &App| theme::ui_scale())
         .default_font(INTER)
         .window(iced::window::Settings {
-            size: Size::new(1440.0, 900.0),
+            size: INITIAL_WINDOW_SIZE,
             // The app's icon on the window (Linux). macOS takes the app
             // bundle's icon, Windows the .exe's (see win_icon).
             icon: if cfg!(any(target_os = "macos", windows)) {
@@ -352,6 +353,10 @@ pub(crate) enum Message {
     SeekDone,
     Skip(f64),
     Rate(Speed),
+    /// Where to save the diagnostics report (Settings), then whether it
+    /// was written.
+    DiagnosticsPicked(Option<std::path::PathBuf>),
+    DiagnosticsSaved(Result<(), String>),
     Tick,
     ShowTab(Tab),
     TogglePanel,
@@ -460,8 +465,10 @@ impl std::fmt::Display for Speed {
     }
 }
 
-/// The playback speeds.
-const SPEEDS: [Speed; 5] = [Speed(0.5), Speed(1.0), Speed(2.0), Speed(3.0), Speed(4.0)];
+/// The playback speeds. At 8x each camera decodes about 288 frames a
+/// second; where the drive or decoder can't keep up, the clock waits for
+/// the slowest camera (see player), so the cameras stay in step.
+const SPEEDS: [Speed; 6] = [Speed(0.5), Speed(1.0), Speed(2.0), Speed(3.0), Speed(4.0), Speed(8.0)];
 /// Where the floating clip browser sits (logical pixels from the window's
 /// top left), and the glass: saturate(185%), 24 px corners. The blur comes
 /// from the settings (13 px when none is set).
@@ -471,6 +478,10 @@ const GLASS_SATURATE: f32 = 1.85;
 const PANEL_RADIUS: f32 = 24.0;
 const COLLAPSED_RADIUS: f32 = 12.0;
 const DASH_RADIUS: f32 = 24.0;
+const INITIAL_WINDOW_SIZE: Size = Size::new(1440.0, 900.0);
+const SIDEBAR_PADDING: f32 = 10.0;
+const COLLAPSED_BROWSER_SIZE: f32 = 44.0;
+const MAP_SIZE: f32 = 260.0;
 /// The controls bar height: floating panels stay above it.
 const CONTROLS_HEIGHT: f32 = 60.0;
 /// Zoom: 1x-4x in 0.25x wheel steps; double-clicking a grid
@@ -850,6 +861,29 @@ impl App {
                 self.player.seek(t);
             }
             Message::Rate(s) => self.player.set_rate(s.0),
+            Message::DiagnosticsPicked(None) => {}
+            Message::DiagnosticsPicked(Some(path)) => {
+                // Collected only now, once a place to save it was chosen: the
+                // same report the support chat uploads (names in paths removed).
+                let snap = self.diagnostics_snapshot();
+                let failed = Err("the report stopped".to_string());
+                return Task::perform(
+                    off_thread_or(failed, move || std::fs::write(&path, diagnostics::report(&snap)).map_err(|e| e.to_string())),
+                    Message::DiagnosticsSaved,
+                );
+            }
+            Message::DiagnosticsSaved(result) => {
+                return match result {
+                    Ok(()) => {
+                        log::info!(target: "app", "diagnostics saved to a file");
+                        self.notify(i18n::t("app.diagnosticsSaved").to_string(), false)
+                    }
+                    Err(e) => {
+                        log::warn!(target: "app", "diagnostics: could not save ({e})");
+                        self.notify(format!("{} ({e})", i18n::t("app.diagnosticsSaveFailed")), true)
+                    }
+                };
+            }
             Message::Tick => {
                 self.player.tick();
                 self.animate_dashboard();
@@ -901,7 +935,11 @@ impl App {
             }
             Message::TilesUpdated(n) => return self.watch_tiles(n),
             Message::WindowSized(size) => {
+                let browser_width = self.browser_width();
                 self.window_size = Some(size);
+                if self.browser_width() != browser_width {
+                    self.relayout_drives();
+                }
                 #[cfg(windows)]
                 if !self.window_icon {
                     self.window_icon = win_icon::apply();
@@ -911,6 +949,7 @@ impl App {
             Message::TogglePanel => {
                 // Remembered, as earlier versions did.
                 self.panel_open = !self.panel_open;
+                self.drive_scroll.0 = 0.0;
                 self.settings.clips_collapsed = !self.panel_open;
                 settings::save(&self.settings);
             }
@@ -1068,6 +1107,13 @@ impl App {
                     }
                     Change::Mirror(b) => self.settings.mirror_cameras = b,
                     Change::Blur(px) => self.settings.glass_blur = px.round(),
+                    Change::DockPlaybackPanels(b) => {
+                        self.settings.dock_playback_panels = b;
+                        self.map_hover = false;
+                        self.drive_scroll.0 = 0.0;
+                        self.hovered_clip = None;
+                        self.relayout_drives();
+                    }
                     Change::PlaceNames(b) => {
                         self.settings.place_names = b;
                         // Off: nothing more is sent, not even what was queued.
@@ -1153,6 +1199,11 @@ impl App {
                             return Task::none();
                         }
                         return self.chat_update(support_view::ChatMsg::Toggle);
+                    }
+                    Change::SaveDiagnostics => {
+                        let name = format!("Sentry Studio diagnostics {}.txt", chrono::Local::now().format("%Y-%m-%d %H-%M"));
+                        let dialog = rfd::AsyncFileDialog::new().set_title(i18n::t("ui.settings.saveDiagnostics")).set_file_name(name).add_filter("Text", &["txt"]);
+                        return Task::perform(async move { dialog.save_file().await.map(|f| f.path().to_path_buf()) }, Message::DiagnosticsPicked);
                     }
                     Change::ViewChangelog => {
                         self.changelog = Some(update::changelog());
@@ -1468,7 +1519,8 @@ impl App {
         // 5 px around it (half the 10 px gap).
         let g = self.grid_size?;
         let m = video::MARGIN;
-        let cell = |x: f32, y: f32, w: f32, h: f32| Rectangle { x: m + x + m, y: m + y + m, width: w - 2.0 * m, height: h - 2.0 * m };
+        let stage_x = if self.sidebar_shown() { self.sidebar_width() } else { 0.0 };
+        let cell = |x: f32, y: f32, w: f32, h: f32| Rectangle { x: stage_x + x + 2.0 * m, y: y + 2.0 * m, width: w - 2.0 * m, height: h - 2.0 * m };
         match self.focus {
             Some(f) if f == slot => Some(cell(0.0, 0.0, g.width, g.height)),
             Some(_) => None,
@@ -1775,7 +1827,7 @@ impl App {
     /// in window coordinates, kept on screen above the controls.
     fn floating_dash_rect(&self) -> Option<Rectangle> {
         let s = &self.settings;
-        if !s.dashboard_enabled || (s.dashboard_compact && s.compact_fixed) || !self.player.has_media() || self.gm() {
+        if s.dock_playback_panels || !self.dashboard_visible() || (s.dashboard_compact && s.compact_fixed) {
             return None;
         }
         let window = self.window_size?;
@@ -1794,21 +1846,7 @@ impl App {
     /// The floating dashboard itself, placed over everything but dialogs.
     fn floating_dashboard(&self) -> Option<Element<'_, Message>> {
         let rect = self.floating_dash_rect()?;
-        let body: Element<'_, Message> = if self.settings.dashboard_compact {
-            dashboard::compact(self.dash(0.74))
-        } else {
-            dashboard::full(
-                self.dash(1.0),
-                dashboard::Full {
-                    trail: &self.gforce_trail,
-                    t: self.epoch.elapsed().as_secs_f32(),
-                    details_open: self.dash_details,
-                    on_toggle_details: Message::DashDetails,
-                },
-            )
-        };
-        let panel = dashboard::frame(body).width(rect.width).height(rect.height).clip(true);
-        // Dragged anywhere (buttons still click).
+        let panel = self.dashboard_panel(rect.size());
         let panel = tile_input::tile_input(panel).on_drag(Message::DashDrag).grab(true);
         Some(
             container(panel)
@@ -1817,6 +1855,28 @@ impl App {
                 .height(Length::Fill)
                 .into(),
         )
+    }
+
+    fn dashboard_visible(&self) -> bool {
+        self.settings.dashboard_enabled && self.player.has_media() && !self.gm()
+    }
+
+    fn dashboard_panel(&self, size: Size) -> Element<'_, Message> {
+        let body: Element<'_, Message> = if self.settings.dashboard_compact {
+            dashboard::compact(self.dash((size.width / dashboard::COMPACT_FLOATING.width * 0.74).min(0.74)))
+        } else {
+            dashboard::full(
+                self.dash(1.0),
+                dashboard::Full {
+                    width: size.width,
+                    trail: &self.gforce_trail,
+                    t: self.epoch.elapsed().as_secs_f32(),
+                    details_open: self.dash_details,
+                    on_toggle_details: Message::DashDetails,
+                },
+            )
+        };
+        dashboard::frame(body).width(size.width).height(size.height).clip(true).into()
     }
 
     /// Wakes the app when map tiles arrive, then waits for the next ones.
@@ -1845,12 +1905,12 @@ impl App {
 
     /// The map panel (260 px square), kept on screen above the controls.
     fn map_rect(&self) -> Option<Rectangle> {
-        if !self.map_visible() {
+        if self.settings.dock_playback_panels || !self.map_visible() {
             return None;
         }
         let window = self.window_size?;
         let anchor = self.map_anchor();
-        let size = 260.0;
+        let size = MAP_SIZE;
         Some(Rectangle {
             x: (anchor.x + self.map_offset.x).clamp(0.0, (window.width - size).max(0.0)),
             y: (anchor.y + self.map_offset.y).clamp(0.0, (window.height - CONTROLS_HEIGHT - size).max(0.0)),
@@ -1940,10 +2000,19 @@ impl App {
         Task::none()
     }
 
-    /// The map panel: the map, and on hover the hint, re-centre and
-    /// heading-up / north-up buttons; the credits along the bottom.
-    fn map_panel(&self) -> Option<Element<'_, Message>> {
+    fn floating_map(&self) -> Option<Element<'_, Message>> {
         let rect = self.map_rect()?;
+        Some(
+            container(self.map_panel(rect.size())?)
+                .padding(Padding { top: rect.y, left: rect.x, ..Padding::ZERO })
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .into(),
+        )
+    }
+
+    /// The map, its hover controls and attribution.
+    fn map_panel(&self, size: Size) -> Option<Element<'_, Message>> {
         let sei = self.front_telemetry();
         let car = sei.and_then(map::car);
         let (route, events) = self.map_route();
@@ -1968,7 +2037,7 @@ impl App {
         };
         // The map fills the glass panel inside its 1 px border; tiles are
         // clipped to its rounded corners, the route and arrow drawn above.
-        let inner = rect.width - 2.0;
+        let inner = Size::new(size.width - 2.0, size.height - 2.0);
         let radius = DASH_RADIUS - 1.0;
         let tiles = map::TileLayer {
             tiles: &self.tiles,
@@ -1980,7 +2049,7 @@ impl App {
         };
         let mut layers = stack![
             map::vector::view(&self.vector_tiles, tiles, inner),
-            iced::widget::canvas(view).width(inner).height(inner),
+            iced::widget::canvas(view).width(inner.width).height(inner.height),
         ];
         let attribution = self.tiles.index().map(|i| i.attribution)
             .or_else(|| self.vector_tiles.attribution().map(str::to_owned)).unwrap_or_default();
@@ -2001,12 +2070,14 @@ impl App {
             );
         }
         if self.map_hover {
-            layers = layers.push(
-                container(container(text(i18n::t("ui.map.hint")).size(10)).padding([4, 8]).style(theme::map_hint))
-                    .width(Length::Fill)
-                    .padding(Padding { top: 8.0, ..Padding::ZERO })
-                    .align_x(Horizontal::Center),
-            );
+            if !self.settings.dock_playback_panels {
+                layers = layers.push(
+                    container(container(text(i18n::t("ui.map.hint")).size(10)).padding([4, 8]).style(theme::map_hint))
+                        .width(Length::Fill)
+                        .padding(Padding { top: 8.0, ..Padding::ZERO })
+                        .align_x(Horizontal::Center),
+                );
+            }
             let recenter = button(container(svg_icon(RECENTER_SVG, 16.0, theme::TEXT_SECONDARY)).center(Length::Fill))
                 .width(32)
                 .height(32)
@@ -2040,16 +2111,13 @@ impl App {
                     .align_y(Vertical::Bottom),
             );
         }
-        let panel = container(layers).padding(1).width(rect.width).height(rect.height).style(theme::dashboard_glass);
-        let panel = tile_input::tile_input(panel).on_drag(Message::MapDrag).grab(true);
-        let panel = mouse_area(panel).on_enter(Message::MapHover(true)).on_exit(Message::MapHover(false));
-        Some(
-            container(panel)
-                .padding(Padding { top: rect.y, left: rect.x, ..Padding::ZERO })
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .into(),
-        )
+        let panel = container(layers).padding(1).width(size.width).height(size.height).style(theme::dashboard_glass);
+        let panel: Element<'_, Message> = if self.settings.dock_playback_panels {
+            panel.into()
+        } else {
+            tile_input::tile_input(panel).on_drag(Message::MapDrag).grab(true).into()
+        };
+        Some(mouse_area(panel).on_enter(Message::MapHover(true)).on_exit(Message::MapHover(false)).into())
     }
 
     /// Shows a toast: 3.2 s, or 5.5 s for an error.
@@ -2113,7 +2181,7 @@ impl App {
         self.drive_shown = (0..self.drives.len())
             .filter(|&i| needle.is_empty() || self.drives[i].tags.iter().any(|t| t.to_lowercase().contains(&needle)))
             .collect();
-        let (rows, tops, total) = drive_list::layout(&self.drives, &self.drive_shown, self.metric(), self.settings.show_drive_stats, &self.footage_days);
+        let (rows, tops, total) = drive_list::layout(&self.drives, &self.drive_shown, self.metric(), self.settings.show_drive_stats, &self.footage_days, self.browser_width());
         self.drive_rows = rows;
         self.drive_tops = tops;
         self.drive_total = total;
@@ -2221,23 +2289,87 @@ impl App {
         Subscription::batch([frames, iced::event::listen_with(input_event)])
     }
 
+    fn sidebar_width(&self) -> f32 {
+        let window_width = self.window_size.unwrap_or(INITIAL_WINDOW_SIZE).width;
+        // Split the space inside the gutters between the dock and three camera tiles.
+        let tile_width = (window_width - SIDEBAR_PADDING - 8.0 * video::MARGIN) / 4.0;
+        (tile_width + SIDEBAR_PADDING).clamp(0.0, window_width)
+    }
+
+    /// The docked sidebar is on screen: docked, and not collapsed (which
+    /// hides the whole column, the dashboard and map with it, and leaves
+    /// the cameras the full width and the expand button over them).
+    fn sidebar_shown(&self) -> bool {
+        self.settings.dock_playback_panels && self.panel_open
+    }
+
+    fn browser_width(&self) -> f32 {
+        if self.settings.dock_playback_panels {
+            (self.sidebar_width() - SIDEBAR_PADDING).max(0.0)
+        } else {
+            drive_list::BROWSER_WIDTH
+        }
+    }
+
+    fn docked_sidebar<'a>(&'a self, toasts: Option<Element<'a, Message>>) -> Element<'a, Message> {
+        let window = self.window_size.unwrap_or(INITIAL_WINDOW_SIZE);
+        let width = self.sidebar_width();
+        let inner_width = self.browser_width();
+        let inner_height = (window.height - CONTROLS_HEIGHT - 2.0 * SIDEBAR_PADDING).max(0.0);
+        let browser = container(self.clip_browser()).center_x(Length::Fill).height(Length::Fill).clip(true);
+        let mut panels = column![].spacing(SIDEBAR_PADDING).align_x(Alignment::Center).width(Length::Fill);
+        let show_dash = self.dashboard_visible();
+        if show_dash {
+            let height = if self.settings.dashboard_compact {
+                dashboard::COMPACT_FLOATING.height
+            } else {
+                dashboard::full_size(self.dash_details).height
+            };
+            panels = panels.push(self.dashboard_panel(Size::new(inner_width, height)));
+        }
+        let map_height = inner_width.min(MAP_SIZE);
+        let map = if self.map_visible() && map_height > 2.0 {
+            self.map_panel(Size::new(inner_width, map_height))
+        } else {
+            None
+        };
+        let mut sidebar = column![browser].spacing(SIDEBAR_PADDING);
+        if show_dash || map.is_some() {
+            if let Some(map) = map {
+                panels = panels.push(map);
+            }
+            let max_height = inner_height * 0.60;
+            sidebar = sidebar.push(
+                container(
+                    scrollable(panels)
+                        .width(Length::Fill)
+                        .height(Length::Shrink)
+                        .direction(scrollable::Direction::Vertical(scrollable::Scrollbar::new().width(6).scroller_width(6)))
+                        .style(theme::thin_scroll),
+                )
+                .max_height(max_height),
+            );
+        }
+        let padding = Padding {
+            top: SIDEBAR_PADDING, right: 0.0, bottom: SIDEBAR_PADDING, left: SIDEBAR_PADDING,
+        };
+        let mut layers = stack![container(sidebar).padding(padding).width(Length::Fill).height(Length::Fill)];
+        if let Some(toasts) = toasts {
+            layers = layers.push(toasts);
+        }
+        container(layers).width(width).height(Length::Fill).clip(true).into()
+    }
+
     fn view(&self) -> Element<'_, Message> {
-        // The clip browser floats over the top-left of the camera grid,
-        // which keeps the full width.
-        let browser: Element<'_, Message> = if self.panel_open { self.clip_browser() } else { self.collapsed_browser() };
-        // Reports the panel's size so the video under it can be frosted.
-        // Opaque: clicks and scrolls on the panel never reach the camera below.
-        let browser = sensor(iced::widget::opaque(browser)).on_show(Message::PanelSized).on_resize(Message::PanelSized);
-        let floating = container(browser)
-            .padding(Padding { top: PANEL_Y, right: 0.0, bottom: 24.0, left: PANEL_X })
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .align_x(Horizontal::Left)
-            .align_y(Vertical::Top);
+        let docked = self.sidebar_shown();
         let mut stage = stack![container(self.camera_grid()).padding(video::MARGIN)].height(Length::Fill);
         // No folder open yet: a click anywhere picks one (not under the
-        // first-run notice, whose glass would show it through).
-        if self.root.is_none() && !self.scanning && !self.privacy_pending() {
+        // first-run notice, whose glass would show it through). Under any
+        // other dialog only the dimming stays: the prompt sits where dialogs
+        // open, and its text would show through their glass.
+        if self.root.is_none() && !self.scanning && !self.privacy_pending() && self.dialog_open() {
+            stage = stage.push(container(space()).width(Length::Fill).height(Length::Fill).style(theme::overlay(0.55)));
+        } else if self.root.is_none() && !self.scanning && !self.privacy_pending() {
             let prompt = column![
                 icon(theme::icon::FOLDER, 48.0).color(theme::TEXT_MUTED),
                 text(i18n::t("ui.dropOverlay.message")).size(14),
@@ -2249,8 +2381,17 @@ impl App {
         }
         // Under a dialog the panel steps aside: the dialog frosts the video,
         // but iced can't frost the panel's text, which would show through.
-        if !self.panel_under_dialog() {
-            stage = stage.push(floating);
+        if !docked && !self.panel_under_dialog() {
+            let browser = if self.panel_open { self.clip_browser() } else { self.collapsed_browser() };
+            let browser = sensor(iced::widget::opaque(browser)).on_show(Message::PanelSized).on_resize(Message::PanelSized);
+            stage = stage.push(
+                container(browser)
+                    .padding(Padding { top: PANEL_Y, right: 0.0, bottom: 24.0, left: PANEL_X })
+                    .width(Length::Fill)
+                    .height(Length::Fill)
+                    .align_x(Horizontal::Left)
+                    .align_y(Vertical::Top),
+            );
         }
         if self.file_hover {
             stage = stage.push(
@@ -2278,7 +2419,7 @@ impl App {
                     .style(theme::overlay(0.85)),
             );
         }
-        if !self.toasts.is_empty() {
+        let mut toasts = (!self.toasts.is_empty()).then(|| {
             // Toasts: bottom left, above the controls.
             let list = self.toasts.iter().fold(Column::new().spacing(10), |col, (_, msg)| {
                 col.push(
@@ -2292,24 +2433,36 @@ impl App {
                     .style(theme::toast),
                 )
             });
-            stage = stage.push(
-                container(list)
-                    .padding(Padding { left: 16.0, bottom: 16.0, ..Padding::ZERO })
-                    .width(Length::Fill)
-                    .height(Length::Fill)
-                    .align_x(Horizontal::Left)
-                    .align_y(Vertical::Bottom),
-            );
+            container(list)
+                .padding(Padding { left: 16.0, right: if docked { 16.0 } else { 0.0 }, bottom: 16.0, top: 0.0 })
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .align_x(Horizontal::Left)
+                .align_y(Vertical::Bottom)
+                .into()
+        });
+        if !docked {
+            if let Some(toasts) = toasts.take() {
+                stage = stage.push(toasts);
+            }
         }
         if let Some((from, at)) = self.camera_drag {
             // A camera being dragged: its name by the pointer.
             let name = self.camera_label(self.camera_at(from));
+            let stage_x = if docked { self.sidebar_width() } else { 0.0 };
             stage = stage.push(
                 container(container(text(name).size(12).font(semibold(INTER)).color(iced::Color::WHITE)).padding([6, 12]).style(theme::drag_indicator))
-                    .padding(Padding { top: at.y + 12.0, left: at.x + 12.0, ..Padding::ZERO }),
+                    .padding(Padding { top: at.y + 12.0, left: (at.x - stage_x + 12.0).max(0.0), ..Padding::ZERO }),
             );
         }
-        let app = container(column![stage, self.controls()])
+        let playback: Element<'_, Message> = if docked {
+            row![self.docked_sidebar(toasts), container(stage).width(Length::Fill).height(Length::Fill).clip(true)]
+                .height(Length::Fill)
+                .into()
+        } else {
+            stage.into()
+        };
+        let app = container(column![playback, self.controls()])
             .width(Length::Fill)
             .height(Length::Fill)
             .style(theme::app_background);
@@ -2320,7 +2473,7 @@ impl App {
         // the video, so the floating map and dashboard step aside instead.
         let dialog_open = self.dialog_open();
         if !dialog_open {
-            if let Some(map) = self.map_panel() {
+            if let Some(map) = self.floating_map() {
                 app = app.push(map);
             }
             if let Some(dash) = self.floating_dashboard() {
@@ -2465,6 +2618,7 @@ impl App {
     }
 
     fn clip_browser(&self) -> Element<'_, Message> {
+        let width = self.browser_width();
         let clips: usize = self.items.iter().map(|i| i.segments.len()).sum();
         let subtitle = match (&self.root, &self.day) {
             (None, _) => i18n::t("ui.clipBrowser.subtitle").to_string(),
@@ -2586,6 +2740,7 @@ impl App {
             Tab::Drives => {
                 let list = drive_list::view(
                     drive_list::ListView {
+                        browser_width: self.browser_width(),
                         drives: &self.drives,
                         rows: &self.drive_rows,
                         tops: &self.drive_tops,
@@ -2624,7 +2779,12 @@ impl App {
                 self.items
                     .iter()
                     .enumerate()
-                    .fold(Column::new().spacing(8), |col, (i, item)| col.push(clip_card(item, i, self.selected == Some(i), self.hovered_clip == Some(i), self.event_previews.get(&item.collection.dir).cloned().flatten())))
+                    .fold(Column::new().spacing(8), |col, (i, item)| {
+                        col.push(clip_card(
+                            item, i, self.selected == Some(i), self.hovered_clip == Some(i),
+                            self.event_previews.get(&item.collection.dir).cloned().flatten(),
+                        ))
+                    })
                     .padding([2, 12]),
             )
             .direction(scrollable::Direction::Vertical(scrollable::Scrollbar::new().width(6).scroller_width(6).margin(3)))
@@ -2642,27 +2802,28 @@ impl App {
         // otherwise the panel fits its content.
         let tall = self.tab == Tab::Drives && !self.drives.is_empty();
         container(panel.push(space().height(12)))
-            .width(340)
+            .width(width)
             .height(if tall { Length::Fill } else { Length::Shrink })
             .clip(true)
             .style(theme::panel)
             .into()
     }
 
-    /// The collapsed panel: a 44 px glass square with the chevron.
+    /// The collapsed browser's expand button.
     fn collapsed_browser(&self) -> Element<'_, Message> {
+        let width = COLLAPSED_BROWSER_SIZE;
         container(theme::tip(
             button(container(icon(theme::icon::CHEVRON_LEFT, 20.0)).center(Length::Fill))
-                .width(44)
-                .height(44)
+                .width(width)
+                .height(COLLAPSED_BROWSER_SIZE)
                 .padding(0)
                 .style(theme::collapsed_button)
                 .on_press(Message::TogglePanel),
             i18n::t("ui.clipBrowser.expandPanel"),
             Right,
         ))
-        .width(44)
-        .height(44)
+        .width(width)
+        .height(COLLAPSED_BROWSER_SIZE)
         .style(theme::panel_radius(COLLAPSED_RADIUS))
         .into()
     }
@@ -2709,14 +2870,14 @@ impl App {
             // The player's tile for this camera (its tiles follow GRID).
             let idx = GRID.iter().position(|c| *c == camera).unwrap_or(slot);
             let picture = self.player.shown(idx).map(|s| (s.id, s.frame.clone()));
-            let glass = self.panel_size.filter(|_| !self.panel_under_dialog()).map(|size| video::Glass {
+            let glass = self.panel_size.filter(|_| !self.sidebar_shown() && !self.panel_under_dialog()).map(|size| video::Glass {
                 rect: Rectangle::new(iced::Point::new(PANEL_X, PANEL_Y), size),
                 radius: if self.panel_open { PANEL_RADIUS } else { COLLAPSED_RADIUS },
                 blur: self.settings.glass_blur,
                 saturate: GLASS_SATURATE,
             });
             let is_front = camera == library::Camera::Front;
-            let fixed_compact = self.settings.dashboard_enabled && self.settings.dashboard_compact && self.settings.compact_fixed && !self.gm();
+            let fixed_compact = !self.settings.dock_playback_panels && self.settings.dashboard_enabled && self.settings.dashboard_compact && self.settings.compact_fixed && !self.gm();
             let dash_rect = if is_front && fixed_compact && self.player.slot_active(idx) { self.dashboard_rect(slot) } else { None };
             let mut glass2 = dash_rect.map(|(rect, _)| video::Glass {
                 rect,

@@ -44,6 +44,15 @@ pub fn semibold(f: Font) -> Font {
     Font { weight: cjk_weight(Weight::Semibold), ..f }
 }
 
+/// How much larger than the system's scale the interface is drawn. On
+/// Windows, small Korean, Japanese and Chinese text comes out softer and
+/// smaller-looking than the system draws it (Electron, at the same sizes,
+/// used Windows' own text renderer), so in those languages the whole
+/// interface is drawn 15% larger.
+pub fn ui_scale() -> f32 {
+    if cfg!(windows) && matches!(crate::i18n::language(), "ko" | "ja" | "zh") { 1.15 } else { 1.0 }
+}
+
 /// On Windows, Korean, Japanese and Chinese text falls back to Malgun
 /// Gothic, Yu Gothic or Microsoft YaHei, which have no Medium or Semibold
 /// face; asked for one at small sizes, Korean came out squashed and
