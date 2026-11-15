@@ -152,32 +152,6 @@ fn icons() -> &'static Icons {
     })
 }
 
-/// The dashboard's icons, for the export's Tesla Mobile bar.
-pub struct IconSet {
-    pub brake_on: image::Handle,
-    pub brake_off: image::Handle,
-    pub wheel_on: image::Handle,
-    pub wheel_off: image::Handle,
-    pub accel_on: image::Handle,
-    pub accel_off: image::Handle,
-    pub blink_left: svg::Handle,
-    pub blink_right: svg::Handle,
-}
-
-pub fn icon_set() -> IconSet {
-    let i = icons();
-    IconSet {
-        brake_on: i.brake_on.clone(),
-        brake_off: i.brake_off.clone(),
-        wheel_on: i.wheel_on.clone(),
-        wheel_off: i.wheel_off.clone(),
-        accel_on: i.white.on.clone(),
-        accel_off: i.accel_off.clone(),
-        blink_left: i.blink_left.clone(),
-        blink_right: i.blink_right.clone(),
-    }
-}
-
 /// The gear's letter (P, D, R, N).
 pub fn gear_letter(g: i32) -> &'static str {
     match g {

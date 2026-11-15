@@ -10,6 +10,7 @@ pub use share_ui::{ShareMsg, ShareUi};
 use crate::export::encode::{Format, Support};
 use crate::export::job::{self, Position, Quality, Tile};
 use crate::export::layout::{Layout, Overlays, Rect};
+use crate::export::tesla_mobile::{SignalFlasher, SignalLight};
 use crate::export::overlay::{Corner, DashSize, DashSizes, DashStyle, Dashboard, MapTiles, Minimap, Timestamp, Watermark};
 
 /// The minimap's corners, as earlier versions offered them.
@@ -244,6 +245,8 @@ pub struct Export {
     /// The dashboard's size as a share (see Dashboard::share).
     pub dash_share: f64,
     pub dash_style: DashStyle,
+    mobile_flasher: SignalFlasher,
+    mobile_signals: [SignalLight; 2],
     /// Tesla Mobile's data bar on top.
     pub bar_top: bool,
     pub minimap: bool,
@@ -334,6 +337,8 @@ impl Default for Export {
             dash_corner: Corner::BottomCenter,
             dash_share: DashSize::Medium.share(),
             dash_style: DashStyle::Compact,
+            mobile_flasher: SignalFlasher::default(),
+            mobile_signals: [SignalLight::Off; 2],
             bar_top: false,
             minimap: false,
             map_corner: Corner::TopRight,
@@ -816,6 +821,10 @@ impl App {
             self.export.at = Some(t.clamp(a, b));
             return self.refresh_preview();
         }
+        if self.export.dash_style == DashStyle::TeslaMobile {
+            let active = SignalFlasher::active(self.front_telemetry());
+            self.export.mobile_signals = self.export.mobile_flasher.sample((t * 1000.0) as u128, active);
+        }
         self.export.at = Some(t.max(a));
         Task::none()
     }
@@ -842,6 +851,7 @@ impl App {
             ExportMsg::Seek(t) => {
                 self.export.at = Some(t);
                 if self.export.playing {
+                    self.export.mobile_flasher = SignalFlasher::default();
                     self.player.seek(t);
                 }
             }
@@ -851,6 +861,7 @@ impl App {
                     let t = (from + d).clamp(a, b);
                     self.export.at = Some(t);
                     if self.export.playing {
+                        self.export.mobile_flasher = SignalFlasher::default();
                         self.player.seek(t);
                     }
                 }
@@ -865,6 +876,7 @@ impl App {
                     if self.export.at.is_none_or(|t| t >= b - 0.05 || t < a) {
                         self.export.at = Some(a);
                     }
+                    self.export.mobile_flasher = SignalFlasher::default();
                     self.player.seek(self.export.at.unwrap_or(a));
                     self.player.set_playing(true);
                     return Task::none();
@@ -1694,8 +1706,8 @@ impl App {
                 layers = place(layers, of(item), crate::export::tesla_mobile::date_bar(line, d.sizes.date));
             }
             if let Some(item) = find(Dragged::Dashboard) {
-                let state = DashState { telemetry: telemetry.cloned(), time: String::new(), steering: self.steering, blink_ms: self.epoch.elapsed().as_millis() % 700 };
-                layers = place(layers, of(item), crate::export::tesla_mobile::data_bar(state, self.metric(), !d.bar_on_top(), (d.sizes.label, d.sizes.value)));
+                let state = DashState { telemetry: telemetry.cloned(), mobile_signals: self.export.mobile_signals, ..Default::default() };
+                layers = place(layers, of(item), crate::export::tesla_mobile::data_bar(state, self.metric(), (d.sizes.label, d.sizes.value)));
             }
         }
         // The time.

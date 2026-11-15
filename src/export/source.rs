@@ -220,13 +220,25 @@ impl Clip {
 /// Each output frame's telemetry, from the front camera's clip (or the
 /// first one there is): the SEI in the sample shown at that time. Only
 /// the start of each sample is read (the SEI comes before the picture).
-/// A frame without any holds the last one for up to 3 s, as earlier
-/// versions did; after that there is none (PARKED).
+/// A frame without SEI can still supply the last reading for consumers
+/// that hold telemetry across brief gaps.
 pub struct Telemetry {
     segment: Option<usize>,
     clip: Option<(std::fs::File, VideoTrack)>,
     last: Option<(f64, crate::sei::SeiMetadata)>,
     buf: Vec<u8>,
+}
+
+#[derive(Default)]
+pub struct TelemetryFrame {
+    pub with_hold: Option<crate::sei::SeiMetadata>,
+    fresh: bool,
+}
+
+impl TelemetryFrame {
+    pub fn current(&self) -> Option<&crate::sei::SeiMetadata> {
+        self.with_hold.as_ref().filter(|_| self.fresh)
+    }
 }
 
 impl Default for Telemetry {
@@ -245,7 +257,7 @@ impl Telemetry {
 
     /// `segment_start`: the minute's start (seconds), so the hold carries
     /// across minutes.
-    pub fn at(&mut self, segments: &[Segment], segment: usize, t: f64) -> Option<crate::sei::SeiMetadata> {
+    pub fn at(&mut self, segments: &[Segment], segment: usize, t: f64) -> TelemetryFrame {
         let now = segments.get(segment).map(|s| s.start as f64).unwrap_or(0.0) + t;
         if self.segment != Some(segment) {
             self.segment = Some(segment);
@@ -256,6 +268,7 @@ impl Telemetry {
                 Some((f, track))
             });
         }
+        let mut fresh = false;
         if let Some((file, track)) = &self.clip {
             if !track.samples.is_empty() {
                 let s = track.samples[track.sample_at(t)];
@@ -264,11 +277,13 @@ impl Telemetry {
                 if crate::mp4::read_at(file, &mut self.buf, s.offset).is_ok() {
                     if let Some(m) = crate::telemetry::sample_telemetry(&self.buf, track.nal_length_size as usize, track.codec) {
                         self.last = Some((now, m));
+                        fresh = true;
                     }
                 }
             }
         }
-        self.last.as_ref().filter(|(at, _)| (now - at).abs() <= Self::HOLD).map(|(_, m)| m.clone())
+        let with_hold = self.last.as_ref().filter(|(at, _)| (now - at).abs() <= Self::HOLD).map(|(_, m)| m.clone());
+        TelemetryFrame { with_hold, fresh }
     }
 }
 

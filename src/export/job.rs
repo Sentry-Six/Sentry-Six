@@ -629,7 +629,7 @@ fn encode_all(
         let mut seen = std::collections::HashSet::new();
         let mut points: Vec<(usize, f64)> = plan.frames.iter().copied().filter(|(s, _)| seen.insert(*s)).collect();
         points.push(plan.frames[plan.frames.len() / 2]);
-        if !points.into_iter().any(|(s, t)| probe.at(&req.segments, s, t).is_some()) {
+        if !points.into_iter().any(|(s, t)| probe.at(&req.segments, s, t).with_hold.is_some()) {
             log::warn!("export: no telemetry in this range; exporting without the dashboard");
             warnings.push("ui.notifications.noTelemetryData");
             dashboard = None;
@@ -704,7 +704,7 @@ fn encode_all(
     // The dashboard's telemetry, read ahead on its own thread (a sample's
     // first few KB each frame: round trips on a network share).
     let telemetry = (dashboard.is_some() || req.minimap.is_some()).then(|| {
-        let (tx, rx) = mpsc::sync_channel::<Option<crate::sei::SeiMetadata>>(256);
+        let (tx, rx) = mpsc::sync_channel(256);
         let (frames, segments, cancel) = (frames.clone(), segments.clone(), cancel.clone());
         let _ = std::thread::Builder::new().name("export-telemetry".into()).spawn(move || {
             let mut reader = super::source::Telemetry::new();
@@ -720,6 +720,8 @@ fn encode_all(
     // from when they come on, frame by frame, as earlier versions did.
     let mut steering: Option<f32> = None;
     let mut blink_from: [Option<usize>; 2] = [None, None];
+    use super::tesla_mobile::SignalFlasher;
+    let mut mobile_flasher = SignalFlasher::default();
     let ease = 1.0 - (-45.0f32 * req.speed.max(0.01) as f32 / FPS as f32).exp();
     // The minimap: the route's map, drawn once, and the arrow on it.
     let minimap = match (&req.minimap, layout.map, painter.as_mut()) {
@@ -794,23 +796,31 @@ fn encode_all(
                 stamp = Some((wall, compositor.overlay(&picture, old)));
             }
         }
-        let m = match telemetry.as_ref() {
+        let telemetry_frame = match telemetry.as_ref() {
             Some(rx) => rx.recv().map_err(|_| anyhow!("the telemetry reader stopped"))?,
-            None => None,
+            None => super::source::TelemetryFrame::default(),
         };
-        let car = m.as_ref().and_then(crate::map::car);
+        let held = telemetry_frame.with_hold.as_ref();
+        let car = held.and_then(crate::map::car);
         if let Some(d) = dashboard {
             if let Some(p) = painter.as_mut() {
+                let mobile = d.style == super::overlay::DashStyle::TeslaMobile;
+                let m = if mobile { telemetry_frame.current() } else { held };
                 let (segment, secs) = frames[k];
                 let wall = req.segments[segment].start + secs.floor() as i64;
-                let target = m.as_ref().map(|m| m.steering_wheel_angle as f32).unwrap_or(0.0);
+                let target = m.map(|m| m.steering_wheel_angle as f32).unwrap_or(0.0);
                 let angle = steering.map_or(target, |a| a + (target - a) * ease);
                 steering = Some(angle);
                 let mut blink_ms = 0;
-                for (i, on) in [m.as_ref().is_some_and(|m| m.blinker_on_left), m.as_ref().is_some_and(|m| m.blinker_on_right)].into_iter().enumerate() {
-                    blink_from[i] = if on { Some(blink_from[i].unwrap_or(k)) } else { None };
-                    if let Some(from) = blink_from[i] {
-                        blink_ms = ((k - from) as u128 * 1000 / FPS as u128) % 700;
+                let mut mobile_signals = Default::default();
+                if mobile {
+                    mobile_signals = mobile_flasher.sample(k as u128 * 1000 / FPS as u128, SignalFlasher::active(m));
+                } else {
+                    for (i, on) in [m.is_some_and(|m| m.blinker_on_left), m.is_some_and(|m| m.blinker_on_right)].into_iter().enumerate() {
+                        blink_from[i] = if on { Some(blink_from[i].unwrap_or(k)) } else { None };
+                        if let Some(from) = blink_from[i] {
+                            blink_ms = ((k - from) as u128 * 1000 / FPS as u128) % 700;
+                        }
                     }
                 }
                 // The compact style shows the date with the time (Tesla Mobile has a
@@ -819,11 +829,11 @@ fn encode_all(
                     super::overlay::DashStyle::Compact => crate::dashboard::date_and_time(wall, d.h24, d.date_format),
                     _ => crate::dashboard::time_of_day(wall.rem_euclid(86400), d.h24),
                 };
-                let state = super::overlay::DashState { telemetry: m.clone(), time, steering: angle, blink_ms };
-                let signature = state.signature(d.metric);
+                let state = super::overlay::DashState { telemetry: m.cloned(), time, steering: angle, blink_ms, mobile_signals };
+                let signature = state.signature(d.metric, d.style);
                 if dash.as_ref().map(|(s, _)| s) != Some(&signature) {
                     let picture = match (d.style, layout.dashboard) {
-                        (super::overlay::DashStyle::TeslaMobile, Some(r)) => super::tesla_mobile::paint_data(p, r.w as u32, r.h as u32, &state, d.metric, !d.bar_on_top(), (d.sizes.label, d.sizes.value)),
+                        (super::overlay::DashStyle::TeslaMobile, Some(r)) => super::tesla_mobile::paint_data(p, r.w as u32, r.h as u32, &state, d.metric, (d.sizes.label, d.sizes.value)),
                         _ => d.paint(p, &state, layout.grid.0),
                     };
                     if capture.is_some() {
