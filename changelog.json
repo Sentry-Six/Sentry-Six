@@ -1,6 +1,37 @@
 {
   "versions": [
     {
+      "version": "2026.46.6",
+      "date": "2026-11-15",
+      "title": "Sidebar and 8x",
+      "changes": [
+        {
+          "type": "feature",
+          "description": "Settings > Display: Dock Panels into a Sidebar puts the clips panel, map and dashboard in a column beside the cameras."
+        },
+        {
+          "type": "feature",
+          "description": "Playback goes up to 8x."
+        },
+        {
+          "type": "feature",
+          "description": "Settings > System: Save Diagnostics saves the support report to a file you can send."
+        },
+        {
+          "type": "improvement",
+          "description": "Korean, Japanese and Chinese: the interface is larger on Windows, so small text is easier to read."
+        },
+        {
+          "type": "fix",
+          "description": "Windows: an export the graphics card's encoder fails on is tried again in software instead of stopping."
+        },
+        {
+          "type": "fix",
+          "description": "With no folder open, the folder prompt no longer shows through Settings."
+        }
+      ]
+    },
+    {
       "version": "2026.46.5",
       "date": "2026-11-14",
       "title": "Date and Korean Text",
