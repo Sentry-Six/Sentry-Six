@@ -534,6 +534,7 @@ struct App {
     /// panel's drag offset, whether the pointer is over it, and the playing
     /// clip's route (when no drive is selected).
     tiles: map::tiles::Tiles,
+    vector_tiles: map::vector::VectorTiles,
     map_zoom: f32,
     map_pan: (f64, f64),
     /// The map follows the car; a drag stops that until Re-centre or the
@@ -606,6 +607,8 @@ struct App {
 
 impl App {
     fn boot() -> (Self, Task<Message>) {
+        let map_cache = settings::data_dir().map(|dir| dir.join("map"));
+        let tiles = map::tiles::Tiles::new(map_cache.clone());
         let app = App {
             player: Player::new(),
             root: None,
@@ -639,7 +642,8 @@ impl App {
             dash_details: false,
             window_size: None,
             window_icon: false,
-            tiles: map::tiles::Tiles::new(settings::data_dir().map(|d| d.join("map"))),
+            tiles: tiles.clone(),
+            vector_tiles: map::vector::VectorTiles::new(map_cache, tiles),
             map_zoom: map::DEFAULT_ZOOM,
             map_pan: (0.0, 0.0),
             map_follow: true,
@@ -1975,10 +1979,11 @@ impl App {
             radius,
         };
         let mut layers = stack![
-            iced::widget::canvas(tiles).width(inner).height(inner),
+            map::vector::view(&self.vector_tiles, tiles, inner),
             iced::widget::canvas(view).width(inner).height(inner),
         ];
-        let attribution = self.tiles.index().map(|i| i.attribution).unwrap_or_default();
+        let attribution = self.tiles.index().map(|i| i.attribution)
+            .or_else(|| self.vector_tiles.attribution().map(str::to_owned)).unwrap_or_default();
         if !attribution.is_empty() {
             // Opens the credits' page, as the links in earlier versions did.
             let credit = mouse_area(container(text(attribution).size(8).center().color(iced::Color { a: 0.75, ..iced::Color::WHITE })).padding([1, 4]).style(theme::map_credit))

@@ -1,14 +1,14 @@
 //! The GPS map: a floating 260 px panel with the drive or
 //! clip's route (green where Autopilot / FSD drove, blue otherwise), start
 //! and end dots, FSD disengagement (D) and accelerator push (A) markers,
-//! and the car's arrow, which the map follows. Heading-up turns the whole
-//! map under the arrow (labels included);
-//! north-up turns the arrow instead.
+//! and the car's arrow, which the map follows. Vector tiles let labels stay
+//! readable as the basemap turns. North-up turns the arrow instead.
 //!
-//! The map itself is raster tiles (tiles.rs) in Web Mercator, drawn on an
-//! iced canvas. Right-drag pans, the wheel zooms; left-drag moves the panel.
+//! The playback and export canvases use Web Mercator. Right-drag pans, the
+//! wheel zooms, and left-drag moves the panel.
 
 pub mod tiles;
+pub mod vector;
 
 use crate::mp4;
 use crate::telemetry::SeiMetadata;
