@@ -61,6 +61,7 @@ pub enum Change {
     Metric(bool),
     Mirror(bool),
     Blur(f32),
+    DockPlaybackPanels(bool),
     PlaceNames(bool),
     ShowDriveStats(bool),
     SentryGlow(bool),
@@ -453,6 +454,7 @@ fn rows<'a>(s: &'a Settings, ui: &'a Ui, keys: &'a Shortcuts) -> Vec<Row<'a>> {
             select(s, Menu::TimeFormat),
         ),
         setting(Display, None, t("ui.settings.dateFormat"), None, select(s, Menu::DateFormat)),
+        setting(Display, None, t("ui.settings.dockPlaybackPanels"), None, toggle(s.dock_playback_panels, Change::DockPlaybackPanels)),
         setting(Display, None, t("ui.settings.dialogStyle"), Some(t("ui.settings.dialogStyleDesc")), select(s, Menu::DialogStyle)),
         setting(
             Display,
@@ -520,10 +522,10 @@ fn rows<'a>(s: &'a Settings, ui: &'a Ui, keys: &'a Shortcuts) -> Vec<Row<'a>> {
         ),
     ];
     // Fixed to Front Camera: only for the compact style (after its row).
-    if s.dashboard_compact {
-        // Language, metric, time, date, blur, overlay, style: then this.
+    if s.dashboard_compact && !s.dock_playback_panels {
+        // After the dashboard style.
         list.insert(
-            7,
+            9,
             setting(Playback, Some(Subtab::Dashboard), t("ui.settings.fixedToFrontCamera"), None, toggle(s.compact_fixed, Change::CompactFixed)),
         );
     }

@@ -28,10 +28,13 @@ pub enum Row {
     Drive(usize),
 }
 
-/// Width inside a card (panel 340, list and card padding, borders).
-const CARD_INNER_W: f32 = 340.0 - 2.0 * 12.0 - 2.0 * 12.0 - 2.0;
+pub const BROWSER_WIDTH: f32 = 340.0;
 const CHIP_H: f32 = 22.0;
 const CHIP_GAP: f32 = 5.0;
+
+fn card_inner_width(browser_width: f32) -> f32 {
+    (browser_width - 2.0 * 12.0 - 2.0 * 12.0 - 2.0).max(0.0)
+}
 
 /// The chips a card shows: icon, label, tone.
 fn chips_for(d: &DriveInfo, metric: bool, has_footage: bool, stats: bool) -> Vec<(char, String, theme::ChipTone)> {
@@ -57,12 +60,12 @@ fn chips_for(d: &DriveInfo, metric: bool, has_footage: bool, stats: bool) -> Vec
 
 /// Lines the chips wrap onto, from an estimate of each chip's width
 /// (11 px Inter, a little generous so a chip never runs off the card).
-fn chip_lines(chips: &[(char, String, theme::ChipTone)]) -> usize {
+fn chip_lines(chips: &[(char, String, theme::ChipTone)], inner_width: f32) -> usize {
     let mut lines = 1;
     let mut x = 0.0;
     for (_, label, _) in chips {
         let w = 16.0 + 2.0 + 12.0 + 3.0 + label.chars().count() as f32 * 6.8;
-        if x > 0.0 && x + CHIP_GAP + w > CARD_INNER_W {
+        if x > 0.0 && x + CHIP_GAP + w > inner_width {
             lines += 1;
             x = w;
         } else {
@@ -75,15 +78,15 @@ fn chip_lines(chips: &[(char, String, theme::ChipTone)]) -> usize {
 /// Shortens the start and end names with "…" so they fit side by side,
 /// giving room a short name does not use to the other one. Widths are
 /// estimated (12.5 px semibold Inter).
-pub fn fit_names(start: &str, end: &str) -> (String, String) {
-    const BUDGET: usize = ((CARD_INNER_W - 12.0) / 7.2) as usize;
-    const HALF: usize = BUDGET / 2;
+fn fit_names(start: &str, end: &str, inner_width: f32) -> (String, String) {
+    let budget = ((inner_width - 12.0) / 7.2) as usize;
+    let half = budget / 2;
     let (a, b) = (start.chars().count(), end.chars().count());
-    if a + b <= BUDGET {
+    if a + b <= budget {
         return (start.to_string(), end.to_string());
     }
-    let keep_a = a.min(HALF.max(BUDGET.saturating_sub(b)));
-    let keep_b = b.min(BUDGET - keep_a);
+    let keep_a = a.min(half.max(budget.saturating_sub(b)));
+    let keep_b = b.min(budget - keep_a);
     let cut = |s: &str, n: usize, len: usize| {
         if len <= n {
             s.to_string()
@@ -96,8 +99,8 @@ pub fn fit_names(start: &str, end: &str) -> (String, String) {
 
 /// The height a drive's card takes: padding, journey, chip lines, plus the
 /// disengagement and tag rows when it has them.
-pub fn card_height(d: &DriveInfo, metric: bool, has_footage: bool, stats: bool) -> f32 {
-    let lines = chip_lines(&chips_for(d, metric, has_footage, stats)) as f32;
+fn card_height(d: &DriveInfo, metric: bool, has_footage: bool, stats: bool, inner_width: f32) -> f32 {
+    let lines = chip_lines(&chips_for(d, metric, has_footage, stats), inner_width) as f32;
     let mut h = 24.0 + 2.0 + 56.0 + 10.0 + lines * CHIP_H + (lines - 1.0) * CHIP_GAP;
     if d.disengagements > 0 {
         h += 10.0 + 16.0;
@@ -114,7 +117,8 @@ pub fn has_footage(d: &DriveInfo, footage_days: &HashSet<String>) -> bool {
 
 /// Rows in display order and where each starts, for the drives at
 /// `shown` (indices into `drives`, newest first).
-pub fn layout(drives: &[DriveInfo], shown: &[usize], metric: bool, stats: bool, footage_days: &HashSet<String>) -> (Vec<Row>, Vec<f32>, f32) {
+pub fn layout(drives: &[DriveInfo], shown: &[usize], metric: bool, stats: bool, footage_days: &HashSet<String>, browser_width: f32) -> (Vec<Row>, Vec<f32>, f32) {
+    let inner_width = card_inner_width(browser_width);
     let mut rows = Vec::new();
     let mut tops = Vec::new();
     let mut y = 0.0;
@@ -129,12 +133,13 @@ pub fn layout(drives: &[DriveInfo], shown: &[usize], metric: bool, stats: bool, 
         }
         rows.push(Row::Drive(i));
         tops.push(y);
-        y += card_height(d, metric, has_footage(d, footage_days), stats) + GAP;
+        y += card_height(d, metric, has_footage(d, footage_days), stats, inner_width) + GAP;
     }
     (rows, tops, y)
 }
 
 pub struct ListView<'a> {
+    pub browser_width: f32,
     pub drives: &'a [DriveInfo],
     pub rows: &'a [Row],
     pub tops: &'a [f32],
@@ -157,6 +162,7 @@ pub fn view<'a, M: Clone + 'a>(
     on_select: impl Fn(usize) -> M + 'a,
     on_scroll: impl Fn(f32, f32) -> M + 'a,
 ) -> Element<'a, M> {
+    let look = Look { metric: v.metric, stats: v.stats, h24: v.h24, inner_width: card_inner_width(v.browser_width) };
     let from = v.scroll - OVERSCAN;
     let to = v.scroll + v.viewport.max(600.0) + OVERSCAN;
     let first = v.tops.partition_point(|&t| t < from).saturating_sub(1);
@@ -192,7 +198,7 @@ pub fn view<'a, M: Clone + 'a>(
                     drives::gps_label(p)
                 };
                 let names = (place(d.start_point), place(d.end_point));
-                column![card(d, names, v.selected == Some(d.id), footage, Look { metric: v.metric, stats: v.stats, h24: v.h24 }, on_select(i)), Space::new().height(GAP)].into()
+                column![card(d, names, v.selected == Some(d.id), footage, look, on_select(i)), Space::new().height(GAP)].into()
             }
         };
         col = col.push(row_el);
@@ -263,10 +269,11 @@ struct Look {
     metric: bool,
     stats: bool,
     h24: bool,
+    inner_width: f32,
 }
 
 fn card<'a, M: Clone + 'a>(d: &DriveInfo, names: (String, String), selected: bool, has_footage: bool, look: Look, on_press: M) -> Element<'a, M> {
-    let Look { metric, stats, h24 } = look;
+    let Look { metric, stats, h24, inner_width } = look;
     let time = |s: String| text(s).size(13).font(theme::semibold(theme::INTER)).color(theme::TEXT);
     // The journey track: origin pin, dashed line, destination pin
     let track = row![
@@ -292,7 +299,7 @@ fn card<'a, M: Clone + 'a>(d: &DriveInfo, names: (String, String), selected: boo
         row![time(drives::clock(d.start_ms, h24)), track, time(drives::clock(d.end_ms, h24))].spacing(8).align_y(Alignment::Center),
         row![label(crate::i18n::t("app.departed")), space().width(Length::Fill), label(crate::i18n::t("app.arrived"))],
         {
-            let (a, b) = fit_names(&names.0, &names.1);
+            let (a, b) = fit_names(&names.0, &names.1, inner_width);
             row![
                 container(place(a, false)).width(Length::FillPortion(1)).clip(true),
                 container(place(b, true)).width(Length::FillPortion(1)).align_x(iced::alignment::Horizontal::Right).clip(true),
@@ -304,7 +311,7 @@ fn card<'a, M: Clone + 'a>(d: &DriveInfo, names: (String, String), selected: boo
     .height(56);
 
     let chip_list = chips_for(d, metric, has_footage, stats);
-    let lines = chip_lines(&chip_list) as f32;
+    let lines = chip_lines(&chip_list, inner_width) as f32;
     let chips = chip_list
         .into_iter()
         .fold(row![].spacing(CHIP_GAP), |r, (glyph, label, tone)| r.push(chip(glyph, label, tone)))
@@ -337,7 +344,7 @@ fn card<'a, M: Clone + 'a>(d: &DriveInfo, names: (String, String), selected: boo
     button(stack![content])
         .padding(0)
         .width(Length::Fill)
-        .height(card_height(d, metric, has_footage, stats))
+        .height(card_height(d, metric, has_footage, stats, inner_width))
         .style(theme::clip_card(selected))
         .on_press(on_press)
         .into()
@@ -374,22 +381,24 @@ mod tests {
         let mut ds = vec![drive(1, "2026-11-06"), drive(2, "2026-11-06"), drive(3, "2026-11-05")];
         ds[1].tags = vec!["work".into()];
         let none = HashSet::new();
-        let (rows, tops, total) = layout(&ds, &[0, 1, 2], true, true, &none);
+        let (rows, tops, total) = layout(&ds, &[0, 1, 2], true, true, &none, BROWSER_WIDTH);
+        let inner_width = card_inner_width(BROWSER_WIDTH);
         assert!(matches!(rows[0], Row::Header(0)));
         assert!(matches!(rows[3], Row::Header(2)));
         assert_eq!(rows.len(), 5);
         assert_eq!(tops[1], HEADER_H);
-        assert_eq!(tops[2], HEADER_H + card_height(&ds[0], true, false, true) + GAP);
-        assert_eq!(total, 2.0 * HEADER_H + ds.iter().map(|d| card_height(d, true, false, true) + GAP).sum::<f32>());
+        assert_eq!(tops[2], HEADER_H + card_height(&ds[0], true, false, true, inner_width) + GAP);
+        assert_eq!(total, 2.0 * HEADER_H + ds.iter().map(|d| card_height(d, true, false, true, inner_width) + GAP).sum::<f32>());
     }
 
     #[test]
     fn long_names_share_the_line() {
-        let (a, b) = fit_names("Ellerslie Road SW", "5221, 5225, 5229, 5233 Ellerslie Road SW");
+        let inner_width = card_inner_width(BROWSER_WIDTH);
+        let (a, b) = fit_names("Ellerslie Road SW", "5221, 5225, 5229, 5233 Ellerslie Road SW", inner_width);
         assert_eq!(a, "Ellerslie Road SW");
-        let budget = ((CARD_INNER_W - 12.0) / 7.2) as usize;
+        let budget = ((inner_width - 12.0) / 7.2) as usize;
         assert!(b.ends_with('…') && a.chars().count() + b.chars().count() <= budget, "{a} | {b}");
-        let (a, b) = fit_names("Chivers Crescent SW", "Ellerslie Road SW");
+        let (a, b) = fit_names("Chivers Crescent SW", "Ellerslie Road SW", inner_width);
         assert_eq!((a.as_str(), b.as_str()), ("Chivers Crescent SW", "Ellerslie Road SW"));
     }
 
@@ -401,7 +410,8 @@ mod tests {
         d.duration_ms = 19.0 * 60000.0;
         d.has_fsd = true;
         d.fsd_percent = 43.2;
-        assert_eq!(chip_lines(&chips_for(&d, true, true, true)), 2);
-        assert_eq!(chip_lines(&chips_for(&d, true, false, true)), 1);
+        let inner_width = card_inner_width(BROWSER_WIDTH);
+        assert_eq!(chip_lines(&chips_for(&d, true, true, true), inner_width), 2);
+        assert_eq!(chip_lines(&chips_for(&d, true, false, true), inner_width), 1);
     }
 }
