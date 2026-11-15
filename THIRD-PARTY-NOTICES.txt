@@ -286,6 +286,381 @@ FOR ANY DAMAGES OR OTHER LIABILITY, WHETHER IN CONTRACT, TORT OR OTHERWISE,
 ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 
+--- Standard licence texts: MPL-2.0 ---
+Mozilla Public License Version 2.0
+==================================
+
+1. Definitions
+--------------
+
+1.1. "Contributor"
+    means each individual or legal entity that creates, contributes to
+    the creation of, or owns Covered Software.
+
+1.2. "Contributor Version"
+    means the combination of the Contributions of others (if any) used
+    by a Contributor and that particular Contributor's Contribution.
+
+1.3. "Contribution"
+    means Covered Software of a particular Contributor.
+
+1.4. "Covered Software"
+    means Source Code Form to which the initial Contributor has attached
+    the notice in Exhibit A, the Executable Form of such Source Code
+    Form, and Modifications of such Source Code Form, in each case
+    including portions thereof.
+
+1.5. "Incompatible With Secondary Licenses"
+    means
+
+    (a) that the initial Contributor has attached the notice described
+        in Exhibit B to the Covered Software; or
+
+    (b) that the Covered Software was made available under the terms of
+        version 1.1 or earlier of the License, but not also under the
+        terms of a Secondary License.
+
+1.6. "Executable Form"
+    means any form of the work other than Source Code Form.
+
+1.7. "Larger Work"
+    means a work that combines Covered Software with other material, in
+    a separate file or files, that is not Covered Software.
+
+1.8. "License"
+    means this document.
+
+1.9. "Licensable"
+    means having the right to grant, to the maximum extent possible,
+    whether at the time of the initial grant or subsequently, any and
+    all of the rights conveyed by this License.
+
+1.10. "Modifications"
+    means any of the following:
+
+    (a) any file in Source Code Form that results from an addition to,
+        deletion from, or modification of the contents of Covered
+        Software; or
+
+    (b) any new file in Source Code Form that contains any Covered
+        Software.
+
+1.11. "Patent Claims" of a Contributor
+    means any patent claim(s), including without limitation, method,
+    process, and apparatus claims, in any patent Licensable by such
+    Contributor that would be infringed, but for the grant of the
+    License, by the making, using, selling, offering for sale, having
+    made, import, or transfer of either its Contributions or its
+    Contributor Version.
+
+1.12. "Secondary License"
+    means either the GNU General Public License, Version 2.0, the GNU
+    Lesser General Public License, Version 2.1, the GNU Affero General
+    Public License, Version 3.0, or any later versions of those
+    licenses.
+
+1.13. "Source Code Form"
+    means the form of the work preferred for making modifications.
+
+1.14. "You" (or "Your")
+    means an individual or a legal entity exercising rights under this
+    License. For legal entities, "You" includes any entity that
+    controls, is controlled by, or is under common control with You. For
+    purposes of this definition, "control" means (a) the power, direct
+    or indirect, to cause the direction or management of such entity,
+    whether by contract or otherwise, or (b) ownership of more than
+    fifty percent (50%) of the outstanding shares or beneficial
+    ownership of such entity.
+
+2. License Grants and Conditions
+--------------------------------
+
+2.1. Grants
+
+Each Contributor hereby grants You a world-wide, royalty-free,
+non-exclusive license:
+
+(a) under intellectual property rights (other than patent or trademark)
+    Licensable by such Contributor to use, reproduce, make available,
+    modify, display, perform, distribute, and otherwise exploit its
+    Contributions, either on an unmodified basis, with Modifications, or
+    as part of a Larger Work; and
+
+(b) under Patent Claims of such Contributor to make, use, sell, offer
+    for sale, have made, import, and otherwise transfer either its
+    Contributions or its Contributor Version.
+
+2.2. Effective Date
+
+The licenses granted in Section 2.1 with respect to any Contribution
+become effective for each Contribution on the date the Contributor first
+distributes such Contribution.
+
+2.3. Limitations on Grant Scope
+
+The licenses granted in this Section 2 are the only rights granted under
+this License. No additional rights or licenses will be implied from the
+distribution or licensing of Covered Software under this License.
+Notwithstanding Section 2.1(b) above, no patent license is granted by a
+Contributor:
+
+(a) for any code that a Contributor has removed from Covered Software;
+    or
+
+(b) for infringements caused by: (i) Your and any other third party's
+    modifications of Covered Software, or (ii) the combination of its
+    Contributions with other software (except as part of its Contributor
+    Version); or
+
+(c) under Patent Claims infringed by Covered Software in the absence of
+    its Contributions.
+
+This License does not grant any rights in the trademarks, service marks,
+or logos of any Contributor (except as may be necessary to comply with
+the notice requirements in Section 3.4).
+
+2.4. Subsequent Licenses
+
+No Contributor makes additional grants as a result of Your choice to
+distribute the Covered Software under a subsequent version of this
+License (see Section 10.2) or under the terms of a Secondary License (if
+permitted under the terms of Section 3.3).
+
+2.5. Representation
+
+Each Contributor represents that the Contributor believes its
+Contributions are its original creation(s) or it has sufficient rights
+to grant the rights to its Contributions conveyed by this License.
+
+2.6. Fair Use
+
+This License is not intended to limit any rights You have under
+applicable copyright doctrines of fair use, fair dealing, or other
+equivalents.
+
+2.7. Conditions
+
+Sections 3.1, 3.2, 3.3, and 3.4 are conditions of the licenses granted
+in Section 2.1.
+
+3. Responsibilities
+-------------------
+
+3.1. Distribution of Source Form
+
+All distribution of Covered Software in Source Code Form, including any
+Modifications that You create or to which You contribute, must be under
+the terms of this License. You must inform recipients that the Source
+Code Form of the Covered Software is governed by the terms of this
+License, and how they can obtain a copy of this License. You may not
+attempt to alter or restrict the recipients' rights in the Source Code
+Form.
+
+3.2. Distribution of Executable Form
+
+If You distribute Covered Software in Executable Form then:
+
+(a) such Covered Software must also be made available in Source Code
+    Form, as described in Section 3.1, and You must inform recipients of
+    the Executable Form how they can obtain a copy of such Source Code
+    Form by reasonable means in a timely manner, at a charge no more
+    than the cost of distribution to the recipient; and
+
+(b) You may distribute such Executable Form under the terms of this
+    License, or sublicense it under different terms, provided that the
+    license for the Executable Form does not attempt to limit or alter
+    the recipients' rights in the Source Code Form under this License.
+
+3.3. Distribution of a Larger Work
+
+You may create and distribute a Larger Work under terms of Your choice,
+provided that You also comply with the requirements of this License for
+the Covered Software. If the Larger Work is a combination of Covered
+Software with a work governed by one or more Secondary Licenses, and the
+Covered Software is not Incompatible With Secondary Licenses, this
+License permits You to additionally distribute such Covered Software
+under the terms of such Secondary License(s), so that the recipient of
+the Larger Work may, at their option, further distribute the Covered
+Software under the terms of either this License or such Secondary
+License(s).
+
+3.4. Notices
+
+You may not remove or alter the substance of any license notices
+(including copyright notices, patent notices, disclaimers of warranty,
+or limitations of liability) contained within the Source Code Form of
+the Covered Software, except that You may alter any license notices to
+the extent required to remedy known factual inaccuracies.
+
+3.5. Application of Additional Terms
+
+You may choose to offer, and to charge a fee for, warranty, support,
+indemnity or liability obligations to one or more recipients of Covered
+Software. However, You may do so only on Your own behalf, and not on
+behalf of any Contributor. You must make it absolutely clear that any
+such warranty, support, indemnity, or liability obligation is offered by
+You alone, and You hereby agree to indemnify every Contributor for any
+liability incurred by such Contributor as a result of warranty, support,
+indemnity or liability terms You offer. You may include additional
+disclaimers of warranty and limitations of liability specific to any
+jurisdiction.
+
+4. Inability to Comply Due to Statute or Regulation
+---------------------------------------------------
+
+If it is impossible for You to comply with any of the terms of this
+License with respect to some or all of the Covered Software due to
+statute, judicial order, or regulation then You must: (a) comply with
+the terms of this License to the maximum extent possible; and (b)
+describe the limitations and the code they affect. Such description must
+be placed in a text file included with all distributions of the Covered
+Software under this License. Except to the extent prohibited by statute
+or regulation, such description must be sufficiently detailed for a
+recipient of ordinary skill to be able to understand it.
+
+5. Termination
+--------------
+
+5.1. The rights granted under this License will terminate automatically
+if You fail to comply with any of its terms. However, if You become
+compliant, then the rights granted under this License from a particular
+Contributor are reinstated (a) provisionally, unless and until such
+Contributor explicitly and finally terminates Your grants, and (b) on an
+ongoing basis, if such Contributor fails to notify You of the
+non-compliance by some reasonable means prior to 60 days after You have
+come back into compliance. Moreover, Your grants from a particular
+Contributor are reinstated on an ongoing basis if such Contributor
+notifies You of the non-compliance by some reasonable means, this is the
+first time You have received notice of non-compliance with this License
+from such Contributor, and You become compliant prior to 30 days after
+Your receipt of the notice.
+
+5.2. If You initiate litigation against any entity by asserting a patent
+infringement claim (excluding declaratory judgment actions,
+counter-claims, and cross-claims) alleging that a Contributor Version
+directly or indirectly infringes any patent, then the rights granted to
+You by any and all Contributors for the Covered Software under Section
+2.1 of this License shall terminate.
+
+5.3. In the event of termination under Sections 5.1 or 5.2 above, all
+end user license agreements (excluding distributors and resellers) which
+have been validly granted by You or Your distributors under this License
+prior to termination shall survive termination.
+
+************************************************************************
+*                                                                      *
+*  6. Disclaimer of Warranty                                           *
+*  -------------------------                                           *
+*                                                                      *
+*  Covered Software is provided under this License on an "as is"       *
+*  basis, without warranty of any kind, either expressed, implied, or  *
+*  statutory, including, without limitation, warranties that the       *
+*  Covered Software is free of defects, merchantable, fit for a        *
+*  particular purpose or non-infringing. The entire risk as to the     *
+*  quality and performance of the Covered Software is with You.        *
+*  Should any Covered Software prove defective in any respect, You     *
+*  (not any Contributor) assume the cost of any necessary servicing,   *
+*  repair, or correction. This disclaimer of warranty constitutes an   *
+*  essential part of this License. No use of any Covered Software is   *
+*  authorized under this License except under this disclaimer.         *
+*                                                                      *
+************************************************************************
+
+************************************************************************
+*                                                                      *
+*  7. Limitation of Liability                                          *
+*  --------------------------                                          *
+*                                                                      *
+*  Under no circumstances and under no legal theory, whether tort      *
+*  (including negligence), contract, or otherwise, shall any           *
+*  Contributor, or anyone who distributes Covered Software as          *
+*  permitted above, be liable to You for any direct, indirect,         *
+*  special, incidental, or consequential damages of any character      *
+*  including, without limitation, damages for lost profits, loss of    *
+*  goodwill, work stoppage, computer failure or malfunction, or any    *
+*  and all other commercial damages or losses, even if such party      *
+*  shall have been informed of the possibility of such damages. This   *
+*  limitation of liability shall not apply to liability for death or   *
+*  personal injury resulting from such party's negligence to the       *
+*  extent applicable law prohibits such limitation. Some               *
+*  jurisdictions do not allow the exclusion or limitation of           *
+*  incidental or consequential damages, so this exclusion and          *
+*  limitation may not apply to You.                                    *
+*                                                                      *
+************************************************************************
+
+8. Litigation
+-------------
+
+Any litigation relating to this License may be brought only in the
+courts of a jurisdiction where the defendant maintains its principal
+place of business and such litigation shall be governed by laws of that
+jurisdiction, without reference to its conflict-of-law provisions.
+Nothing in this Section shall prevent a party's ability to bring
+cross-claims or counter-claims.
+
+9. Miscellaneous
+----------------
+
+This License represents the complete agreement concerning the subject
+matter hereof. If any provision of this License is held to be
+unenforceable, such provision shall be reformed only to the extent
+necessary to make it enforceable. Any law or regulation which provides
+that the language of a contract shall be construed against the drafter
+shall not be used to construe this License against a Contributor.
+
+10. Versions of the License
+---------------------------
+
+10.1. New Versions
+
+Mozilla Foundation is the license steward. Except as provided in Section
+10.3, no one other than the license steward has the right to modify or
+publish new versions of this License. Each version will be given a
+distinguishing version number.
+
+10.2. Effect of New Versions
+
+You may distribute the Covered Software under the terms of the version
+of the License under which You originally received the Covered Software,
+or under the terms of any subsequent version published by the license
+steward.
+
+10.3. Modified Versions
+
+If you create software not governed by this License, and you want to
+create a new license for such software, you may create and use a
+modified version of this License if you rename the license and remove
+any references to the name of the license steward (except to note that
+such modified license differs from this License).
+
+10.4. Distributing Source Code Form that is Incompatible With Secondary
+Licenses
+
+If You choose to distribute Source Code Form that is Incompatible With
+Secondary Licenses under the terms of this version of the License, the
+notice described in Exhibit B of this License must be attached.
+
+Exhibit A - Source Code Form License Notice
+-------------------------------------------
+
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+If it is not possible or desirable to put the notice in a particular
+file, then You may include the notice in a location (such as a LICENSE
+file in a relevant directory) where a recipient would be likely to look
+for such a notice.
+
+You may add additional accurate notices of copyright ownership.
+
+Exhibit B - "Incompatible With Secondary Licenses" Notice
+---------------------------------------------------------
+
+  This Source Code Form is "Incompatible With Secondary Licenses", as
+  defined by the Mozilla Public License, v. 2.0.
+
 ==============================================================================
 Fonts
 ==============================================================================
@@ -510,6 +885,31 @@ https://github.com/BurntSushi/aho-corasick
 Copyright (c) 2015 Andrew Gallant
 MIT: the standard text in "Standard licence texts: MIT", above.
 
+anstream 1.0.0 (MIT OR Apache-2.0)
+https://github.com/rust-cli/anstyle.git
+Copyright (c) Individual contributors
+MIT: the standard text in "Standard licence texts: MIT", above.
+
+anstyle 1.0.14 (MIT OR Apache-2.0)
+https://github.com/rust-cli/anstyle.git
+Copyright (c) Individual contributors
+MIT: the standard text in "Standard licence texts: MIT", above.
+
+anstyle-parse 1.0.0 (MIT OR Apache-2.0)
+https://github.com/rust-cli/anstyle.git
+Copyright (c) Individual contributors
+MIT: the standard text in "Standard licence texts: MIT", above.
+
+anstyle-query 1.1.5 (MIT OR Apache-2.0)
+https://github.com/rust-cli/anstyle.git
+Copyright (c) Individual contributors
+MIT: the standard text in "Standard licence texts: MIT", above.
+
+anstyle-wincon 3.0.11 (MIT OR Apache-2.0)
+https://github.com/rust-cli/anstyle.git
+Copyright (c) Individual contributors
+MIT: the standard text in "Standard licence texts: MIT", above.
+
 anyhow 1.0.104 (MIT OR Apache-2.0)
 https://github.com/dtolnay/anyhow
 MIT: the standard text in "Standard licence texts: MIT", above.
@@ -701,6 +1101,11 @@ bytes 1.12.1 (MIT)
 https://github.com/tokio-rs/bytes
 Copyright (c) 2018 Carl Lerche
 MIT: the standard text in "Standard licence texts: MIT", above.
+
+calendrical_calculations 0.2.4 (Apache-2.0)
+https://github.com/unicode-org/icu4x
+Copyright 2023 The Unicode Consortium
+Apache-2.0: the standard text in "Standard licence texts: Apache-2.0", above.
 
 calloop 0.13.0 (MIT)
 https://github.com/Smithay/calloop
@@ -999,6 +1404,11 @@ https://github.com/image-rs/color_quant.git
 Copyright (c) 2016 PistonDevelopers
 MIT: the standard text in "Standard licence texts: MIT", above.
 
+colorchoice 1.0.5 (MIT OR Apache-2.0)
+https://github.com/rust-cli/anstyle.git
+Copyright (c) Individual contributors
+MIT: the standard text in "Standard licence texts: MIT", above.
+
 concurrent-queue 2.5.0 (Apache-2.0 OR MIT)
 https://github.com/smol-rs/concurrent-queue
 MIT: the standard text in "Standard licence texts: MIT", above.
@@ -1093,6 +1503,77 @@ https://github.com/servo/rust-url
 Copyright (c) 2013-2025 The rust-url developers
 MIT: the standard text in "Standard licence texts: MIT", above.
 
+day-async 0.7.4 (MPL-2.0)
+https://github.com/daybrite/day
+Source for this version: https://crates.io/crates/day-async/0.7.4
+Copyright (c) the day-async authors
+Used under MPL-2.0; the crate is published without a licence file, so its terms are the standard text in "Standard licence texts: MPL-2.0", above.
+
+day-bridge 0.7.4 (MPL-2.0)
+https://github.com/daybrite/day
+Source for this version: https://crates.io/crates/day-bridge/0.7.4
+Copyright (c) the day-bridge authors
+Used under MPL-2.0; the crate is published without a licence file, so its terms are the standard text in "Standard licence texts: MPL-2.0", above.
+
+day-core 0.7.4 (MPL-2.0)
+https://github.com/daybrite/day
+Source for this version: https://crates.io/crates/day-core/0.7.4
+Copyright (c) the day-core authors
+Used under MPL-2.0; the crate is published without a licence file, so its terms are the standard text in "Standard licence texts: MPL-2.0", above.
+
+day-fonts 0.7.4 (MPL-2.0)
+https://github.com/daybrite/day
+Source for this version: https://crates.io/crates/day-fonts/0.7.4
+Copyright (c) the day-fonts authors
+Used under MPL-2.0; the crate is published without a licence file, so its terms are the standard text in "Standard licence texts: MPL-2.0", above.
+
+day-geometry 0.7.4 (MPL-2.0)
+https://github.com/daybrite/day
+Source for this version: https://crates.io/crates/day-geometry/0.7.4
+Copyright (c) the day-geometry authors
+Used under MPL-2.0; the crate is published without a licence file, so its terms are the standard text in "Standard licence texts: MPL-2.0", above.
+
+day-localization 0.7.4 (MPL-2.0)
+https://github.com/daybrite/day
+Source for this version: https://crates.io/crates/day-localization/0.7.4
+Copyright (c) the day-localization authors
+Used under MPL-2.0; the crate is published without a licence file, so its terms are the standard text in "Standard licence texts: MPL-2.0", above.
+
+day-macros 0.7.4 (MPL-2.0)
+https://github.com/daybrite/day
+Source for this version: https://crates.io/crates/day-macros/0.7.4
+Copyright (c) the day-macros authors
+Used under MPL-2.0; the crate is published without a licence file, so its terms are the standard text in "Standard licence texts: MPL-2.0", above.
+
+day-part-http 0.7.4 (MPL-2.0)
+https://github.com/daybrite/day
+Source for this version: https://crates.io/crates/day-part-http/0.7.4
+Copyright (c) the day-part-http authors
+Used under MPL-2.0; the crate is published without a licence file, so its terms are the standard text in "Standard licence texts: MPL-2.0", above.
+
+day-piece-map 0.1.1 (MPL-2.0)
+https://github.com/daybrite/day-piece-map
+Source for this version: https://crates.io/crates/day-piece-map/0.1.1
+day-piece-map 0.1.1: LICENSE: the same text as Standard licence texts: MPL-2.0, above.
+
+day-pieces 0.7.4 (MPL-2.0)
+https://github.com/daybrite/day
+Source for this version: https://crates.io/crates/day-pieces/0.7.4
+Copyright (c) the day-pieces authors
+Used under MPL-2.0; the crate is published without a licence file, so its terms are the standard text in "Standard licence texts: MPL-2.0", above.
+
+day-reactive 0.7.4 (MPL-2.0)
+https://github.com/daybrite/day
+Source for this version: https://crates.io/crates/day-reactive/0.7.4
+Copyright (c) the day-reactive authors
+Used under MPL-2.0; the crate is published without a licence file, so its terms are the standard text in "Standard licence texts: MPL-2.0", above.
+
+day-spec 0.7.4 (MPL-2.0)
+https://github.com/daybrite/day
+Source for this version: https://crates.io/crates/day-spec/0.7.4
+Copyright (c) the day-spec authors
+Used under MPL-2.0; the crate is published without a licence file, so its terms are the standard text in "Standard licence texts: MPL-2.0", above.
+
 digest 0.11.3 (MIT OR Apache-2.0)
 https://github.com/RustCrypto/traits
 Copyright (c) 2017-2025 RustCrypto Developers
@@ -1108,6 +1589,10 @@ dispatch2 0.3.1 (Zlib OR Apache-2.0 OR MIT)
 https://github.com/madsmtm/objc2
 Copyright (c) Mads Marquart, Mary
 Used under Apache-2.0; the crate is published without a licence file, so its terms are the standard text in "Standard licence texts: Apache-2.0", above.
+
+displaydoc 0.2.7 (MIT OR Apache-2.0)
+https://github.com/yaahc/displaydoc
+MIT: the standard text in "Standard licence texts: MIT", above.
 
 dlib 0.5.3 (MIT)
 https://github.com/elinorbgr/dlib
@@ -1186,6 +1671,11 @@ dtor 0.8.1 (Apache-2.0 OR MIT)
 https://github.com/mmastrac/rust-ctor
 MIT: the standard text in "Standard licence texts: MIT", above.
 
+either 1.19.0 (MIT OR Apache-2.0)
+https://github.com/rayon-rs/either
+Copyright (c) 2015
+MIT: the standard text in "Standard licence texts: MIT", above.
+
 endi 1.1.1 (MIT)
 https://github.com/zeenix/endi
 MIT: the standard text in "Standard licence texts: MIT", above.
@@ -1242,6 +1732,56 @@ fdeflate 0.3.7 (MIT OR Apache-2.0)
 https://github.com/image-rs/fdeflate
 MIT: the standard text in "Standard licence texts: MIT", above.
 
+fixed_decimal 0.7.3 (Unicode-3.0)
+https://github.com/unicode-org/icu4x
+--- fixed_decimal 0.7.3: LICENSE ---
+UNICODE LICENSE V3
+
+COPYRIGHT AND PERMISSION NOTICE
+
+Copyright © 2020-2024 Unicode, Inc.
+
+NOTICE TO USER: Carefully read the following legal agreement. BY
+DOWNLOADING, INSTALLING, COPYING OR OTHERWISE USING DATA FILES, AND/OR
+SOFTWARE, YOU UNEQUIVOCALLY ACCEPT, AND AGREE TO BE BOUND BY, ALL OF THE
+TERMS AND CONDITIONS OF THIS AGREEMENT. IF YOU DO NOT AGREE, DO NOT
+DOWNLOAD, INSTALL, COPY, DISTRIBUTE OR USE THE DATA FILES OR SOFTWARE.
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of data files and any associated documentation (the "Data Files") or
+software and any associated documentation (the "Software") to deal in the
+Data Files or Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, and/or sell
+copies of the Data Files or Software, and to permit persons to whom the
+Data Files or Software are furnished to do so, provided that either (a)
+this copyright and permission notice appear with all copies of the Data
+Files or Software, or (b) this copyright and permission notice appear in
+associated Documentation.
+
+THE DATA FILES AND SOFTWARE ARE PROVIDED "AS IS", WITHOUT WARRANTY OF ANY
+KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT OF
+THIRD PARTY RIGHTS.
+
+IN NO EVENT SHALL THE COPYRIGHT HOLDER OR HOLDERS INCLUDED IN THIS NOTICE
+BE LIABLE FOR ANY CLAIM, OR ANY SPECIAL INDIRECT OR CONSEQUENTIAL DAMAGES,
+OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS,
+WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION,
+ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THE DATA
+FILES OR SOFTWARE.
+
+Except as contained in this notice, the name of a copyright holder shall
+not be used in advertising or otherwise to promote the sale, use or other
+dealings in these Data Files or Software without prior written
+authorization of the copyright holder.
+
+SPDX-License-Identifier: Unicode-3.0
+
+—
+
+Portions of ICU4X may have been adapted from ICU4C and/or ICU4J.
+ICU 1.8.1 to ICU 57.1 © 1995-2016 International Business Machines Corporation and others.
+
 flate2 1.1.11 (MIT OR Apache-2.0)
 https://github.com/rust-lang/flate2-rs
 Copyright (c) 2014-2026 Alex Crichton
@@ -1256,6 +1796,21 @@ float_next_after 1.0.0 (MIT)
 https://gitlab.com/bronsonbdevost/next_afterf
 Copyright (c) 2020 Scripta Qumranica Electronica
 Created by Bronson Brown-deVost
+MIT: the standard text in "Standard licence texts: MIT", above.
+
+fluent-bundle 0.16.0 (Apache-2.0 OR MIT)
+https://github.com/projectfluent/fluent-rs
+Copyright 2017 Mozilla
+MIT: the standard text in "Standard licence texts: MIT", above.
+
+fluent-langneg 0.13.1 (Apache-2.0 OR MIT)
+https://github.com/projectfluent/fluent-langneg-rs
+Copyright (c) Zibi Braniecki
+Used under Apache-2.0; the crate is published without a licence file, so its terms are the standard text in "Standard licence texts: Apache-2.0", above.
+
+fluent-syntax 0.12.0 (Apache-2.0 OR MIT)
+https://github.com/projectfluent/fluent-rs
+Copyright 2017 Mozilla
 MIT: the standard text in "Standard licence texts: MIT", above.
 
 foldhash 0.1.5 (Zlib)
@@ -1318,6 +1873,11 @@ MIT: the standard text in "Standard licence texts: MIT", above.
 foreign-types-shared 0.3.1 (MIT/Apache-2.0)
 https://github.com/sfackler/foreign-types
 Copyright (c) 2017 The foreign-types Developers
+MIT: the standard text in "Standard licence texts: MIT", above.
+
+form_urlencoded 1.2.2 (MIT OR Apache-2.0)
+https://github.com/servo/rust-url
+Copyright (c) 2013-2016 The rust-url developers
 MIT: the standard text in "Standard licence texts: MIT", above.
 
 futures 0.3.34 (MIT OR Apache-2.0)
@@ -1511,6 +2071,11 @@ https://github.com/seanmonstar/httparse
 Copyright (c) 2015-2025 Sean McArthur
 MIT: the standard text in "Standard licence texts: MIT", above.
 
+httpdate 1.0.3 (MIT OR Apache-2.0)
+https://github.com/pyfisch/httpdate
+Copyright (c) 2016 Pyfisch
+MIT: the standard text in "Standard licence texts: MIT", above.
+
 hybrid-array 0.4.15 (MIT OR Apache-2.0)
 https://github.com/RustCrypto/hybrid-array
 Copyright (c) 2022-2026 The RustCrypto Project Developers
@@ -1581,6 +2146,120 @@ https://github.com/iced-rs/iced
 Copyright (c) Héctor Ramón Jiménez
 Used under MIT; the crate is published without a licence file, so its terms are the standard text in "Standard licence texts: MIT", above.
 
+icu_calendar 2.4.0 (Unicode-3.0)
+https://github.com/unicode-org/icu4x
+icu_calendar 2.4.0: LICENSE: the same text as fixed_decimal 0.7.3: LICENSE, above.
+
+icu_calendar_data 2.4.0 (Unicode-3.0)
+https://github.com/unicode-org/icu4x
+icu_calendar_data 2.4.0: LICENSE: the same text as fixed_decimal 0.7.3: LICENSE, above.
+
+icu_casemap 2.4.0 (Unicode-3.0)
+https://github.com/unicode-org/icu4x
+icu_casemap 2.4.0: LICENSE: the same text as fixed_decimal 0.7.3: LICENSE, above.
+
+icu_casemap_data 2.4.0 (Unicode-3.0)
+https://github.com/unicode-org/icu4x
+icu_casemap_data 2.4.0: LICENSE: the same text as fixed_decimal 0.7.3: LICENSE, above.
+
+icu_collator 2.4.0 (Unicode-3.0)
+https://github.com/unicode-org/icu4x
+icu_collator 2.4.0: LICENSE: the same text as fixed_decimal 0.7.3: LICENSE, above.
+
+icu_collator_data 2.4.0 (Unicode-3.0)
+https://github.com/unicode-org/icu4x
+icu_collator_data 2.4.0: LICENSE: the same text as fixed_decimal 0.7.3: LICENSE, above.
+
+icu_collections 2.4.0 (Unicode-3.0)
+https://github.com/unicode-org/icu4x
+icu_collections 2.4.0: LICENSE: the same text as fixed_decimal 0.7.3: LICENSE, above.
+
+icu_datetime 2.4.0 (Unicode-3.0)
+https://github.com/unicode-org/icu4x
+icu_datetime 2.4.0: LICENSE: the same text as fixed_decimal 0.7.3: LICENSE, above.
+
+icu_datetime_data 2.4.0 (Unicode-3.0)
+https://github.com/unicode-org/icu4x
+icu_datetime_data 2.4.0: LICENSE: the same text as fixed_decimal 0.7.3: LICENSE, above.
+
+icu_decimal 2.4.0 (Unicode-3.0)
+https://github.com/unicode-org/icu4x
+icu_decimal 2.4.0: LICENSE: the same text as fixed_decimal 0.7.3: LICENSE, above.
+
+icu_decimal_data 2.4.0 (Unicode-3.0)
+https://github.com/unicode-org/icu4x
+icu_decimal_data 2.4.0: LICENSE: the same text as fixed_decimal 0.7.3: LICENSE, above.
+
+icu_locale_core 2.4.0 (Unicode-3.0)
+https://github.com/unicode-org/icu4x
+icu_locale_core 2.4.0: LICENSE: the same text as fixed_decimal 0.7.3: LICENSE, above.
+
+icu_locale_fallback 2.4.0 (Unicode-3.0)
+https://github.com/unicode-org/icu4x
+icu_locale_fallback 2.4.0: LICENSE: the same text as fixed_decimal 0.7.3: LICENSE, above.
+
+icu_locale_fallback_data 2.4.0 (Unicode-3.0)
+https://github.com/unicode-org/icu4x
+icu_locale_fallback_data 2.4.0: LICENSE: the same text as fixed_decimal 0.7.3: LICENSE, above.
+
+icu_normalizer 2.4.0 (Unicode-3.0)
+https://github.com/unicode-org/icu4x
+icu_normalizer 2.4.0: LICENSE: the same text as fixed_decimal 0.7.3: LICENSE, above.
+
+icu_normalizer_data 2.4.0 (Unicode-3.0)
+https://github.com/unicode-org/icu4x
+icu_normalizer_data 2.4.0: LICENSE: the same text as fixed_decimal 0.7.3: LICENSE, above.
+
+icu_pattern 0.5.1 (Unicode-3.0)
+https://github.com/unicode-org/icu4x
+icu_pattern 0.5.1: LICENSE: the same text as fixed_decimal 0.7.3: LICENSE, above.
+
+icu_plurals 2.4.0 (Unicode-3.0)
+https://github.com/unicode-org/icu4x
+icu_plurals 2.4.0: LICENSE: the same text as fixed_decimal 0.7.3: LICENSE, above.
+
+icu_plurals_data 2.4.0 (Unicode-3.0)
+https://github.com/unicode-org/icu4x
+icu_plurals_data 2.4.0: LICENSE: the same text as fixed_decimal 0.7.3: LICENSE, above.
+
+icu_properties 2.4.0 (Unicode-3.0)
+https://github.com/unicode-org/icu4x
+icu_properties 2.4.0: LICENSE: the same text as fixed_decimal 0.7.3: LICENSE, above.
+
+icu_properties_data 2.4.0 (Unicode-3.0)
+https://github.com/unicode-org/icu4x
+icu_properties_data 2.4.0: LICENSE: the same text as fixed_decimal 0.7.3: LICENSE, above.
+
+icu_provider 2.4.0 (Unicode-3.0)
+https://github.com/unicode-org/icu4x
+icu_provider 2.4.0: LICENSE: the same text as fixed_decimal 0.7.3: LICENSE, above.
+
+icu_segmenter 2.4.0 (Unicode-3.0)
+https://github.com/unicode-org/icu4x
+icu_segmenter 2.4.0: LICENSE: the same text as fixed_decimal 0.7.3: LICENSE, above.
+
+icu_segmenter_data 2.4.0 (Unicode-3.0)
+https://github.com/unicode-org/icu4x
+icu_segmenter_data 2.4.0: LICENSE: the same text as fixed_decimal 0.7.3: LICENSE, above.
+
+icu_time 2.4.0 (Unicode-3.0)
+https://github.com/unicode-org/icu4x
+icu_time 2.4.0: LICENSE: the same text as fixed_decimal 0.7.3: LICENSE, above.
+
+icu_time_data 2.4.0 (Unicode-3.0)
+https://github.com/unicode-org/icu4x
+icu_time_data 2.4.0: LICENSE: the same text as fixed_decimal 0.7.3: LICENSE, above.
+
+idna 1.1.0 (MIT OR Apache-2.0)
+https://github.com/servo/rust-url/
+Copyright (c) 2013-2025 The rust-url developers
+MIT: the standard text in "Standard licence texts: MIT", above.
+
+idna_adapter 1.2.2 (Apache-2.0 OR MIT)
+https://github.com/hsivonen/idna_adapter
+Copyright (c) The rust-url developers
+MIT: the standard text in "Standard licence texts: MIT", above.
+
 image 0.25.10 (MIT OR Apache-2.0)
 https://github.com/image-rs/image
 MIT: the standard text in "Standard licence texts: MIT", above.
@@ -1599,9 +2278,28 @@ https://github.com/indexmap-rs/indexmap
 Copyright (c) 2016--2017
 MIT: the standard text in "Standard licence texts: MIT", above.
 
+intl-memoizer 0.5.3 (Apache-2.0 OR MIT)
+https://github.com/projectfluent/fluent-rs
+Copyright 2017 Mozilla
+MIT: the standard text in "Standard licence texts: MIT", above.
+
+intl_pluralrules 7.0.2 (Apache-2.0/MIT)
+https://github.com/zbraniecki/pluralrules
+Copyright (c) Kekoa Riggin, Zibi Braniecki
+Used under Apache-2.0; the crate is published without a licence file, so its terms are the standard text in "Standard licence texts: Apache-2.0", above.
+
+is_terminal_polyfill 1.70.2 (MIT OR Apache-2.0)
+https://github.com/polyfill-rs/is_terminal_polyfill
+Copyright (c) Individual contributors
+MIT: the standard text in "Standard licence texts: MIT", above.
+
 itoa 1.0.18 (MIT OR Apache-2.0)
 https://github.com/dtolnay/itoa
 MIT: the standard text in "Standard licence texts: MIT", above.
+
+ixdtf 0.6.7 (Unicode-3.0)
+https://github.com/unicode-org/icu4x
+ixdtf 0.6.7: LICENSE: the same text as fixed_decimal 0.7.3: LICENSE, above.
 
 kamadak-exif 0.6.2 (BSD-2-Clause)
 https://github.com/kamadak/exif-rs
@@ -1940,6 +2638,14 @@ linebender_resource_handle 0.1.1 (Apache-2.0 OR MIT)
 https://github.com/linebender/raw_resource_handle
 MIT: the standard text in "Standard licence texts: MIT", above.
 
+linkme 0.3.38 (MIT OR Apache-2.0)
+https://github.com/dtolnay/linkme
+MIT: the standard text in "Standard licence texts: MIT", above.
+
+linkme-impl 0.3.38 (MIT OR Apache-2.0)
+https://github.com/dtolnay/linkme
+MIT: the standard text in "Standard licence texts: MIT", above.
+
 linux-raw-sys 0.12.1 (Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT)
 https://github.com/sunfishcode/linux-raw-sys
 MIT: the standard text in "Standard licence texts: MIT", above.
@@ -1980,6 +2686,10 @@ https://github.com/sunfishcode/linux-raw-sys
 MIT: the standard text in "Standard licence texts: MIT", above.
 
 linux-raw-sys 0.4.15: COPYRIGHT: the same text as linux-raw-sys 0.12.1: COPYRIGHT, above.
+
+litemap 0.8.3 (Unicode-3.0)
+https://github.com/unicode-org/icu4x
+litemap 0.8.3: LICENSE: the same text as fixed_decimal 0.7.3: LICENSE, above.
 
 litrs 1.0.1 (MIT OR Apache-2.0)
 https://github.com/LukasKalbertodt/litrs
@@ -2030,6 +2740,14 @@ malloc_buf 0.0.6 (MIT)
 https://github.com/SSheldon/malloc_buf
 Copyright (c) Steven Sheldon
 Used under MIT; the crate is published without a licence file, so its terms are the standard text in "Standard licence texts: MIT", above.
+
+md-5 0.11.0 (MIT OR Apache-2.0)
+https://github.com/RustCrypto/hashes
+Copyright (c) 2016-2026 The RustCrypto Project Developers
+Copyright (c) 2016 Artyom Pavlov
+Copyright (c) 2009-2013 Mozilla Foundation
+Copyright (c) 2006-2009 Graydon Hoare
+MIT: the standard text in "Standard licence texts: MIT", above.
 
 memchr 2.8.3 (Unlicense OR MIT)
 https://github.com/BurntSushi/memchr
@@ -2251,6 +2969,11 @@ https://github.com/madsmtm/objc2
 Copyright (c) the objc2-quartz-core authors
 Used under Apache-2.0; the crate is published without a licence file, so its terms are the standard text in "Standard licence texts: Apache-2.0", above.
 
+objc2-security 0.3.2 (Zlib OR Apache-2.0 OR MIT)
+https://github.com/madsmtm/objc2
+Copyright (c) the objc2-security authors
+Used under Apache-2.0; the crate is published without a licence file, so its terms are the standard text in "Standard licence texts: Apache-2.0", above.
+
 objc2-video-toolbox 0.3.2 (Zlib OR Apache-2.0 OR MIT)
 https://github.com/madsmtm/objc2
 Copyright (c) the objc2-video-toolbox authors
@@ -2258,6 +2981,11 @@ Used under Apache-2.0; the crate is published without a licence file, so its ter
 
 once_cell 1.21.4 (MIT OR Apache-2.0)
 https://github.com/matklad/once_cell
+MIT: the standard text in "Standard licence texts: MIT", above.
+
+once_cell_polyfill 1.70.2 (MIT OR Apache-2.0)
+https://github.com/polyfill-rs/once_cell_polyfill
+Copyright (c) Individual contributors
 MIT: the standard text in "Standard licence texts: MIT", above.
 
 ordered-float 5.5.1 (MIT)
@@ -2328,6 +3056,10 @@ https://github.com/zesterer/pollster
 Copyright (c) 2020-2021 Joshua Barretto
 MIT: the standard text in "Standard licence texts: MIT", above.
 
+potential_utf 0.1.6 (Unicode-3.0)
+https://github.com/unicode-org/icu4x
+potential_utf 0.1.6: LICENSE: the same text as fixed_decimal 0.7.3: LICENSE, above.
+
 presser 0.3.1 (MIT OR Apache-2.0)
 https://github.com/EmbarkStudios/presser
 Copyright (c) 2019 Embark Studios
@@ -2345,6 +3077,16 @@ profiling 1.0.18 (MIT OR Apache-2.0)
 https://github.com/aclysma/profiling
 Copyright (c) Philip Degarmo
 Used under MIT; the crate is published without a licence file, so its terms are the standard text in "Standard licence texts: MIT", above.
+
+psl 2.1.255 (MIT/Apache-2.0)
+https://github.com/addr-rs/psl
+Copyright (c) 2016 Rushmore Mushambi
+MIT: the standard text in "Standard licence texts: MIT", above.
+
+psl-types 2.0.11 (MIT/Apache-2.0)
+https://github.com/addr-rs/psl-types
+Copyright (c) 2021 Rushmore Mushambi
+MIT: the standard text in "Standard licence texts: MIT", above.
 
 pure-rust-locales 0.8.2 (MIT OR Apache-2.0)
 https://github.com/cecton/pure-rust-locales
@@ -2557,6 +3299,10 @@ Copyright (c) HarfBuzz developers
 Copyright (c) 2020 Yevhenii Reizner
 MIT: the standard text in "Standard licence texts: MIT", above.
 
+ryu 1.0.23 (Apache-2.0 OR BSL-1.0)
+https://github.com/dtolnay/ryu
+Apache-2.0: the standard text in "Standard licence texts: Apache-2.0", above.
+
 scoped-tls 1.0.1 (MIT/Apache-2.0)
 https://github.com/alexcrichton/scoped-tls
 Copyright (c) 2014 Alex Crichton
@@ -2695,6 +3441,11 @@ https://github.com/gfx-rs/rspirv
 Copyright (c) Lei Zhang
 Used under Apache-2.0; the crate is published without a licence file, so its terms are the standard text in "Standard licence texts: Apache-2.0", above.
 
+stable_deref_trait 1.2.1 (MIT OR Apache-2.0)
+https://github.com/storyyeller/stable_deref_trait
+Copyright (c) 2017 Robert Grosse
+MIT: the standard text in "Standard licence texts: MIT", above.
+
 static_assertions 1.1.0 (MIT OR Apache-2.0)
 https://github.com/nvzqz/static-assertions-rs
 Copyright (c) 2017 Nikolai Vazquez
@@ -2759,6 +3510,11 @@ MIT: the standard text in "Standard licence texts: MIT", above.
 
 syn 3.0.9 (MIT OR Apache-2.0)
 https://github.com/dtolnay/syn
+MIT: the standard text in "Standard licence texts: MIT", above.
+
+synstructure 0.14.0 (MIT)
+https://github.com/mystor/synstructure
+Copyright 2016 Nika Layzell
 MIT: the standard text in "Standard licence texts: MIT", above.
 
 sys-locale 0.3.2 (MIT OR Apache-2.0)
@@ -2830,6 +3586,10 @@ https://github.com/rust-windowing/tiny-xlib
 Copyright (c) 2023 John Nunley
 MIT: the standard text in "Standard licence texts: MIT", above.
 
+tinystr 0.8.5 (Unicode-3.0)
+https://github.com/unicode-org/icu4x
+tinystr 0.8.5: LICENSE: the same text as fixed_decimal 0.7.3: LICENSE, above.
+
 tinyvec 1.13.3 (Zlib OR Apache-2.0 OR MIT)
 https://github.com/Lokathor/tinyvec
 MIT: the standard text in "Standard licence texts: MIT", above.
@@ -2874,9 +3634,22 @@ https://github.com/harfbuzz/ttf-parser
 Copyright (c) 2018 Yevhenii Reizner
 MIT: the standard text in "Standard licence texts: MIT", above.
 
+type-map 0.5.1 (MIT/Apache-2.0)
+https://github.com/kardeiz/type-map
+Copyright (c) 2022 Jacob Brown
+MIT: the standard text in "Standard licence texts: MIT", above.
+
 typenum 1.20.1 (MIT OR Apache-2.0)
 https://github.com/paholg/typenum
 Copyright (c) 2014 Paho Lurie-Gregg
+MIT: the standard text in "Standard licence texts: MIT", above.
+
+unic-langid 0.9.6 (MIT OR Apache-2.0)
+https://github.com/zbraniecki/unic-locale
+MIT: the standard text in "Standard licence texts: MIT", above.
+
+unic-langid-impl 0.9.6 (MIT OR Apache-2.0)
+https://github.com/zbraniecki/unic-locale
 MIT: the standard text in "Standard licence texts: MIT", above.
 
 unicode-bidi 0.3.18 (MIT OR Apache-2.0)
@@ -3056,6 +3829,11 @@ https://github.com/algesten/ureq-proto
 Copyright 2022 Martin Algesten
 MIT: the standard text in "Standard licence texts: MIT", above.
 
+url 2.5.8 (MIT OR Apache-2.0)
+https://github.com/servo/rust-url
+Copyright (c) 2013-2025 The rust-url developers
+MIT: the standard text in "Standard licence texts: MIT", above.
+
 urlencoding 2.1.3 (MIT)
 https://github.com/kornelski/rust_urlencoding
 © 2016 Bertram Truong
@@ -3067,9 +3845,139 @@ https://github.com/linebender/resvg
 Copyright 2017 the Resvg Authors
 MIT: the standard text in "Standard licence texts: MIT", above.
 
+utf16_iter 1.1.0 (Apache-2.0 OR MIT)
+https://github.com/hsivonen/utf16_iter
+Copyright Mozilla Foundation
+MIT: the standard text in "Standard licence texts: MIT", above.
+
+--- utf16_iter 1.1.0: COPYRIGHT ---
+Copyright Mozilla Foundation
+
+Licensed under the Apache License (Version 2.0), or the MIT license,
+(the "Licenses") at your option. You may not use this file except in
+compliance with one of the Licenses. You may obtain copies of the
+Licenses at:
+
+   https://www.apache.org/licenses/LICENSE-2.0
+   https://opensource.org/licenses/MIT
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the Licenses is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the Licenses for the specific language governing permissions and
+limitations under the Licenses.
+
+--
+
+Test code is dedicated to the Public Domain when so designated (see
+the individual files for PD/CC0-dedicated sections).
+
+--
+
+The implementation for Utf16CharIndices was adapted from the
+CharIndices implementation of the Rust standard library at revision
+ab32548539ec38a939c1b58599249f3b54130026
+(https://github.com/rust-lang/rust/blob/ab32548539ec38a939c1b58599249f3b54130026/library/core/src/str/iter.rs).
+
+Excerpt from https://github.com/rust-lang/rust/blob/ab32548539ec38a939c1b58599249f3b54130026/COPYRIGHT ,
+which refers to
+https://github.com/rust-lang/rust/blob/ab32548539ec38a939c1b58599249f3b54130026/LICENSE-APACHE
+and
+https://github.com/rust-lang/rust/blob/ab32548539ec38a939c1b58599249f3b54130026/LICENSE-MIT
+:
+
+For full authorship information, see the version control history or
+https://thanks.rust-lang.org
+
+Except as otherwise noted (below and/or in individual files), Rust is
+licensed under the Apache License, Version 2.0 <LICENSE-APACHE> or
+<http://www.apache.org/licenses/LICENSE-2.0> or the MIT license
+<LICENSE-MIT> or <http://opensource.org/licenses/MIT>, at your option.
+
 utf8-zero 0.8.1 (MIT OR Apache-2.0)
 https://github.com/algesten/utf8-zero
 MIT: the standard text in "Standard licence texts: MIT", above.
+
+utf8_iter 1.1.0 (Apache-2.0 OR MIT)
+https://github.com/hsivonen/utf8_iter
+Copyright Mozilla Foundation
+MIT: the standard text in "Standard licence texts: MIT", above.
+
+--- utf8_iter 1.1.0: COPYRIGHT ---
+Copyright Mozilla Foundation
+
+Licensed under the Apache License (Version 2.0), or the MIT license,
+(the "Licenses") at your option. You may not use this file except in
+compliance with one of the Licenses. You may obtain copies of the
+Licenses at:
+
+   https://www.apache.org/licenses/LICENSE-2.0
+   https://opensource.org/licenses/MIT
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the Licenses is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the Licenses for the specific language governing permissions and
+limitations under the Licenses.
+
+--
+
+Test code is dedicated to the Public Domain when so designated (see
+the individual files for PD/CC0-dedicated sections).
+
+--
+
+The implementation for Utf8CharIndices was adapted from the
+CharIndices implementation of the Rust standard library at revision
+ab32548539ec38a939c1b58599249f3b54130026
+(https://github.com/rust-lang/rust/blob/ab32548539ec38a939c1b58599249f3b54130026/library/core/src/str/iter.rs).
+
+Excerpt from https://github.com/rust-lang/rust/blob/ab32548539ec38a939c1b58599249f3b54130026/COPYRIGHT ,
+which refers to
+https://github.com/rust-lang/rust/blob/ab32548539ec38a939c1b58599249f3b54130026/LICENSE-APACHE
+and
+https://github.com/rust-lang/rust/blob/ab32548539ec38a939c1b58599249f3b54130026/LICENSE-MIT
+:
+
+For full authorship information, see the version control history or
+https://thanks.rust-lang.org
+
+Except as otherwise noted (below and/or in individual files), Rust is
+licensed under the Apache License, Version 2.0 <LICENSE-APACHE> or
+<http://www.apache.org/licenses/LICENSE-2.0> or the MIT license
+<LICENSE-MIT> or <http://opensource.org/licenses/MIT>, at your option.
+
+utf8parse 0.2.2 (Apache-2.0 OR MIT)
+https://github.com/alacritty/vte
+Copyright (c) 2016 Joe Wilm
+MIT: the standard text in "Standard licence texts: MIT", above.
+
+utf_types 1.0.0 (Apache-2.0 OR MIT)
+https://github.com/hsivonen/utf_types
+Copyright Mozilla Foundation
+MIT: the standard text in "Standard licence texts: MIT", above.
+
+--- utf_types 1.0.0: COPYRIGHT ---
+Copyright Mozilla Foundation
+
+Licensed under the Apache License (Version 2.0), or the MIT license,
+(the "Licenses") at your option. You may not use this file except in
+compliance with one of the Licenses. You may obtain copies of the
+Licenses at:
+
+   https://www.apache.org/licenses/LICENSE-2.0
+   https://opensource.org/licenses/MIT
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the Licenses is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the Licenses for the specific language governing permissions and
+limitations under the Licenses.
+
+--
+
+Test code is dedicated to the Public Domain when so designated (see
+the individual files for PD/CC0-dedicated sections).
 
 uuid 1.29.0 (Apache-2.0 OR MIT)
 https://github.com/uuid-rs/uuid
@@ -3361,6 +4269,17 @@ winnow 1.0.5 (MIT)
 https://github.com/winnow-rs/winnow
 MIT: the standard text in "Standard licence texts: MIT", above.
 
+write16 1.0.0 (Apache-2.0 OR MIT)
+https://github.com/hsivonen/write16
+Copyright Mozilla Foundation
+MIT: the standard text in "Standard licence texts: MIT", above.
+
+write16 1.0.0: COPYRIGHT: the same text as utf_types 1.0.0: COPYRIGHT, above.
+
+writeable 0.6.4 (Unicode-3.0)
+https://github.com/unicode-org/icu4x
+writeable 0.6.4: LICENSE: the same text as fixed_decimal 0.7.3: LICENSE, above.
+
 x11-dl 2.21.0 (MIT)
 https://github.com/AltF02/x11-rs.git
 MIT: the standard text in "Standard licence texts: MIT", above.
@@ -3400,6 +4319,14 @@ https://github.com/dfrg/yazi
 Copyright (c) 2020 Chad Brokaw
 MIT: the standard text in "Standard licence texts: MIT", above.
 
+yoke 0.8.4 (Unicode-3.0)
+https://github.com/unicode-org/icu4x
+yoke 0.8.4: LICENSE: the same text as fixed_decimal 0.7.3: LICENSE, above.
+
+yoke-derive 0.8.4 (Unicode-3.0)
+https://github.com/unicode-org/icu4x
+yoke-derive 0.8.4: LICENSE: the same text as fixed_decimal 0.7.3: LICENSE, above.
+
 zbus 5.19.0 (MIT)
 https://github.com/z-galaxy/zbus/
 Copyright (c) 2024 Zeeshan Ali Khan & zbus contributors
@@ -3435,10 +4362,30 @@ https://github.com/google/zerocopy
 Copyright 2023 The Fuchsia Authors
 MIT: the standard text in "Standard licence texts: MIT", above.
 
+zerofrom 0.1.8 (Unicode-3.0)
+https://github.com/unicode-org/icu4x
+zerofrom 0.1.8: LICENSE: the same text as fixed_decimal 0.7.3: LICENSE, above.
+
+zerofrom-derive 0.1.8 (Unicode-3.0)
+https://github.com/unicode-org/icu4x
+zerofrom-derive 0.1.8: LICENSE: the same text as fixed_decimal 0.7.3: LICENSE, above.
+
 zeroize 1.9.1 (Apache-2.0 OR MIT)
 https://github.com/RustCrypto/utils
 Copyright (c) 2018-2026 The RustCrypto Project Developers
 MIT: the standard text in "Standard licence texts: MIT", above.
+
+zerotrie 0.2.5 (Unicode-3.0)
+https://github.com/unicode-org/icu4x
+zerotrie 0.2.5: LICENSE: the same text as fixed_decimal 0.7.3: LICENSE, above.
+
+zerovec 0.11.9 (Unicode-3.0)
+https://github.com/unicode-org/icu4x
+zerovec 0.11.9: LICENSE: the same text as fixed_decimal 0.7.3: LICENSE, above.
+
+zerovec-derive 0.11.7 (Unicode-3.0)
+https://github.com/unicode-org/icu4x
+zerovec-derive 0.11.7: LICENSE: the same text as fixed_decimal 0.7.3: LICENSE, above.
 
 zlib-rs 0.6.8 (Zlib)
 https://github.com/trifectatechfoundation/zlib-rs

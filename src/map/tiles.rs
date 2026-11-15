@@ -40,7 +40,7 @@ pub enum Style {
 }
 
 impl Style {
-    fn key(self) -> &'static str {
+    pub(super) fn key(self) -> &'static str {
         match self {
             Style::Light => "colorful",
             Style::Dark => "sentry-dark",
@@ -198,6 +198,10 @@ impl Tiles {
         None
     }
 
+    pub(super) fn notify_updated(&self) {
+        bump(&self.inner);
+    }
+
     /// Blocks until a tile (or the index) arrives after `seen`, or a while.
     pub fn wait_for_update(&self, seen: u64) -> u64 {
         let (lock, cvar) = &self.inner.updates;
@@ -222,12 +226,12 @@ fn dev_index() -> Option<Index> {
     Some(Index { templates, max_zoom: 19, attribution: "development tiles".into() })
 }
 
-fn agent() -> ureq::Agent {
+pub(super) fn agent() -> ureq::Agent {
     ureq::Agent::config_builder().timeout_global(Some(Duration::from_secs(15))).build().into()
 }
 
 /// The body, or the HTTP status (0 when the request failed).
-fn get(agent: &ureq::Agent, url: &str) -> Result<Vec<u8>, u16> {
+pub(super) fn get(agent: &ureq::Agent, url: &str) -> Result<Vec<u8>, u16> {
     let mut resp = match agent.get(url).header("User-Agent", UA).call() {
         Ok(r) => r,
         Err(ureq::Error::StatusCode(code)) => return Err(code),
@@ -276,7 +280,7 @@ fn fetch_index(cache_dir: Option<&std::path::Path>) -> Option<Index> {
 
 /// The disk cache file for a tile URL (a hash of it, keeping revisions
 /// apart). FNV-1a, which stays the same across Rust releases.
-fn cache_path(dir: &std::path::Path, url: &str) -> PathBuf {
+pub(super) fn cache_path(dir: &std::path::Path, url: &str) -> PathBuf {
     let hash = url.bytes().fold(0xcbf2_9ce4_8422_2325u64, |h, b| (h ^ b as u64).wrapping_mul(0x0100_0000_01b3));
     let name = format!("{hash:016x}");
     dir.join(&name[..2]).join(name)

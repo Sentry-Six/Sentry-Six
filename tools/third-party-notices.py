@@ -83,6 +83,7 @@ STANDARD = {
     "MIT": "Standard licence texts: MIT",
     "Apache-2.0": "Standard licence texts: Apache-2.0",
     "BSL-1.0": "Standard licence texts: BSL-1.0",
+    "MPL-2.0": "Standard licence texts: MPL-2.0",
     "CC0-1.0": None,
 }
 
@@ -217,6 +218,8 @@ def render():
     with open(os.path.join(ROOT, "assets/fonts/licenses/MaterialSymbols-Apache-2.0.txt"), encoding="utf-8") as f:
         text_block("Standard licence texts: Apache-2.0", f.read(), shorten=False)
     text_block("Standard licence texts: BSL-1.0", BOOST, shorten=False)
+    with open(os.path.join(ROOT, "tools/licenses/MPL-2.0.txt"), encoding="utf-8") as f:
+        text_block(STANDARD["MPL-2.0"], f.read(), shorten=False)
 
     out += [RULE, "Fonts", RULE, ""]
     for name, licence, path in FONTS:
@@ -230,6 +233,8 @@ def render():
         out.append(f'{label} ({package.get("license") or "see below"})')
         if package.get("repository"):
             out.append(package["repository"])
+        if package.get("license") == "MPL-2.0":
+            out.append(f'Source for this version: https://crates.io/crates/{package["name"]}/{package["version"]}')
         files = licence_files(package)
         if not files:
             missing.append(label)

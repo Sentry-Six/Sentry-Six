@@ -39,6 +39,12 @@ sha2 = "0.11"
 log = "0.4"
 # AI support chat: message IDs (src/support.rs).
 uuid = { version = "1", features = ["v4"] }
+# Vector map style, tile decoding, and upright symbol placement.
+day-piece-map = { version = "=0.1.1", default-features = false }
+day-geometry = { version = "=0.7.4", default-features = false }
+day-pieces = { version = "=0.7.4", default-features = false }
+day-spec = { version = "=0.7.4", default-features = false }
+tiny-skia = { version = "0.11", default-features = false }
 
 [features]
 # The Mac App Store build: sandboxed (picked folders are remembered with
