@@ -19,7 +19,11 @@
         },
         {
           "type": "improvement",
-          "description": "Korean, Japanese and Chinese: the interface is larger on Windows, so small text is easier to read."
+          "description": "The compact dashboard shows the date beside the time again, in playback and in exports."
+        },
+        {
+          "type": "improvement",
+          "description": "Korean, Japanese and Chinese on Windows: menu text is readable again, and the interface is larger so small text is easier to read."
         },
         {
           "type": "fix",
@@ -28,21 +32,6 @@
         {
           "type": "fix",
           "description": "With no folder open, the folder prompt no longer shows through Settings."
-        }
-      ]
-    },
-    {
-      "version": "2026.46.5",
-      "date": "2026-11-14",
-      "title": "Date and Korean Text",
-      "changes": [
-        {
-          "type": "improvement",
-          "description": "The compact dashboard shows the date beside the time again, in playback and in exports."
-        },
-        {
-          "type": "fix",
-          "description": "Korean, Japanese and Chinese text in menus and labels is readable again on Windows."
         }
       ]
     },
