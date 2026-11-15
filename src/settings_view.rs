@@ -77,6 +77,7 @@ pub enum Change {
     ResetCameraOrder,
     ViewChangelog,
     OpenSupportChat,
+    SaveDiagnostics,
     /// The list of clips shared from this computer.
     OpenSharedClips,
     /// Opens the licences (this app's and the third-party notices).
@@ -412,10 +413,13 @@ fn system_section<'a>(s: &'a Settings, ui: &'a Ui) -> Element<'a, Message> {
             container(
                 row![
                     small_button(t("ui.settings.openSupportChat"), Change::OpenSupportChat),
+                    small_button(t("ui.settings.saveDiagnostics"), Change::SaveDiagnostics),
                     small_button(t("ui.settings.viewChangelog"), Change::ViewChangelog),
                     small_button(t("ui.sharedClips.title"), Change::OpenSharedClips),
                 ]
-                .spacing(8),
+                .spacing(8)
+                .wrap()
+                .vertical_spacing(8),
             )
                 .padding([8, 0]),
         );
@@ -565,7 +569,7 @@ fn rows<'a>(s: &'a Settings, ui: &'a Ui, keys: &'a Shortcuts) -> Vec<Row<'a>> {
         toggle(s.show_fsd_events, Change::ShowFsdEvents),
     ));
     list.push(Row { section: System, subtab: None, words: format!(
-            "{} {} {} {} {} {} {} {}",
+            "{} {} {} {} {} {} {} {} {}",
             t("ui.sharedClips.title"),
             t("ui.settings.appVersion"),
             t("ui.settings.architecture"),
@@ -573,7 +577,8 @@ fn rows<'a>(s: &'a Settings, ui: &'a Ui, keys: &'a Shortcuts) -> Vec<Row<'a>> {
             t("ui.settings.checkForUpdates"),
             t("ui.settings.viewChangelog"),
             t("ui.settings.openSource"),
-            t("ui.settings.openSupportChat")
+            t("ui.settings.openSupportChat"),
+            t("ui.settings.saveDiagnostics")
         ),
         view: system_section(s, ui),
     });

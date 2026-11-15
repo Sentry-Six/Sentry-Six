@@ -14,6 +14,10 @@ use windows::Win32::System::Com::{CoInitializeEx, COINIT_MULTITHREADED};
 
 static STARTUP: std::sync::Once = std::sync::Once::new();
 
+/// Software only: Microsoft's own encoders, not the GPU's. Set for an
+/// export tried again after the GPU's encoder failed (export::job::run).
+pub static SOFTWARE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
 fn hr(e: windows::core::Error, what: &str) -> anyhow::Error {
     anyhow!("{what} (Media Foundation error {:#010x})", e.code().0 as u32)
 }
@@ -78,7 +82,8 @@ impl Encoder {
             let mut attrs: Option<IMFAttributes> = None;
             MFCreateAttributes(&mut attrs, 4).map_err(|e| hr(e, "Media Foundation is not available"))?;
             let attrs = attrs.ok_or_else(|| anyhow!("Media Foundation is not available"))?;
-            attrs.SetUINT32(&MF_READWRITE_ENABLE_HARDWARE_TRANSFORMS, 1)?;
+            let software = SOFTWARE.load(std::sync::atomic::Ordering::Relaxed);
+            attrs.SetUINT32(&MF_READWRITE_ENABLE_HARDWARE_TRANSFORMS, u32::from(!software))?;
             attrs.SetUINT32(&MF_SINK_WRITER_DISABLE_THROTTLING, 1)?;
             attrs.SetGUID(&MF_TRANSCODE_CONTAINERTYPE, &MFTranscodeContainerType_MPEG4)?;
             let url = HSTRING::from(output.as_os_str());
@@ -127,7 +132,11 @@ impl Encoder {
             writer.SetInputMediaType(stream, &input, None).map_err(|e| hr(e, "the encoder won't take our frames"))?;
 
             writer.BeginWriting().map_err(|e| hr(e, "could not start encoding"))?;
-            log::info!("export: Media Foundation {:?} encoder (hardware when the GPU has one)", s.codec);
+            if software {
+                log::info!("export: Media Foundation {:?} encoder, software only", s.codec);
+            } else {
+                log::info!("export: Media Foundation {:?} encoder (hardware when the GPU has one)", s.codec);
+            }
             Ok(Encoder { writer, stream, width: s.width, height: s.height, timescale: s.timescale })
         }
     }

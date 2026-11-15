@@ -300,6 +300,7 @@ fn main() -> iced::Result {
         .title("Sentry Studio")
         .subscription(App::subscription)
         .theme(|_: &App| theme::theme())
+        .scale_factor(|_: &App| theme::ui_scale())
         .default_font(INTER)
         .window(iced::window::Settings {
             size: INITIAL_WINDOW_SIZE,
@@ -352,6 +353,10 @@ pub(crate) enum Message {
     SeekDone,
     Skip(f64),
     Rate(Speed),
+    /// Where to save the diagnostics report (Settings), then whether it
+    /// was written.
+    DiagnosticsPicked(Option<std::path::PathBuf>),
+    DiagnosticsSaved(Result<(), String>),
     Tick,
     ShowTab(Tab),
     TogglePanel,
@@ -460,8 +465,10 @@ impl std::fmt::Display for Speed {
     }
 }
 
-/// The playback speeds.
-const SPEEDS: [Speed; 5] = [Speed(0.5), Speed(1.0), Speed(2.0), Speed(3.0), Speed(4.0)];
+/// The playback speeds. At 8x each camera decodes about 288 frames a
+/// second; where the drive or decoder can't keep up, the clock waits for
+/// the slowest camera (see player), so the cameras stay in step.
+const SPEEDS: [Speed; 6] = [Speed(0.5), Speed(1.0), Speed(2.0), Speed(3.0), Speed(4.0), Speed(8.0)];
 /// Where the floating clip browser sits (logical pixels from the window's
 /// top left), and the glass: saturate(185%), 24 px corners. The blur comes
 /// from the settings (13 px when none is set).
@@ -850,6 +857,29 @@ impl App {
                 self.player.seek(t);
             }
             Message::Rate(s) => self.player.set_rate(s.0),
+            Message::DiagnosticsPicked(None) => {}
+            Message::DiagnosticsPicked(Some(path)) => {
+                // Collected only now, once a place to save it was chosen: the
+                // same report the support chat uploads (names in paths removed).
+                let snap = self.diagnostics_snapshot();
+                let failed = Err("the report stopped".to_string());
+                return Task::perform(
+                    off_thread_or(failed, move || std::fs::write(&path, diagnostics::report(&snap)).map_err(|e| e.to_string())),
+                    Message::DiagnosticsSaved,
+                );
+            }
+            Message::DiagnosticsSaved(result) => {
+                return match result {
+                    Ok(()) => {
+                        log::info!(target: "app", "diagnostics saved to a file");
+                        self.notify(i18n::t("app.diagnosticsSaved").to_string(), false)
+                    }
+                    Err(e) => {
+                        log::warn!(target: "app", "diagnostics: could not save ({e})");
+                        self.notify(format!("{} ({e})", i18n::t("app.diagnosticsSaveFailed")), true)
+                    }
+                };
+            }
             Message::Tick => {
                 self.player.tick();
                 self.animate_dashboard();
@@ -1166,6 +1196,11 @@ impl App {
                         }
                         return self.chat_update(support_view::ChatMsg::Toggle);
                     }
+                    Change::SaveDiagnostics => {
+                        let name = format!("Sentry Studio diagnostics {}.txt", chrono::Local::now().format("%Y-%m-%d %H-%M"));
+                        let dialog = rfd::AsyncFileDialog::new().set_title(i18n::t("ui.settings.saveDiagnostics")).set_file_name(name).add_filter("Text", &["txt"]);
+                        return Task::perform(async move { dialog.save_file().await.map(|f| f.path().to_path_buf()) }, Message::DiagnosticsPicked);
+                    }
                     Change::ViewChangelog => {
                         self.changelog = Some(update::changelog());
                         return Task::none();
@@ -1480,7 +1515,7 @@ impl App {
         // 5 px around it (half the 10 px gap).
         let g = self.grid_size?;
         let m = video::MARGIN;
-        let stage_x = if self.settings.dock_playback_panels { self.sidebar_width() } else { 0.0 };
+        let stage_x = if self.sidebar_shown() { self.sidebar_width() } else { 0.0 };
         let cell = |x: f32, y: f32, w: f32, h: f32| Rectangle { x: stage_x + x + 2.0 * m, y: y + 2.0 * m, width: w - 2.0 * m, height: h - 2.0 * m };
         match self.focus {
             Some(f) if f == slot => Some(cell(0.0, 0.0, g.width, g.height)),
@@ -2256,6 +2291,13 @@ impl App {
         (tile_width + SIDEBAR_PADDING).clamp(0.0, window_width)
     }
 
+    /// The docked sidebar is on screen: docked, and not collapsed (which
+    /// hides the whole column, the dashboard and map with it, and leaves
+    /// the cameras the full width and the expand button over them).
+    fn sidebar_shown(&self) -> bool {
+        self.settings.dock_playback_panels && self.panel_open
+    }
+
     fn browser_width(&self) -> f32 {
         if self.settings.dock_playback_panels {
             (self.sidebar_width() - SIDEBAR_PADDING).max(0.0)
@@ -2269,11 +2311,7 @@ impl App {
         let width = self.sidebar_width();
         let inner_width = self.browser_width();
         let inner_height = (window.height - CONTROLS_HEIGHT - 2.0 * SIDEBAR_PADDING).max(0.0);
-        let browser = if self.panel_open {
-            container(self.clip_browser()).center_x(Length::Fill).height(Length::Fill).clip(true)
-        } else {
-            container(self.collapsed_browser())
-        };
+        let browser = container(self.clip_browser()).center_x(Length::Fill).height(Length::Fill).clip(true);
         let mut panels = column![].spacing(SIDEBAR_PADDING).align_x(Alignment::Center).width(Length::Fill);
         let show_dash = self.dashboard_visible();
         if show_dash {
@@ -2295,11 +2333,7 @@ impl App {
             if let Some(map) = map {
                 panels = panels.push(map);
             }
-            let max_height = if self.panel_open {
-                inner_height * 0.60
-            } else {
-                (inner_height - COLLAPSED_BROWSER_SIZE - SIDEBAR_PADDING).max(0.0)
-            };
+            let max_height = inner_height * 0.60;
             sidebar = sidebar.push(
                 container(
                     scrollable(panels)
@@ -2322,11 +2356,15 @@ impl App {
     }
 
     fn view(&self) -> Element<'_, Message> {
-        let docked = self.settings.dock_playback_panels;
+        let docked = self.sidebar_shown();
         let mut stage = stack![container(self.camera_grid()).padding(video::MARGIN)].height(Length::Fill);
         // No folder open yet: a click anywhere picks one (not under the
-        // first-run notice, whose glass would show it through).
-        if self.root.is_none() && !self.scanning && !self.privacy_pending() {
+        // first-run notice, whose glass would show it through). Under any
+        // other dialog only the dimming stays: the prompt sits where dialogs
+        // open, and its text would show through their glass.
+        if self.root.is_none() && !self.scanning && !self.privacy_pending() && self.dialog_open() {
+            stage = stage.push(container(space()).width(Length::Fill).height(Length::Fill).style(theme::overlay(0.55)));
+        } else if self.root.is_none() && !self.scanning && !self.privacy_pending() {
             let prompt = column![
                 icon(theme::icon::FOLDER, 48.0).color(theme::TEXT_MUTED),
                 text(i18n::t("ui.dropOverlay.message")).size(14),
@@ -2768,7 +2806,7 @@ impl App {
 
     /// The collapsed browser's expand button.
     fn collapsed_browser(&self) -> Element<'_, Message> {
-        let width = if self.settings.dock_playback_panels { self.browser_width() } else { COLLAPSED_BROWSER_SIZE };
+        let width = COLLAPSED_BROWSER_SIZE;
         container(theme::tip(
             button(container(icon(theme::icon::CHEVRON_LEFT, 20.0)).center(Length::Fill))
                 .width(width)
@@ -2827,7 +2865,7 @@ impl App {
             // The player's tile for this camera (its tiles follow GRID).
             let idx = GRID.iter().position(|c| *c == camera).unwrap_or(slot);
             let picture = self.player.shown(idx).map(|s| (s.id, s.frame.clone()));
-            let glass = self.panel_size.filter(|_| !self.settings.dock_playback_panels && !self.panel_under_dialog()).map(|size| video::Glass {
+            let glass = self.panel_size.filter(|_| !self.sidebar_shown() && !self.panel_under_dialog()).map(|size| video::Glass {
                 rect: Rectangle::new(iced::Point::new(PANEL_X, PANEL_Y), size),
                 radius: if self.panel_open { PANEL_RADIUS } else { COLLAPSED_RADIUS },
                 blur: self.settings.glass_blur,
