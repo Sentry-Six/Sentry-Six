@@ -64,9 +64,21 @@ pub type RoutePoint = (f32, f32, bool);
 /// The route of one clip from its telemetry: only the first bytes of each
 /// frame are read (Tesla's SEI comes first), every sixth frame.
 pub fn clip_route(path: &std::path::Path) -> Vec<RoutePoint> {
-    let Ok(file) = std::fs::File::open(path) else { return Vec::new() };
-    let Ok(track) = mp4::read_video_track(&file) else { return Vec::new() };
-    let mut out = Vec::new();
+    let mut points = Vec::new();
+    read_clip_route(path, |_, point| points.push(point));
+    points
+}
+
+pub fn timed_clip_route(path: &std::path::Path) -> Vec<(f64, RoutePoint)> {
+    let mut points = Vec::new();
+    read_clip_route(path, |secs, point| points.push((secs, point)));
+    points.sort_by(|a, b| a.0.total_cmp(&b.0));
+    points
+}
+
+fn read_clip_route(path: &std::path::Path, mut push: impl FnMut(f64, RoutePoint)) {
+    let Ok(file) = std::fs::File::open(path) else { return };
+    let Ok(track) = mp4::read_video_track(&file) else { return };
     let mut buf = vec![0u8; 512];
     for (i, s) in track.samples.iter().enumerate() {
         if i % 6 != 0 && i + 1 != track.samples.len() {
@@ -80,10 +92,9 @@ pub fn clip_route(path: &std::path::Path) -> Vec<RoutePoint> {
         if crate::sei::has_valid_gps(&sei) {
             // Any Autopilot state, TACC included, colours the route, as in
             // earlier versions' maps (the dashboard counts only 1 and 2).
-            out.push((sei.latitude_deg as f32, sei.longitude_deg as f32, sei.autopilot_state != 0));
+            push(track.pts_secs(i), (sei.latitude_deg as f32, sei.longitude_deg as f32, sei.autopilot_state != 0));
         }
     }
-    out
 }
 
 /// Everything the map draws this frame.

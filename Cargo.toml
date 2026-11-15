@@ -6,7 +6,7 @@ description = "Sentry Studio: synced six-camera Tesla dashcam playback"
 authors = ["Sentry-Six"]
 license = "MIT"
 edition = "2021"
-rust-version = "1.90"
+rust-version = "1.88"
 publish = false
 
 [[bin]]

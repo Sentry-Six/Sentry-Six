@@ -29,6 +29,9 @@ const REQUEST_LIMIT: usize = 64;
 // Keep the cached basemap larger than the panel. Rotating it or following the
 // car within this margin costs only a draw of the existing texture.
 const CENTER_STEP: f64 = 64.0;
+const LABEL_PADDING: f64 = 128.0;
+const MAX_LABEL_SIZE: f64 = 16.0;
+const LAYOUT_ZOOM_STEP: f64 = 0.25;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 enum Request {
@@ -69,6 +72,7 @@ pub struct VectorTiles {
     loader: Arc<Loader>,
     // Playback owns this canvas cache. Export continues to use its raster tiles.
     base: RefCell<Option<Basemap>>,
+    label_history: RefCell<draw::LabelHistory>,
     enabled: bool,
 }
 
@@ -117,6 +121,7 @@ impl VectorTiles {
         Self {
             loader,
             base: RefCell::new(None),
+            label_history: RefCell::default(),
             enabled,
         }
     }
@@ -156,9 +161,10 @@ impl VectorTiles {
         theme: Style,
         style: &style::Style,
         camera: &Camera,
+        coverage: &Camera,
     ) -> (Vec<RenderTile>, bool) {
         let mut tiles = Vec::new();
-        let mut basemap_ready = false;
+        let mut has_basemap = false;
         for (name, spec) in &style.sources {
             let SourceSpec::Vector {
                 tiles: templates,
@@ -175,7 +181,7 @@ impl VectorTiles {
             let min = minzoom.unwrap_or(0).min(22);
             let max = maxzoom.unwrap_or(14).clamp(min, 22);
             let z = camera.tile_zoom(min, max);
-            let needed = camera.covering_tiles(z);
+            let needed = coverage.covering_tiles(z);
             let tile_request = |id: TileId| Request::Tile {
                 theme,
                 url: template
@@ -188,7 +194,7 @@ impl VectorTiles {
             for &(id, _) in &needed {
                 self.asset(tile_request(id), true);
             }
-            let loaded = render::resolve(camera, name, &needed, &|id| {
+            let lookup = |id: TileId| {
                 if id.z < min {
                     return None;
                 }
@@ -196,14 +202,20 @@ impl VectorTiles {
                     Some(Asset::Tile(tile)) => Some(tile),
                     _ => None,
                 }
-            });
+            };
+            // Reuse cached detail when zooming out. Newly exposed edges can
+            // fill in as tiles arrive without swapping the entire map to raster.
+            let mut drawable = Vec::new();
+            for (id, wrap) in needed {
+                cover_with_cached_tiles(id, wrap, max.min(z + 2), &lookup, &mut drawable);
+            }
+            let loaded = render::resolve(camera, name, &drawable, &lookup);
             if name == MAIN_SOURCE {
-                let covered: usize = loaded.iter().map(|tile| tile.clip.len()).sum();
-                basemap_ready = !needed.is_empty() && covered == needed.len();
+                has_basemap = !loaded.is_empty();
             }
             tiles.extend(loaded);
         }
-        (tiles, basemap_ready)
+        (tiles, has_basemap)
     }
 
     fn basemap(
@@ -212,25 +224,17 @@ impl VectorTiles {
         style: &style::Style,
         camera: &Camera,
     ) -> Option<(iced::widget::image::Handle, Rectangle)> {
-        let scale = camera.scale();
-        let center = camera.center.to_world();
-        let snap =
-            |coordinate: f64| (coordinate * scale / CENTER_STEP).round() * CENTER_STEP / scale;
-        let snapped = Point::new(
-            snap(center.x),
-            snap(center.y).clamp(0.0, day_piece_map::camera::WORLD),
-        );
+        // Reuse the same bitmap for small zoom motions, then position and
+        // scale it at the exact camera zoom used by the route and labels.
+        let zoom = layout_zoom(camera);
+        let snapped = layout_center(camera, zoom);
         let size = camera.size;
         let side = size.width.hypot(size.height).ceil() + CENTER_STEP * 2.0;
-        let base_camera = Camera::new(
-            LngLat::from_world(snapped),
-            camera.zoom,
-            Size::new(side, side),
-        );
-        let (tiles, _) = self.scene_tiles(theme, style, &base_camera);
+        let base_camera = Camera::new(LngLat::from_world(snapped), zoom, Size::new(side, side));
+        let (tiles, _) = self.scene_tiles(theme, style, &base_camera, &base_camera);
         let key = BaseKey {
             theme,
-            zoom: camera.zoom,
+            zoom,
             center: snapped,
             side,
             tiles: tiles
@@ -251,6 +255,7 @@ impl VectorTiles {
             *base = Some(Basemap { key, image });
         }
         let center = camera.turn(camera.world_to_unturned(snapped));
+        let side = side * camera.scale() / base_camera.scale();
         Some((
             base.as_ref()?.image.clone(),
             Rectangle {
@@ -260,6 +265,58 @@ impl VectorTiles {
                 height: side as f32,
             },
         ))
+    }
+}
+
+fn layout_zoom(camera: &Camera) -> f64 {
+    (camera.zoom / LAYOUT_ZOOM_STEP).floor() * LAYOUT_ZOOM_STEP
+}
+
+fn layout_center(camera: &Camera, zoom: f64) -> Point {
+    let scale = 2.0_f64.powf(zoom);
+    let center = camera.center.to_world();
+    let snap = |coordinate: f64| (coordinate * scale / CENTER_STEP).round() * CENTER_STEP / scale;
+    Point::new(
+        snap(center.x),
+        snap(center.y).clamp(0.0, day_piece_map::camera::WORLD),
+    )
+}
+
+fn cover_with_cached_tiles(
+    id: TileId,
+    wrap: i32,
+    max_zoom: u8,
+    lookup: &impl Fn(TileId) -> Option<Arc<TileData>>,
+    drawable: &mut Vec<(TileId, i32)>,
+) {
+    // The renderer can use a loaded ancestor as a placeholder when zooming in.
+    let mut ancestor = Some(id);
+    while let Some(candidate) = ancestor {
+        if lookup(candidate).is_some() {
+            drawable.push((id, wrap));
+            return;
+        }
+        ancestor = candidate.parent();
+    }
+    cover_with_cached_children(id, wrap, max_zoom, lookup, drawable);
+}
+
+fn cover_with_cached_children(
+    id: TileId,
+    wrap: i32,
+    max_zoom: u8,
+    lookup: &impl Fn(TileId) -> Option<Arc<TileData>>,
+    drawable: &mut Vec<(TileId, i32)>,
+) {
+    if id.z >= max_zoom {
+        return;
+    }
+    for child in id.children() {
+        if lookup(child).is_some() {
+            drawable.push((child, wrap));
+        } else {
+            cover_with_cached_children(child, wrap, max_zoom, lookup, drawable);
+        }
     }
 }
 
@@ -302,15 +359,76 @@ fn fetcher(loader: &Loader, cache: Option<&Path>, updates: &Tiles) {
     }
 }
 
+// Cap sizes in the playback style so line wrapping and collision placement
+// use the same font sizes as the visible labels.
+fn playback_style(bytes: &[u8]) -> Option<style::Style> {
+    let mut json: serde_json::Value = serde_json::from_slice(bytes).ok()?;
+    if let Some(layers) = json
+        .get_mut("layers")
+        .and_then(serde_json::Value::as_array_mut)
+    {
+        for layer in layers {
+            if layer.get("type").and_then(serde_json::Value::as_str) != Some("symbol") {
+                continue;
+            }
+            if let Some(size) = layer
+                .get_mut("layout")
+                .and_then(|layout| layout.get_mut("text-size"))
+            {
+                cap_label_size(size);
+            }
+        }
+    }
+    style::Style::parse(&json).ok()
+}
+
+fn cap_label_size(size: &mut serde_json::Value) {
+    use serde_json::{json, Value};
+    if let Some(points) = size.as_f64() {
+        *size = json!(points.min(MAX_LABEL_SIZE));
+        return;
+    }
+    let Some(curve) = size.as_array_mut() else {
+        return;
+    };
+    // MapLibre requires zoom to feed the top-level curve. Insert stops
+    // where a linear curve reaches the cap to preserve its smaller sizes.
+    if !curve.starts_with(&[json!("interpolate"), json!(["linear"]), json!(["zoom"])]) {
+        return;
+    }
+    let stops: Option<Vec<_>> = curve[3..]
+        .chunks(2)
+        .map(|pair| Some((pair.first()?.as_f64()?, pair.get(1)?.as_f64()?)))
+        .collect();
+    let Some(stops) = stops else {
+        return;
+    };
+    curve.truncate(3);
+    let mut previous: Option<(f64, f64)> = None;
+    for (zoom, points) in stops {
+        if let Some((last_zoom, last_size)) = previous {
+            if (last_size < MAX_LABEL_SIZE && points > MAX_LABEL_SIZE)
+                || (last_size > MAX_LABEL_SIZE && points < MAX_LABEL_SIZE)
+            {
+                let fraction = (MAX_LABEL_SIZE - last_size) / (points - last_size);
+                curve.extend([
+                    Value::from(last_zoom + (zoom - last_zoom) * fraction),
+                    Value::from(MAX_LABEL_SIZE),
+                ]);
+            }
+        }
+        curve.extend([Value::from(zoom), Value::from(points.min(MAX_LABEL_SIZE))]);
+        previous = Some((zoom, points));
+    }
+}
+
 fn fetch(agent: &ureq::Agent, cache: Option<&Path>, request: &Request) -> Option<Asset> {
     let url = match request {
         Request::Style(style) => format!("{ORIGIN}assets/styles/{}/style.json", style.key()),
         Request::Tile { url, .. } => url.clone(),
     };
     let parse = |bytes: Vec<u8>| match request {
-        Request::Style(_) => style::Style::parse_str(std::str::from_utf8(&bytes).ok()?)
-            .map(|style| Asset::Style(Arc::new(style)))
-            .ok(),
+        Request::Style(_) => playback_style(&bytes).map(|style| Asset::Style(Arc::new(style))),
         Request::Tile { id, .. } => mvt::decode(&source::gunzip_if_gzip(bytes).ok()?)
             .map(|tile| Asset::Tile(Arc::new(TileData::new(*id, tile))))
             .ok(),
@@ -395,8 +513,17 @@ pub fn view<'a, M: 'a>(
             -f64::from(raster.bearing),
             Size::new(side.into(), side.into()),
         );
-        let (tiles, ready) = vector.scene_tiles(theme, &style, &camera);
-        if !ready {
+        // Leave enough space to place labels outside the visible map. This
+        // keeps their collision decisions stable as they cross the panel edge.
+        let zoom = layout_zoom(&camera);
+        let center = LngLat::from_world(layout_center(&camera, zoom));
+        let padded_side = f64::from(side) + LABEL_PADDING * 2.0;
+        let padded = Size::new(padded_side, padded_side);
+        let placement = Camera::with_bearing(center, zoom, camera.bearing, padded);
+        let diagonal = padded_side * std::f64::consts::SQRT_2;
+        let coverage = Camera::new(center, zoom, Size::new(diagonal, diagonal));
+        let (tiles, has_basemap) = vector.scene_tiles(theme, &style, &placement, &coverage);
+        if !has_basemap {
             return None;
         }
         let (image, rect) = vector.basemap(theme, &style, &camera)?;
@@ -406,7 +533,9 @@ pub fn view<'a, M: 'a>(
             LabelLayer {
                 style,
                 camera,
+                placement,
                 tiles,
+                history: &vector.label_history,
                 radius: raster.radius,
             },
         ))
@@ -416,6 +545,7 @@ pub fn view<'a, M: 'a>(
             canvas::Canvas::new(base).width(side).height(side),
             canvas::Canvas::new(labels).width(side).height(side),
         ]
+        .clip(true)
         .into(),
         None => canvas::Canvas::new(raster).width(side).height(side).into(),
     }
@@ -443,14 +573,16 @@ impl<M> canvas::Program<M> for BaseLayer {
     }
 }
 
-struct LabelLayer {
+struct LabelLayer<'a> {
     style: Arc<style::Style>,
     camera: Camera,
+    placement: Camera,
     tiles: Vec<RenderTile>,
+    history: &'a RefCell<draw::LabelHistory>,
     radius: f32,
 }
 
-impl<M> canvas::Program<M> for LabelLayer {
+impl<M> canvas::Program<M> for LabelLayer<'_> {
     type State = ();
 
     fn draw(
@@ -465,9 +597,16 @@ impl<M> canvas::Program<M> for LabelLayer {
         let mut ops = day_pieces::Draw::new();
         render::render(
             &mut ops,
-            &scene(&self.style, &self.camera, &self.tiles, Pass::Symbols),
+            &scene(&self.style, &self.placement, &self.tiles, Pass::Symbols),
         );
-        draw::labels(&mut frame, ops.ops(), bounds.size(), self.radius);
+        draw::labels(
+            &mut frame,
+            ops.ops(),
+            &self.placement,
+            &self.camera,
+            self.radius,
+            &mut self.history.borrow_mut(),
+        );
         vec![frame.into_geometry()]
     }
 }
@@ -478,6 +617,75 @@ mod tests {
     use day_geometry::Affine;
     use day_piece_map::{Feature, GeometryType, Value};
     use day_spec::DrawOp;
+
+    #[test]
+    fn playback_style_caps_large_labels_and_preserves_smaller_ones() {
+        use day_piece_map::expression::Context;
+        let style = playback_style(
+            br#"{
+            "version": 8,
+            "layers": [
+                {"id": "street", "type": "symbol", "layout": {"text-size": 12}},
+                {"id": "place", "type": "symbol", "layout": {
+                    "text-size": ["interpolate", ["linear"], ["zoom"], 0, 12, 10, 28]
+                }},
+                {"id": "default", "type": "symbol"}
+            ]
+        }"#,
+        )
+        .unwrap();
+        let size = |id, zoom| {
+            let style::LayerKind::Symbol(symbol) = &style.layer(id).unwrap().kind else {
+                unreachable!()
+            };
+            symbol.text_size.number(&Context {
+                zoom,
+                ..Context::default()
+            })
+        };
+        assert_eq!(size("street", 10.0), 12.0);
+        assert_eq!(size("place", 0.0), 12.0);
+        assert_eq!(size("place", 1.25), 14.0);
+        assert_eq!(size("place", 10.0), MAX_LABEL_SIZE);
+        assert_eq!(size("default", 10.0), MAX_LABEL_SIZE);
+    }
+
+    #[test]
+    fn cached_tiles_fill_the_map_when_the_new_zoom_is_still_loading() {
+        let target = TileId::new(3, 2, 2);
+        let child = target.children()[0];
+        let sibling_detail = target.children()[1].children()[2];
+        let wrapped_copy = 1;
+        let lookup = |id: TileId| {
+            [child, sibling_detail]
+                .contains(&id)
+                .then(|| Arc::new(TileData::new(id, mvt::Tile::default())))
+        };
+        let mut drawable = Vec::new();
+        cover_with_cached_tiles(target, wrapped_copy, 5, &lookup, &mut drawable);
+        assert_eq!(
+            drawable,
+            [(child, wrapped_copy), (sibling_detail, wrapped_copy)]
+        );
+
+        // A newly arrived tile takes over the whole region without
+        // depending on a second set of downloads.
+        drawable.clear();
+        let loaded = |id| {
+            (id == target)
+                .then(|| Arc::new(TileData::new(id, mvt::Tile::default())))
+                .or_else(|| lookup(id))
+        };
+        cover_with_cached_tiles(target, wrapped_copy, 5, &loaded, &mut drawable);
+        assert_eq!(drawable, [(target, wrapped_copy)]);
+
+        drawable.clear();
+        let ancestor = target.parent().unwrap();
+        let cached_ancestor =
+            |id| (id == ancestor).then(|| Arc::new(TileData::new(id, mvt::Tile::default())));
+        cover_with_cached_tiles(target, wrapped_copy, 5, &cached_ancestor, &mut drawable);
+        assert_eq!(drawable, [(target, wrapped_copy)]);
+    }
 
     #[test]
     fn a_southbound_turn_moves_the_road_label_and_keeps_its_text_upright() {
@@ -547,6 +755,7 @@ mod tests {
                 work: Condvar::new(),
             }),
             base: RefCell::new(None),
+            label_history: RefCell::default(),
             enabled: true,
         };
         let theme = Style::Light;
@@ -566,6 +775,15 @@ mod tests {
                 Entry::Ready(Asset::Tile(data)),
             );
         }
+        let Some(Asset::Style(style)) = vector.asset(Request::Style(theme), false) else {
+            panic!("missing test style");
+        };
+        let cache_camera = |zoom| Camera::new(LngLat::new(0.0, 0.0), zoom, Size::new(258.0, 258.0));
+        let (before, before_rect) = vector.basemap(theme, &style, &cache_camera(0.02)).unwrap();
+        let (after, after_rect) = vector.basemap(theme, &style, &cache_camera(0.18)).unwrap();
+        assert_eq!(before.id(), after.id());
+        assert!((after_rect.width / before_rect.width - 2.0_f32.powf(0.16)).abs() < 0.001);
+
         let raster_tiles = Tiles::new(None);
         let raster = super::super::TileLayer {
             tiles: &raster_tiles,
