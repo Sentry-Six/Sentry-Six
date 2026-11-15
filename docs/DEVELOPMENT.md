@@ -2,9 +2,6 @@
 
 You need [Rust](https://rustup.rs) 1.90 or newer.
 
-The locked Windows and Linux builds use `ordered-float` 5.5.1 via `wgpu-hal`.
-That version of `ordered-float` requires Rust 1.90.
-
 ```bash
 cargo build --release
 ```
