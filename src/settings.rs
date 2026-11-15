@@ -24,6 +24,8 @@ pub struct Settings {
     /// Dialogs on a solid dark surface instead of frosted glass
     /// (`dialogStyle`: "frosted", the default, or "solid").
     pub solid_dialogs: bool,
+    /// Place the playback panels beside the camera grid (`dockPlaybackPanels`).
+    pub dock_playback_panels: bool,
     /// Mirror the back and repeater cameras (`mirrorCameras`, default on).
     pub mirror_cameras: bool,
     /// Shortcuts (`keybinds`): action name -> key identifier.
@@ -173,6 +175,7 @@ impl Default for Settings {
             date_format: DateFormat::Ymd,
             glass_blur: 13.0,
             solid_dialogs: false,
+            dock_playback_panels: false,
             mirror_cameras: true,
             keybinds: Default::default(),
             skip_seconds: 5.0,
@@ -492,6 +495,7 @@ pub fn to_json(s: &Settings) -> Value {
         "dateFormat": s.date_format.key(),
         "glassBlur": s.glass_blur,
         "dialogStyle": if s.solid_dialogs { "solid" } else { "frosted" },
+        "dockPlaybackPanels": s.dock_playback_panels,
         "mirrorCameras": s.mirror_cameras,
         "skipDuration": s.skip_seconds,
         "placeNameLookup": s.place_names,
@@ -595,6 +599,9 @@ fn apply(s: &mut Settings, v: &Value) {
     }
     if let Some(style) = v.get("dialogStyle").and_then(Value::as_str) {
         s.solid_dialogs = style == "solid";
+    }
+    if let Some(b) = v.get("dockPlaybackPanels").and_then(Value::as_bool) {
+        s.dock_playback_panels = b;
     }
     if let Some(px) = v.get("glassBlur").and_then(Value::as_f64) {
         // The Settings slider's range.
