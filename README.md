@@ -107,7 +107,7 @@ Your dashcam footage stays on your computer. The [Privacy Policy](https://sentry
 
 ## Building from source
 
-You need [Rust](https://rustup.rs) 1.88 or newer; `cargo build --release` builds the app. Packaging, signing, translations and the development checks are in [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
+You need [Rust](https://rustup.rs) 1.90 or newer; `cargo build --release` builds the app. Packaging, signing, translations and the development checks are in [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
 
 ## Community & Support
 
