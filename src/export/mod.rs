@@ -9,6 +9,7 @@ pub mod av1;
 pub mod blur;
 pub mod compose;
 pub mod encode;
+pub mod fsd;
 pub mod job;
 pub mod layout;
 pub mod mp4_writer;

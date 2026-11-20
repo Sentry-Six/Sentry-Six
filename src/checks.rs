@@ -478,6 +478,18 @@ pub fn export_check(dir: &std::path::Path, quality: Option<&str>, speed: Option<
             }),
             // The watermark with SENTRY_EXPORT_WATERMARK=1.
             watermark: std::env::var_os("SENTRY_EXPORT_WATERMARK").map(|_| crate::export::overlay::Watermark { corner: crate::export::overlay::Corner::BottomRight, free: None, share: crate::export::overlay::Watermark::SHARE }),
+            // The Self-Driving view with SENTRY_EXPORT_SELF_DRIVING=1 (=path:
+            // without the speed and gear); SENTRY_EXPORT_HORIZON and
+            // SENTRY_EXPORT_CENTER (shares of the height and width) and
+            // SENTRY_EXPORT_FOV (degrees) set its camera.
+            self_driving: std::env::var("SENTRY_EXPORT_SELF_DRIVING").ok().map(|v| crate::export::fsd::SelfDriving {
+                hud: v != "path",
+                metric: false,
+                h24: false,
+                horizon: std::env::var("SENTRY_EXPORT_HORIZON").ok().and_then(|v| v.parse().ok()),
+                center: std::env::var("SENTRY_EXPORT_CENTER").ok().and_then(|v| v.parse().ok()),
+                fov: std::env::var("SENTRY_EXPORT_FOV").ok().and_then(|v| v.parse().ok()),
+            }),
             // A zone over the middle of every camera with SENTRY_EXPORT_BLUR=1.
             blur_zones: if std::env::var_os("SENTRY_EXPORT_BLUR").is_some() { cameras.iter().map(|c| crate::export::blur::BlurZone::starting(*c)).collect() } else { Vec::new() },
             output: output.clone(),
@@ -486,12 +498,15 @@ pub fn export_check(dir: &std::path::Path, quality: Option<&str>, speed: Option<
         println!("formats this computer encodes: {}", Format::ALL.iter().map(|f| format!("{} {:?}", f.label(), support(*f))).collect::<Vec<_>>().join(", "));
         let plan = job::plan(&request)?;
         // SENTRY_EXPORT_PREVIEW=out.png: the dialog's preview of the frame
-        // 10 s in, instead of exporting.
+        // 10 s in (or SENTRY_EXPORT_PREVIEW_AT seconds in), instead of
+        // exporting.
         if let Some(path) = std::env::var_os("SENTRY_EXPORT_PREVIEW") {
+            let secs: f64 = std::env::var("SENTRY_EXPORT_PREVIEW_AT").ok().and_then(|t| t.parse().ok()).unwrap_or(10.0);
+            let (segment, secs) = plan.frames[((secs * job::FPS as f64 / request.speed) as usize).min(plan.frames.len() - 1)];
             for _ in 0..2 {
                 let started = std::time::Instant::now();
                 let width = std::env::var("SENTRY_EXPORT_PREVIEW_WIDTH").ok().and_then(|w| w.parse().ok()).unwrap_or(960);
-                let p = job::preview(&request, job::Position { segment: 0, secs: 10.0 }, width, true)?;
+                let p = job::preview(&request, job::Position { segment, secs }, width, true)?;
                 println!("preview of {}x{} in {} ms ({}x{})", p.width, p.height, started.elapsed().as_millis(), p.shown.0, p.shown.1);
                 // The PNG encoder itself: image's save() would link every
                 // format's encoder (AVIF's alone is over 1 MB).
