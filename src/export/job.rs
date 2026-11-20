@@ -127,6 +127,8 @@ pub struct Plan {
     pub layout: super::layout::Layout,
     /// For each output frame: the minute and the seconds into it.
     pub frames: Vec<(usize, f64)>,
+    /// Source intervals for the route, including clips skipped by time-lapse.
+    route_spans: Vec<(usize, f64, f64)>,
 }
 
 impl Plan {
@@ -224,7 +226,8 @@ pub fn plan(req: &Request) -> Result<Plan> {
         acc += d;
     }
     let from = req.start.secs.clamp(0.0, lengths[0]);
-    let to = offsets[e - s] + req.end.secs.clamp(0.0, lengths[e - s]);
+    let end_secs = req.end.secs.clamp(0.0, lengths[e - s]);
+    let to = offsets[e - s] + end_secs;
     if to - from < 0.05 {
         bail!("The export range is too short.");
     }
@@ -271,7 +274,12 @@ pub fn plan(req: &Request) -> Result<Plan> {
         None => Format::Hevc,
     };
     let rate = bitrate(req.quality, front_only, codec, width, height);
-    Ok(Plan { cell, width, height, codec, bitrate: rate, layout, frames })
+    let route_spans = lengths.iter().enumerate().filter_map(|(i, &length)| {
+        let start = if i == 0 { from } else { 0.0 };
+        let end = if i == e - s { end_secs } else { length };
+        (end > start).then_some((s + i, start, end))
+    }).collect();
+    Ok(Plan { cell, width, height, codec, bitrate: rate, layout, frames, route_spans })
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -350,18 +358,20 @@ pub fn run(req: &Request, cancel: &Arc<AtomicBool>, mut progress: impl FnMut(Pro
     }
 }
 
+type TimedRoute = Vec<(f64, crate::map::RoutePoint)>;
+
 /// A clip's GPS points, kept for the rest of the session (the preview
 /// draws the map again after every change; reading a minute's points
 /// over a network share takes a while).
-fn clip_route(path: &Path) -> Arc<Vec<crate::map::RoutePoint>> {
+fn clip_route(path: &Path) -> Arc<TimedRoute> {
     use std::collections::HashMap;
     use std::sync::{Mutex, OnceLock};
-    static ROUTES: OnceLock<Mutex<HashMap<PathBuf, Arc<Vec<crate::map::RoutePoint>>>>> = OnceLock::new();
+    static ROUTES: OnceLock<Mutex<HashMap<PathBuf, Arc<TimedRoute>>>> = OnceLock::new();
     let routes = ROUTES.get_or_init(Default::default);
     if let Some(r) = routes.lock().unwrap_or_else(|e| e.into_inner()).get(path) {
         return r.clone();
     }
-    let r = Arc::new(crate::map::clip_route(path));
+    let r = Arc::new(crate::map::timed_clip_route(path));
     let mut routes = routes.lock().unwrap_or_else(|e| e.into_inner());
     // A few days of driving at most.
     if routes.len() >= 5000 {
@@ -371,35 +381,37 @@ fn clip_route(path: &Path) -> Arc<Vec<crate::map::RoutePoint>> {
     r
 }
 
-/// The range's route for the minimap: each minute's GPS points (every
-/// sixth frame of its front clip), kept within the range. Read a few
-/// minutes at a time.
-fn route_points(req: &Request, plan: &Plan) -> Vec<crate::map::RoutePoint> {
-    // Each minute's span in the range (seconds into it).
-    let mut spans: Vec<(usize, f64, f64)> = Vec::new();
-    for &(segment, t) in &plan.frames {
-        match spans.last_mut() {
-            Some(last) if last.0 == segment => last.2 = t,
-            _ => spans.push((segment, t, t)),
+fn route_in_span(points: &[(f64, crate::map::RoutePoint)], from: f64, to: f64) -> Vec<crate::map::RoutePoint> {
+    let mut start = points.partition_point(|&(secs, _)| secs < from);
+    let end = points.partition_point(|&(secs, _)| secs <= to);
+    // The opening frame can carry a fix just before the trim point. This
+    // also gives very short selections a point between sampled fixes.
+    if start > 0 && points.get(start).is_none_or(|&(secs, _)| secs > from) {
+        let secs = points[start - 1].0;
+        if secs >= 0.0 && from - secs <= 0.5 {
+            start -= 1;
         }
     }
+    points[start..end].iter().map(|&(_, point)| point).collect()
+}
+
+/// Before encoding, read the selected source intervals in timeline order.
+/// The route's coverage is independent of the output speed or frame rate.
+fn route_points(req: &Request, plan: &Plan, cancel: &AtomicBool) -> Vec<crate::map::RoutePoint> {
     let mut out = Vec::new();
-    for chunk in spans.chunks(8) {
-        let parts: Vec<Vec<crate::map::RoutePoint>> = std::thread::scope(|scope| {
-            let handles: Vec<_> = chunk
-                .iter()
-                .map(|&(segment, from, to)| {
-                    let seg = &req.segments[segment];
-                    let path = seg.files.get(&Camera::Front).or_else(|| seg.files.values().next()).cloned();
-                    scope.spawn(move || {
-                        let Some(path) = path else { return Vec::new() };
-                        let length = length_of(&path).unwrap_or(60.0).max(0.001);
-                        let points = clip_route(&path);
-                        let n = points.len().max(2) - 1;
-                        points.iter().copied().enumerate().filter(|(i, _)| (from - 0.5..=to + 0.5).contains(&(*i as f64 / n as f64 * length))).map(|(_, p)| p).collect()
-                    })
+    for chunk in plan.route_spans.chunks(8) {
+        if cancel.load(std::sync::atomic::Ordering::Relaxed) {
+            break;
+        }
+        let parts: Vec<_> = std::thread::scope(|scope| {
+            let handles: Vec<_> = chunk.iter().map(|&(segment, from, to)| {
+                scope.spawn(move || {
+                    let Some(path) = crate::sync::reference(&req.segments[segment].files) else {
+                        return Vec::new();
+                    };
+                    route_in_span(&clip_route(path), from, to)
                 })
-                .collect();
+            }).collect();
             handles.into_iter().map(|h| h.join().unwrap_or_default()).collect()
         });
         out.extend(parts.into_iter().flatten());
@@ -450,6 +462,7 @@ struct Capture {
     full: Vec<u8>,
     base: Vec<u8>,
     pieces: Vec<(PieceKind, super::overlay::Picture)>,
+    route: Arc<[crate::map::RoutePoint]>,
 }
 
 /// One frame of an export as it will look, for the dialog's preview.
@@ -464,6 +477,9 @@ pub struct Preview {
     /// The frame without the movable pieces, and the pieces.
     pub base: Vec<u8>,
     pub pieces: Vec<Piece>,
+    pub route: Arc<[crate::map::RoutePoint]>,
+    pub route_range: (Position, Position),
+    pub route_source: Option<PathBuf>,
     /// Where the frame is on the layout's sheet (see export::layout), and
     /// the grid's size there (the sheet's scale).
     pub sheet: super::layout::Rect,
@@ -518,7 +534,7 @@ pub fn preview(req: &Request, at: Position, max_width: u32, with_pieces: bool) -
     let plan = plan(req)?;
     let k = plan.frames.iter().position(|&(s, t)| s > at.segment || (s == at.segment && t >= at.secs - 0.5 / FPS as f64)).unwrap_or(plan.frames.len() - 1);
     let cancel = Arc::new(AtomicBool::new(false));
-    let mut capture = Capture { k, with_pieces, full: Vec::new(), base: Vec::new(), pieces: Vec::new() };
+    let mut capture = Capture { k, with_pieces, full: Vec::new(), base: Vec::new(), pieces: Vec::new(), route: Arc::default() };
     encode_all(req, &plan, &cancel, &mut |_| {}, &mut Vec::new(), Some(&mut capture))?;
     let (w, h) = (plan.width, plan.height);
     let scale = (max_width as f64 / w as f64).min(1.0);
@@ -544,7 +560,9 @@ pub fn preview(req: &Request, at: Position, max_width: u32, with_pieces: bool) -
             Some(Piece { kind, shown: size, rgba: img.into_raw() })
         })
         .collect();
-    Ok(Preview { width: w, height: h, shown, rgba, base, pieces, sheet: plan.layout.frame, grid: plan.layout.grid })
+    let route_range = (req.start, req.end);
+    let route_source = crate::sync::reference(&req.segments[req.start.segment].files).cloned();
+    Ok(Preview { width: w, height: h, shown, rgba, base, pieces, route: capture.route, route_range, route_source, sheet: plan.layout.frame, grid: plan.layout.grid })
 }
 
 /// True when finished, false when cancelled; `warnings` gets what was
@@ -562,6 +580,17 @@ fn encode_all(
     use anyhow::anyhow;
     use std::sync::atomic::Ordering;
     use std::sync::mpsc;
+    let route: Arc<[crate::map::RoutePoint]> = if req.minimap.is_some() && plan.layout.map.is_some() {
+        route_points(req, plan, cancel).into()
+    } else {
+        Arc::default()
+    };
+    if cancel.load(Ordering::Relaxed) {
+        return Ok(false);
+    }
+    if let Some(capture) = capture.as_deref_mut() {
+        capture.route = route.clone();
+    }
     let compositor = Compositor::new()?;
     let settings = EncodeSettings {
         codec: plan.codec,
@@ -743,7 +772,6 @@ fn encode_all(
     let minimap = match (&req.minimap, layout.map, painter.as_mut()) {
         (Some(mm), Some(r), Some(p)) => {
             let side = r.w as u32;
-            let route = route_points(req, plan);
             match mm.fit(&route, side) {
                 Some(fit) if mm.live => {
                     // Drawn frame by frame as the car moves (below).
@@ -1067,6 +1095,56 @@ mod tests {
             }
         }
         out
+    }
+
+    #[test]
+    fn export_route_includes_clips_skipped_by_timelapse() {
+        let dir = std::env::temp_dir().join(format!("sentry-studio-route-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let segments = (0..3).map(|segment| {
+            let path = dir.join(format!("front-{segment}.mp4"));
+            crate::export::testing::clip_with_telemetry(
+                &path, 320, 240, 36, |_, _, _| [0, 0, 0, 255],
+                |frame| (segment != 0 || frame >= 12).then(|| crate::sei::SeiMetadata {
+                    latitude_deg: 40.0 + (segment * 36 + frame) as f64 * 0.001,
+                    longitude_deg: -100.0,
+                    autopilot_state: i32::from(segment == 1),
+                    ..Default::default()
+                }),
+            );
+            Segment { start: segment as i64, files: BTreeMap::from([(Camera::Front, path)]) }
+        }).collect();
+        let mut request = Request {
+            segments,
+            start: Position { segment: 0, secs: 0.6 },
+            end: Position { segment: 2, secs: 0.25 },
+            tiles: grid(&[Camera::Front]),
+            quality: Quality::Max,
+            format: None,
+            speed: 64.0,
+            mirror: false,
+            fast: false,
+            timestamp: None,
+            dashboard: None,
+            minimap: None,
+            watermark: None,
+            blur_zones: Vec::new(),
+            output: dir.join("unused.mp4"),
+        };
+        let fast = plan(&request).unwrap();
+        assert_eq!(fast.frames, [(0, 0.6)]);
+        assert_eq!(fast.route_spans, [(0, 0.6, 1.0), (1, 0.0, 1.0), (2, 0.0, 0.25)]);
+        let cancel = AtomicBool::new(false);
+        let route = route_points(&request, &fast, &cancel);
+        assert!((route.first().unwrap().0 - 40.018).abs() < 0.0001);
+        assert!((route.last().unwrap().0 - 40.078).abs() < 0.0001);
+        assert!(route.iter().any(|point| point.2));
+        assert!(route.windows(2).all(|pair| pair[0].0 < pair[1].0));
+
+        request.speed = 1.0;
+        let realtime = plan(&request).unwrap();
+        assert_eq!(route, route_points(&request, &realtime, &cancel));
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     /// Two minutes: front and back in the first, only the front in the
