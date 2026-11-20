@@ -8,15 +8,12 @@
 //! state in the middle.
 
 use super::overlay::{DashState, Painter, Picture};
-use crate::dashboard::{autopilot_words, gear_letter};
+use crate::dashboard::{accel_percent, autopilot_words, gear_letter};
 use crate::theme::{medium, semibold, INTER};
 use iced::advanced::graphics::text::Paragraph;
 use iced::advanced::text::{self, Paragraph as _};
-use iced::advanced::svg::Svg;
 use iced::widget::canvas::{self, path::Arc, Frame, Path, Stroke, Text};
-use iced::widget::{image, svg};
 use iced::{mouse, Color, Font, Point, Radians, Rectangle, Renderer, Size, Theme, Vector};
-use std::sync::OnceLock;
 
 const BLUE: Color = Color::from_rgb8(0x0b, 0x65, 0xf6);
 const GREEN: Color = Color::from_rgb8(62, 233, 4);
@@ -72,46 +69,6 @@ impl SignalFlasher {
     }
 }
 
-/// Artwork from the user-supplied Tesla APK is loaded from the local test
-/// bundle. Regular builds use the bundled font and silhouettes below.
-struct ReferenceResources {
-    brake: [image::Handle; 2],
-    accelerator: [image::Handle; 2],
-    wheel: image::Handle,
-    arrows: [svg::Handle; 2],
-}
-
-fn reference_resources() -> Option<&'static ReferenceResources> {
-    static RESOURCES: OnceLock<Option<ReferenceResources>> = OnceLock::new();
-    RESOURCES.get_or_init(|| {
-        let exe = std::env::current_exe().ok()?;
-        let dir = exe.parent()?.parent()?.join("Resources/TeslaMobile");
-        let png = |name: &str| Some(image::Handle::from_bytes(std::fs::read(dir.join(name)).ok()?));
-        let svg = |name: &str| Some(svg::Handle::from_memory(std::fs::read(dir.join(name)).ok()?));
-        let artwork = ReferenceResources {
-            brake: [png("brake_pedal_disabled.png")?, png("brake_pedal.png")?],
-            accelerator: [png("accelerator_pedal_disabled.png")?, png("accelerator_pedal.png")?],
-            wheel: png("round_steering_wheel.png")?,
-            arrows: [svg("turn_signal_left.svg")?, svg("turn_signal_right.svg")?],
-        };
-        let font = std::fs::read(dir.join("universal_sans_text_medium.ttf")).ok()?;
-        iced::advanced::graphics::text::font_system().write().ok()?.load_font(font.into());
-        Some(artwork)
-    }).as_ref()
-}
-
-fn bar_font() -> Font {
-    if reference_resources().is_some() {
-        medium(Font::with_name("Universal Sans Text"))
-    } else {
-        medium(INTER)
-    }
-}
-
-fn icon_bounds(x: f32, y: f32, size: f32) -> Rectangle {
-    Rectangle::new(Point::new(x - size / 2.0, y - size / 2.0), Size::new(size, size))
-}
-
 fn text_width(content: &str, size: f32, font: Font) -> f32 {
     Paragraph::with_text(text::Text {
         content,
@@ -153,7 +110,7 @@ impl<M> canvas::Program<M> for Date {
     fn draw(&self, _: &(), renderer: &Renderer, _: &Theme, b: Rectangle, _: mouse::Cursor) -> Vec<canvas::Geometry> {
         let mut f = Frame::new(renderer, b.size());
         f.fill_rectangle(Point::ORIGIN, b.size(), Color::BLACK);
-        let font = bar_font();
+        let font = medium(INTER);
         let size = (b.height * 0.55 * self.1).min(b.height * 0.85);
         let width = text_width(&self.0, size, font);
         let scale = (b.width * 0.94 / width.max(1.0)).min(1.0);
@@ -200,8 +157,8 @@ impl<M> canvas::Program<M> for DataBar {
         let (w, h) = (b.width, b.height);
         f.fill_rectangle(Point::ORIGIN, b.size(), Color::BLACK);
         let y = h / 2.0;
-        let font = bar_font();
-        let emphasis = if reference_resources().is_some() { font } else { semibold(INTER) };
+        let font = medium(INTER);
+        let emphasis = semibold(INTER);
         let text = |f: &mut Frame, content: String, x: f32, size: f32, color: Color, font: Font, align_x| {
             f.fill_text(Text {
                 content,
@@ -234,11 +191,7 @@ impl<M> canvas::Program<M> for DataBar {
             f.fill(&Path::circle(Point::new(x, y), radius), color);
         }
 
-        // The Android renderer reads percent. Versionless legacy samples
-        // may still carry the fractional form.
-        let raw_pedal = m.accelerator_pedal_position;
-        let accel = if m.version == 0 && raw_pedal <= 1.0 { raw_pedal } else { raw_pedal / 100.0 };
-        let accel = accel.clamp(0.0, 1.0) as f32;
+        let accel = (accel_percent(m) / 100.0) as f32;
         let accel_pressed = accel > 0.0;
         if accel_pressed {
             let start = (1.0 - 2.0 * accel).asin();
@@ -255,25 +208,17 @@ impl<M> canvas::Program<M> for DataBar {
         }
 
         let steering = Radians((m.steering_wheel_angle as f32).to_radians());
-        let artwork = reference_resources();
-        if let Some(artwork) = artwork {
-            f.draw_image(icon_bounds(brake_x, y, diameter * 20.0 / 24.0), canvas::Image::new(artwork.brake[usize::from(m.brake_applied)].clone()));
-            f.draw_image(icon_bounds(accel_x, y, diameter * 22.0 / 24.0), canvas::Image::new(artwork.accelerator[usize::from(accel_pressed)].clone()));
-            let wheel = canvas::Image::new(artwork.wheel.clone()).rotation(steering);
-            f.draw_image(icon_bounds(steer_x, y, diameter * 20.0 / 24.0), wheel);
-        } else {
-            draw_icon(&mut f, Point::new(brake_x, y), diameter, |f| {
-                f.fill(&brake_pedal(), if m.brake_applied { Color::WHITE } else { MUTED });
-            });
-            draw_icon(&mut f, Point::new(accel_x, y), diameter, |f| {
-                f.fill(&accelerator_pedal(), if accel_pressed { Color::WHITE } else { MUTED });
-            });
-            draw_icon(&mut f, Point::new(steer_x, y), diameter, |f| {
-                f.rotate(steering);
-                f.stroke(&Path::circle(Point::ORIGIN, 32.0), Stroke::default().with_width(6.0).with_color(Color::WHITE));
-                f.fill(&wheel_spokes(), Color::WHITE);
-            });
-        }
+        draw_icon(&mut f, Point::new(brake_x, y), diameter, |f| {
+            f.fill(&brake_pedal(), if m.brake_applied { Color::WHITE } else { MUTED });
+        });
+        draw_icon(&mut f, Point::new(accel_x, y), diameter, |f| {
+            f.fill(&accelerator_pedal(), if accel_pressed { Color::WHITE } else { MUTED });
+        });
+        draw_icon(&mut f, Point::new(steer_x, y), diameter, |f| {
+            f.rotate(steering);
+            f.stroke(&Path::circle(Point::ORIGIN, 32.0), Stroke::default().with_width(6.0).with_color(Color::WHITE));
+            f.fill(&wheel_spokes(), Color::WHITE);
+        });
 
         let gear = gear_letter(m.gear_state);
         let gear_size = (diameter * 0.61 * value).min(diameter * 0.83);
@@ -286,15 +231,10 @@ impl<M> canvas::Program<M> for DataBar {
         };
         for (i, x) in [left_x, right_x].into_iter().enumerate() {
             let (color, opacity) = self.state.mobile_signals[i].appearance();
-            if let Some(artwork) = artwork {
-                let arrow = Svg::new(artwork.arrows[i].clone()).color(color).opacity(opacity);
-                f.draw_svg(icon_bounds(x, y, diameter * 16.0 / 24.0), arrow);
-            } else {
-                draw_icon(&mut f, Point::new(x, y), diameter, |f| {
-                    f.scale_nonuniform(Vector::new(if i == 0 { -1.0 } else { 1.0 }, 1.0));
-                    f.fill(&turn_arrow(), color.scale_alpha(opacity));
-                });
-            }
+            draw_icon(&mut f, Point::new(x, y), diameter, |f| {
+                f.scale_nonuniform(Vector::new(if i == 0 { -1.0 } else { 1.0 }, 1.0));
+                f.fill(&turn_arrow(), color.scale_alpha(opacity));
+            });
         }
 
         // The number and unit have matching typography at default size.

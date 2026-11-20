@@ -55,6 +55,8 @@ impl Rect {
 pub struct Overlays<'a> {
     pub timestamp: Option<&'a Timestamp>,
     pub dashboard: Option<&'a Dashboard>,
+    /// Omit the Mobile telemetry strip while retaining its date bar.
+    pub hide_data_bar: bool,
     pub minimap: Option<&'a Minimap>,
     pub watermark: Option<&'a Watermark>,
 }
@@ -120,6 +122,7 @@ pub fn layout(tiles: &[Tile], cell: (u32, u32), o: Overlays<'_>) -> Layout {
     // date bar on top, the data bar under or over the cameras.
     let tm = o.dashboard.filter(|d| d.style == DashStyle::TeslaMobile);
     let (date_h, data_h) = tm.map_or((0, 0), |_| bar_heights(grid.0));
+    let data_h = if o.hide_data_bar { 0 } else { data_h };
     let above = tm.map_or(0, |d| date_h + if d.bar_on_top() { data_h } else { 0 }) as f32;
     let home = Rect::new(0.0, -above, gw, gh + (date_h + data_h) as f32);
     let (canvas_w, canvas_h) = (home.w.max((home.h * 16.0 / 9.0).round()), home.h.max((home.w * 9.0 / 16.0).round()));
@@ -167,6 +170,7 @@ pub fn layout(tiles: &[Tile], cell: (u32, u32), o: Overlays<'_>) -> Layout {
             // Across the cameras (earlier versions' bars), or moved: its
             // width a share of the grid's, its height the bar's for that.
             let (date_h, data_h) = bar_heights(aw);
+            let data_h = if o.hide_data_bar { 0 } else { data_h };
             let moved = |(x, y, share): (f32, f32, f32), date: bool| {
                 let w = (share * gw).round().clamp(64.0, canvas.w);
                 let (dh, bh) = bar_heights(w as u32);
@@ -181,7 +185,7 @@ pub fn layout(tiles: &[Tile], cell: (u32, u32), o: Overlays<'_>) -> Layout {
                 Some(f) => moved(f, true),
                 None => Rect::new(area.x, area.y - (date_h + if d.bar_on_top() { data_h } else { 0 }) as f32, area.w, date_h as f32),
             };
-            (Some(data), Some(date))
+            ((!o.hide_data_bar).then_some(data), Some(date))
         }
         None => (None, None),
     };
@@ -299,6 +303,20 @@ mod tests {
         // was), and the frame reaches up to the moved bar.
         assert_eq!(l.date_bar.unwrap(), Rect::new(0.0, -158.0, 3258.0, 72.0));
         assert_eq!(l.frame, Rect::new(0.0, -282.0, 3258.0, 1690.0));
+    }
+
+    #[test]
+    fn mobile_date_bar_remains_without_the_telemetry_strip() {
+        let tiles = grid(&GRID);
+        for corner in [Corner::TopCenter, Corner::BottomCenter] {
+            let mut dashboard = dash(DashStyle::TeslaMobile);
+            dashboard.corner = corner;
+            let l = layout(&tiles, CELL, Overlays { dashboard: Some(&dashboard), hide_data_bar: true, ..Default::default() });
+            assert!(l.dashboard.is_none());
+            assert_eq!(l.in_frame(l.date_bar.unwrap()), (0.0, 0.0, 3258.0, 72.0));
+            assert_eq!(l.size(), (3258, 1480));
+            assert_eq!(l.in_frame(l.camera(Camera::LeftPillar).unwrap()).1, 72.0);
+        }
     }
 
     /// Two cameras stacked: a tall frame, just around them.

@@ -88,6 +88,7 @@ pub struct Shown {
     /// picture there (scaled, if its layout's grid is another size).
     pub sheet: Rect,
     pub grid: (u32, u32),
+    mobile_telemetry: Option<Arc<crate::export::source::MobileTelemetry>>,
     /// The frame without the movable pieces, and the pieces: shown while
     /// one is dragged, so it moves without the preview being drawn again.
     pub base: Option<iced::widget::image::Handle>,
@@ -103,6 +104,7 @@ impl Shown {
             full: (p.width, p.height),
             sheet: p.sheet,
             grid: p.grid,
+            mobile_telemetry: p.mobile_telemetry.clone(),
             base: (!p.base.is_empty()).then(|| handle(p.shown.0, p.shown.1, &p.base)),
             pieces: p
                 .pieces
@@ -706,6 +708,13 @@ impl App {
         self.export_layout(q).size()
     }
 
+    fn mobile_telemetry(&self) -> Option<&crate::sei::SeiMetadata> {
+        let shown = self.export.preview.as_ref()?.as_ref().ok()?;
+        let index = shown.mobile_telemetry.as_ref()?;
+        let at = self.here();
+        index.at(at.segment, at.secs)
+    }
+
     /// Where everything goes at quality `q`, as the export will lay it out.
     fn export_layout(&self, q: Quality) -> Layout {
         let chosen = self.export_cameras();
@@ -713,7 +722,9 @@ impl App {
         let e = &self.export;
         let base = if multi { e.side_size.or(e.front_size).unwrap_or((1448, 938)) } else { e.front_size.unwrap_or((2896, 1876)) };
         let (timestamp, dashboard, minimap, watermark) = (self.export_timestamp(), self.export_dashboard(), self.export_minimap(), self.export_watermark());
-        let overlays = Overlays { timestamp: timestamp.as_ref(), dashboard: dashboard.as_ref(), minimap: minimap.as_ref(), watermark: watermark.as_ref() };
+        let no_mobile_data = self.export.preview.as_ref().and_then(|p| p.as_ref().ok())
+            .and_then(|p| p.mobile_telemetry.as_ref()).is_some_and(|m| !m.has_data());
+        let overlays = Overlays { timestamp: timestamp.as_ref(), dashboard: dashboard.as_ref(), hide_data_bar: no_mobile_data, minimap: minimap.as_ref(), watermark: watermark.as_ref() };
         crate::export::layout::layout(&self.export_tiles(), job::cell_size(base, q, !multi), overlays)
     }
 
@@ -822,7 +833,7 @@ impl App {
             return self.refresh_preview();
         }
         if self.export.dash_style == DashStyle::TeslaMobile {
-            let active = SignalFlasher::active(self.front_telemetry());
+            let active = SignalFlasher::active(self.mobile_telemetry());
             self.export.mobile_signals = self.export.mobile_flasher.sample((t * 1000.0) as u128, active);
         }
         self.export.at = Some(t.max(a));
@@ -1507,16 +1518,17 @@ impl App {
             } else {
                 // Tesla Mobile's bars snap back across the cameras: the data
                 // bar under or over them, the date bar on top.
-                let (date_h, data_h) = crate::export::tesla_mobile::bar_heights(aw);
-                let (date_h, data_h) = (date_h as f32, data_h as f32);
+                let (_, data_h) = crate::export::tesla_mobile::bar_heights(aw);
+                let data_h = data_h as f32;
                 let data_snaps = vec![(Corner::BottomCenter, point(area.x, area.bottom())), (Corner::TopCenter, point(area.x, area.y - data_h))];
                 out.push(Movable { what: Dragged::Dashboard, rect: local(r), snaps: data_snaps, corner: None, unit: gw, shares: (0.2, widest) });
-                if let Some(date) = l.date_bar {
-                    let above = date_h + if d.bar_on_top() { data_h } else { 0.0 };
-                    let date_snaps = vec![(Corner::TopCenter, point(area.x, area.y - above))];
-                    out.push(Movable { what: Dragged::DateBar, rect: local(date), snaps: date_snaps, corner: None, unit: gw, shares: (0.2, widest) });
-                }
             }
+        }
+        if let (Some(d), Some(date)) = (self.export_dashboard(), l.date_bar) {
+            let (date_h, data_h) = crate::export::tesla_mobile::bar_heights(aw);
+            let above = date_h + if d.bar_on_top() && l.dashboard.is_some() { data_h } else { 0 };
+            let date_snaps = vec![(Corner::TopCenter, point(area.x, area.y - above as f32))];
+            out.push(Movable { what: Dragged::DateBar, rect: local(date), snaps: date_snaps, corner: None, unit: gw, shares: (0.2, widest) });
         }
         if let (Some(m), Some(r)) = (self.export_minimap(), l.map) {
             let (lo, hi) = Minimap::SHARES;
@@ -1706,7 +1718,7 @@ impl App {
                 layers = place(layers, of(item), crate::export::tesla_mobile::date_bar(line, d.sizes.date));
             }
             if let Some(item) = find(Dragged::Dashboard) {
-                let state = DashState { telemetry: telemetry.cloned(), mobile_signals: self.export.mobile_signals, ..Default::default() };
+                let state = DashState { telemetry: self.mobile_telemetry().cloned(), mobile_signals: self.export.mobile_signals, ..Default::default() };
                 layers = place(layers, of(item), crate::export::tesla_mobile::data_bar(state, self.metric(), (d.sizes.label, d.sizes.value)));
             }
         }

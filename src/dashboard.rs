@@ -346,10 +346,9 @@ fn fit_sizes(d: &Dash<'_>) -> (f32, f32) {
     (l * k, v * k)
 }
 
-/// Pedal position in percent (the value may be 0-1 or 0-100).
-fn accel_percent(sei: &SeiMetadata) -> f64 {
-    let raw = sei.accelerator_pedal_position;
-    if raw > 1.0 { raw.min(100.0) } else { (raw * 100.0).min(100.0) }
+/// Pedal position in percent, as read by Tesla's mobile renderer.
+pub(crate) fn accel_percent(sei: &SeiMetadata) -> f64 {
+    sei.accelerator_pedal_position.clamp(0.0, 100.0)
 }
 
 /// The accelerator in the chosen style; "pressed" is over 5%.

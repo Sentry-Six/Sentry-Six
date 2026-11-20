@@ -229,18 +229,6 @@ pub struct Telemetry {
     buf: Vec<u8>,
 }
 
-#[derive(Default)]
-pub struct TelemetryFrame {
-    pub with_hold: Option<crate::sei::SeiMetadata>,
-    fresh: bool,
-}
-
-impl TelemetryFrame {
-    pub fn current(&self) -> Option<&crate::sei::SeiMetadata> {
-        self.with_hold.as_ref().filter(|_| self.fresh)
-    }
-}
-
 impl Default for Telemetry {
     fn default() -> Self {
         Self::new()
@@ -257,7 +245,7 @@ impl Telemetry {
 
     /// `segment_start`: the minute's start (seconds), so the hold carries
     /// across minutes.
-    pub fn at(&mut self, segments: &[Segment], segment: usize, t: f64) -> TelemetryFrame {
+    pub fn at(&mut self, segments: &[Segment], segment: usize, t: f64) -> Option<crate::sei::SeiMetadata> {
         let now = segments.get(segment).map(|s| s.start as f64).unwrap_or(0.0) + t;
         if self.segment != Some(segment) {
             self.segment = Some(segment);
@@ -268,7 +256,6 @@ impl Telemetry {
                 Some((f, track))
             });
         }
-        let mut fresh = false;
         if let Some((file, track)) = &self.clip {
             if !track.samples.is_empty() {
                 let s = track.samples[track.sample_at(t)];
@@ -277,18 +264,123 @@ impl Telemetry {
                 if crate::mp4::read_at(file, &mut self.buf, s.offset).is_ok() {
                     if let Some(m) = crate::telemetry::sample_telemetry(&self.buf, track.nal_length_size as usize, track.codec) {
                         self.last = Some((now, m));
-                        fresh = true;
                     }
                 }
             }
         }
-        let with_hold = self.last.as_ref().filter(|(at, _)| (now - at).abs() <= Self::HOLD).map(|(_, m)| m.clone());
-        TelemetryFrame { with_hold, fresh }
+        self.last.as_ref().filter(|(at, _)| (now - at).abs() <= Self::HOLD).map(|(_, m)| m.clone())
+    }
+}
+
+/// Telemetry in the selected range, indexed by source presentation time.
+/// Missing spans retain the previous reading for at most three seconds
+/// when another reading follows in the same clip.
+#[derive(Debug, Clone, Default)]
+pub struct MobileTelemetry {
+    clips: std::collections::BTreeMap<usize, Vec<TelemetrySpan>>,
+}
+
+#[derive(Debug, Clone)]
+struct TelemetrySpan {
+    start: f64,
+    end: f64,
+    data: Option<crate::sei::SeiMetadata>,
+}
+
+impl MobileTelemetry {
+    pub fn read(segments: &[Segment], start: (usize, f64), end: (usize, f64)) -> Self {
+        let mut clips = std::collections::BTreeMap::new();
+        for segment in start.0..=end.0 {
+            let Some(files) = segments.get(segment).map(|s| &s.files) else { continue };
+            let Some(path) = files.get(&Camera::Front).or_else(|| files.values().next()) else { continue };
+            let Ok(file) = std::fs::File::open(path) else { continue };
+            let Ok(track) = read_video_track(&file) else { continue };
+            let from = if segment == start.0 { start.1.max(0.0) } else { 0.0 };
+            let to = if segment == end.0 { end.1.min(track.duration) } else { track.duration };
+            let mut samples = track.samples.clone();
+            samples.sort_by_key(|s| s.pts);
+            let mut spans: Vec<TelemetrySpan> = Vec::new();
+            let mut buffer = Vec::new();
+            for (i, sample) in samples.iter().enumerate() {
+                let at = sample.pts as f64 / track.timescale as f64;
+                let until = samples.get(i + 1).map_or(track.duration, |s| s.pts as f64 / track.timescale as f64);
+                if until <= from || at >= to || until <= at {
+                    continue;
+                }
+                buffer.resize((sample.size as usize).min(Telemetry::READ), 0);
+                let data = crate::mp4::read_at(&file, &mut buffer, sample.offset).ok().and_then(|_| {
+                    crate::telemetry::sample_telemetry(&buffer, track.nal_length_size as usize, track.codec)
+                });
+                let at = at.max(from);
+                let until = until.min(to);
+                if data.is_none() {
+                    if let Some(last) = spans.last_mut().filter(|s| s.data.is_none()) {
+                        last.end = until;
+                        continue;
+                    }
+                }
+                spans.push(TelemetrySpan { start: at, end: until, data });
+            }
+            clips.insert(segment, spans);
+        }
+        Self { clips }
+    }
+
+    pub fn has_data(&self) -> bool {
+        self.clips.values().any(|spans| spans.iter().any(|s| s.data.is_some()))
+    }
+
+    pub fn at(&self, segment: usize, time: f64) -> Option<&crate::sei::SeiMetadata> {
+        let spans = self.clips.get(&segment)?;
+        let i = spans.partition_point(|s| s.start <= time).checked_sub(1)?;
+        let span = &spans[i];
+        if time >= span.end {
+            return None;
+        }
+        if let Some(data) = &span.data {
+            return Some(data);
+        }
+        // Leading and trailing sections stay blank. An internal gap may
+        // hold its last reading until the three-second limit is reached.
+        if time - span.start >= Telemetry::HOLD || spans.get(i + 1)?.data.is_none() {
+            return None;
+        }
+        spans.get(i.checked_sub(1)?)?.data.as_ref()
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
+    #[test]
+    fn mobile_telemetry_holds_internal_gaps_and_clears_the_edges() {
+        let reading = || Some(crate::sei::SeiMetadata { vehicle_speed_mps: 10.0, ..Default::default() });
+        let spans = vec![
+            TelemetrySpan { start: 0.0, end: 1.0, data: None },
+            TelemetrySpan { start: 1.0, end: 2.0, data: reading() },
+            TelemetrySpan { start: 2.0, end: 4.0, data: None },
+            TelemetrySpan { start: 4.0, end: 5.0, data: reading() },
+            TelemetrySpan { start: 5.0, end: 9.0, data: None },
+            TelemetrySpan { start: 9.0, end: 10.0, data: reading() },
+            TelemetrySpan { start: 10.0, end: 11.0, data: None },
+        ];
+        let index = MobileTelemetry { clips: [(0, spans)].into_iter().collect() };
+        assert!(index.has_data());
+        assert!(index.at(0, 0.9).is_none());
+        assert!(index.at(0, 2.0).is_some());
+        assert!(index.at(0, 3.99).is_some());
+        assert!(index.at(0, 7.99).is_some());
+        assert!(index.at(0, 8.0).is_none());
+        assert!(index.at(0, 8.99).is_none());
+        assert!(index.at(0, 9.0).is_some());
+        assert!(index.at(0, 10.0).is_none());
+        assert!(index.at(0, 11.0).is_none());
+        assert!(index.at(1, 1.0).is_none());
+        assert!(!MobileTelemetry::default().has_data());
+    }
+
+
     /// Flat grey BGRA frames through the encoder and back: the luma
     /// VideoToolbox gives each grey (BT.709 video range: 16 + 219 v / 255).
     #[test]

@@ -484,27 +484,26 @@ impl DashState {
             None => format!("parked {}", self.time),
             Some(m) => {
                 let speed = if metric { m.vehicle_speed_mps.abs() * 3.6 } else { m.vehicle_speed_mps.abs() * 2.236_936 }.round();
-                let accel = if m.accelerator_pedal_position > 1.0 { m.accelerator_pedal_position } else { m.accelerator_pedal_position * 100.0 };
+                let accel = crate::dashboard::accel_percent(m);
                 let mobile = style == DashStyle::TeslaMobile;
                 let signal_keys = if mobile {
                     self.mobile_signals.map(|light| light as u8)
                 } else {
                     [m.blinker_on_left, m.blinker_on_right].map(|on| u8::from(on && self.blink_ms < 400))
                 };
-                let accel_key = if mobile {
-                    m.accelerator_pedal_position.to_bits()
-                } else {
-                    (accel / 5.0).round().to_bits()
-                };
-                let steering_key = if mobile { m.steering_wheel_angle } else { self.steering.round() as f64 };
+                // Repaint the mobile bar at whole percent and degrees.
+                let accel_key = if mobile { accel.round() } else { (accel / 5.0).round() };
+                let steering_key = if mobile { m.steering_wheel_angle.round() } else { self.steering.round() as f64 };
                 format!(
-                    "{speed} {} {} {} {} {} {} {} {}",
+                    "{speed} {} {} {} {} {} {} {} {} {}",
                     m.gear_state,
                     signal_keys[0],
                     signal_keys[1],
                     m.autopilot_state,
                     m.brake_applied,
                     accel_key,
+                    // Even a sub-percent press changes the mobile pedal icon.
+                    mobile && accel > 0.0,
                     steering_key,
                     self.time
                 )
