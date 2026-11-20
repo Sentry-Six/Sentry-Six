@@ -472,27 +472,39 @@ pub struct DashState {
     pub time: String,
     pub steering: f32,
     pub blink_ms: u128,
+    pub mobile_signals: [super::tesla_mobile::SignalLight; 2],
 }
 
 impl DashState {
     /// What can be seen change: the
     /// dashboard is drawn again only when this does.
-    pub fn signature(&self, metric: bool) -> String {
+    pub fn signature(&self, metric: bool, style: DashStyle) -> String {
         match &self.telemetry {
+            None if style == DashStyle::TeslaMobile => String::new(),
             None => format!("parked {}", self.time),
             Some(m) => {
                 let speed = if metric { m.vehicle_speed_mps.abs() * 3.6 } else { m.vehicle_speed_mps.abs() * 2.236_936 }.round();
-                let accel = if m.accelerator_pedal_position > 1.0 { m.accelerator_pedal_position } else { m.accelerator_pedal_position * 100.0 };
-                let blink = self.blink_ms < 400;
+                let accel = crate::dashboard::accel_percent(m);
+                let mobile = style == DashStyle::TeslaMobile;
+                let signal_keys = if mobile {
+                    self.mobile_signals.map(|light| light as u8)
+                } else {
+                    [m.blinker_on_left, m.blinker_on_right].map(|on| u8::from(on && self.blink_ms < 400))
+                };
+                // Repaint the mobile bar at whole percent and degrees.
+                let accel_key = if mobile { accel.round() } else { (accel / 5.0).round() };
+                let steering_key = if mobile { m.steering_wheel_angle.round() } else { self.steering.round() as f64 };
                 format!(
-                    "{speed} {} {} {} {} {} {} {} {}",
+                    "{speed} {} {} {} {} {} {} {} {} {}",
                     m.gear_state,
-                    m.blinker_on_left && blink,
-                    m.blinker_on_right && blink,
+                    signal_keys[0],
+                    signal_keys[1],
                     m.autopilot_state,
                     m.brake_applied,
-                    (accel / 5.0).round(),
-                    self.steering.round(),
+                    accel_key,
+                    // Even a sub-percent press changes the mobile pedal icon.
+                    mobile && accel > 0.0,
+                    steering_key,
                     self.time
                 )
             }
@@ -856,7 +868,7 @@ mod tests {
             telemetry: Some(crate::sei::SeiMetadata { gear_state: 1, vehicle_speed_mps: 26.8, autopilot_state: 2, ..Default::default() }),
             time: "1:05:09 PM".into(),
             steering: 10.0,
-            blink_ms: 0,
+            ..Default::default()
         };
         let started = std::time::Instant::now();
         let width: u32 = std::env::var("SENTRY_DUMP_WIDTH").ok().and_then(|v| v.parse().ok()).unwrap_or(3258);

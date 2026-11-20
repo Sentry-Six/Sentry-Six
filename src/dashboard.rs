@@ -152,32 +152,6 @@ fn icons() -> &'static Icons {
     })
 }
 
-/// The dashboard's icons, for the export's Tesla Mobile bar.
-pub struct IconSet {
-    pub brake_on: image::Handle,
-    pub brake_off: image::Handle,
-    pub wheel_on: image::Handle,
-    pub wheel_off: image::Handle,
-    pub accel_on: image::Handle,
-    pub accel_off: image::Handle,
-    pub blink_left: svg::Handle,
-    pub blink_right: svg::Handle,
-}
-
-pub fn icon_set() -> IconSet {
-    let i = icons();
-    IconSet {
-        brake_on: i.brake_on.clone(),
-        brake_off: i.brake_off.clone(),
-        wheel_on: i.wheel_on.clone(),
-        wheel_off: i.wheel_off.clone(),
-        accel_on: i.white.on.clone(),
-        accel_off: i.accel_off.clone(),
-        blink_left: i.blink_left.clone(),
-        blink_right: i.blink_right.clone(),
-    }
-}
-
 /// The gear's letter (P, D, R, N).
 pub fn gear_letter(g: i32) -> &'static str {
     match g {
@@ -372,10 +346,9 @@ fn fit_sizes(d: &Dash<'_>) -> (f32, f32) {
     (l * k, v * k)
 }
 
-/// Pedal position in percent (the value may be 0-1 or 0-100).
-fn accel_percent(sei: &SeiMetadata) -> f64 {
-    let raw = sei.accelerator_pedal_position;
-    if raw > 1.0 { raw.min(100.0) } else { (raw * 100.0).min(100.0) }
+/// Pedal position in percent, as read by Tesla's mobile renderer.
+pub(crate) fn accel_percent(sei: &SeiMetadata) -> f64 {
+    sei.accelerator_pedal_position.clamp(0.0, 100.0)
 }
 
 /// The accelerator in the chosen style; "pressed" is over 5%.

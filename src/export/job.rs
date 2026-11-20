@@ -127,6 +127,7 @@ pub struct Plan {
     pub layout: super::layout::Layout,
     /// For each output frame: the minute and the seconds into it.
     pub frames: Vec<(usize, f64)>,
+    pub mobile_telemetry: Option<Arc<super::source::MobileTelemetry>>,
 }
 
 impl Plan {
@@ -255,7 +256,15 @@ pub fn plan(req: &Request) -> Result<Plan> {
     // Tesla Mobile's bars when nothing was moved). H.264 encoders stop at
     // 4096, HEVC and AV1 at 8192: a bigger layout is made smaller to fit,
     // as earlier versions' editor did.
-    let overlays = super::layout::Overlays { timestamp: req.timestamp.as_ref(), dashboard: req.dashboard.as_ref(), minimap: req.minimap.as_ref(), watermark: req.watermark.as_ref() };
+    let mobile_telemetry = req.dashboard.filter(|d| d.style == super::overlay::DashStyle::TeslaMobile).map(|_| {
+        Arc::new(super::source::MobileTelemetry::read(
+            &req.segments,
+            (s, from),
+            (e, req.end.secs.clamp(0.0, lengths[e - s])),
+        ))
+    });
+    let hide_data_bar = mobile_telemetry.as_ref().is_some_and(|m| !m.has_data());
+    let overlays = super::layout::Overlays { timestamp: req.timestamp.as_ref(), dashboard: req.dashboard.as_ref(), hide_data_bar, minimap: req.minimap.as_ref(), watermark: req.watermark.as_ref() };
     let limit = req.format.unwrap_or(Format::Hevc).max_side();
     let full = cell_size(base, req.quality, front_only);
     let Some((cell, layout)) = super::layout::fitted(&req.tiles, full, overlays, limit) else {
@@ -271,7 +280,7 @@ pub fn plan(req: &Request) -> Result<Plan> {
         None => Format::Hevc,
     };
     let rate = bitrate(req.quality, front_only, codec, width, height);
-    Ok(Plan { cell, width, height, codec, bitrate: rate, layout, frames })
+    Ok(Plan { cell, width, height, codec, bitrate: rate, layout, frames, mobile_telemetry })
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -468,6 +477,7 @@ pub struct Preview {
     /// the grid's size there (the sheet's scale).
     pub sheet: super::layout::Rect,
     pub grid: (u32, u32),
+    pub mobile_telemetry: Option<Arc<super::source::MobileTelemetry>>,
 }
 
 /// The part of a BGRA frame `width` wide at `(x, y, w, h)`, as an opaque
@@ -544,7 +554,7 @@ pub fn preview(req: &Request, at: Position, max_width: u32, with_pieces: bool) -
             Some(Piece { kind, shown: size, rgba: img.into_raw() })
         })
         .collect();
-    Ok(Preview { width: w, height: h, shown, rgba, base, pieces, sheet: plan.layout.frame, grid: plan.layout.grid })
+    Ok(Preview { width: w, height: h, shown, rgba, base, pieces, sheet: plan.layout.frame, grid: plan.layout.grid, mobile_telemetry: plan.mobile_telemetry })
 }
 
 /// True when finished, false when cancelled; `warnings` gets what was
@@ -721,8 +731,9 @@ fn encode_all(
     let mut date_bar: Option<(String, super::compose::Overlay)> = None;
     // The dashboard's telemetry, read ahead on its own thread (a sample's
     // first few KB each frame: round trips on a network share).
-    let telemetry = (dashboard.is_some() || req.minimap.is_some()).then(|| {
-        let (tx, rx) = mpsc::sync_channel::<Option<crate::sei::SeiMetadata>>(256);
+    let needs_telemetry_reader = dashboard.is_some_and(|d| d.style == super::overlay::DashStyle::Compact) || req.minimap.is_some();
+    let telemetry = needs_telemetry_reader.then(|| {
+        let (tx, rx) = mpsc::sync_channel(256);
         let (frames, segments, cancel) = (frames.clone(), segments.clone(), cancel.clone());
         let _ = std::thread::Builder::new().name("export-telemetry".into()).spawn(move || {
             let mut reader = super::source::Telemetry::new();
@@ -738,6 +749,8 @@ fn encode_all(
     // from when they come on, frame by frame, as earlier versions did.
     let mut steering: Option<f32> = None;
     let mut blink_from: [Option<usize>; 2] = [None, None];
+    use super::tesla_mobile::SignalFlasher;
+    let mut mobile_flasher = SignalFlasher::default();
     let ease = 1.0 - (-45.0f32 * req.speed.max(0.01) as f32 / FPS as f32).exp();
     // The minimap: the route's map, drawn once, and the arrow on it.
     let minimap = match (&req.minimap, layout.map, painter.as_mut()) {
@@ -812,23 +825,31 @@ fn encode_all(
                 stamp = Some((wall, compositor.overlay(&picture, old)));
             }
         }
-        let m = match telemetry.as_ref() {
+        let telemetry_frame = match telemetry.as_ref() {
             Some(rx) => rx.recv().map_err(|_| anyhow!("the telemetry reader stopped"))?,
             None => None,
         };
-        let car = m.as_ref().and_then(crate::map::car);
+        let held = telemetry_frame.as_ref();
+        let car = held.and_then(crate::map::car);
         if let Some(d) = dashboard {
             if let Some(p) = painter.as_mut() {
+                let mobile = d.style == super::overlay::DashStyle::TeslaMobile;
                 let (segment, secs) = frames[k];
+                let m = if mobile { plan.mobile_telemetry.as_ref().and_then(|m| m.at(segment, secs)) } else { held };
                 let wall = req.segments[segment].start + secs.floor() as i64;
-                let target = m.as_ref().map(|m| m.steering_wheel_angle as f32).unwrap_or(0.0);
+                let target = m.map(|m| m.steering_wheel_angle as f32).unwrap_or(0.0);
                 let angle = steering.map_or(target, |a| a + (target - a) * ease);
                 steering = Some(angle);
                 let mut blink_ms = 0;
-                for (i, on) in [m.as_ref().is_some_and(|m| m.blinker_on_left), m.as_ref().is_some_and(|m| m.blinker_on_right)].into_iter().enumerate() {
-                    blink_from[i] = if on { Some(blink_from[i].unwrap_or(k)) } else { None };
-                    if let Some(from) = blink_from[i] {
-                        blink_ms = ((k - from) as u128 * 1000 / FPS as u128) % 700;
+                let mut mobile_signals = Default::default();
+                if mobile {
+                    mobile_signals = mobile_flasher.sample(k as u128 * 1000 / FPS as u128, SignalFlasher::active(m));
+                } else {
+                    for (i, on) in [m.is_some_and(|m| m.blinker_on_left), m.is_some_and(|m| m.blinker_on_right)].into_iter().enumerate() {
+                        blink_from[i] = if on { Some(blink_from[i].unwrap_or(k)) } else { None };
+                        if let Some(from) = blink_from[i] {
+                            blink_ms = ((k - from) as u128 * 1000 / FPS as u128) % 700;
+                        }
                     }
                 }
                 // The compact style shows the date with the time (Tesla Mobile has a
@@ -837,11 +858,11 @@ fn encode_all(
                     super::overlay::DashStyle::Compact => crate::dashboard::date_and_time(wall, d.h24, d.date_format),
                     _ => crate::dashboard::time_of_day(wall.rem_euclid(86400), d.h24),
                 };
-                let state = super::overlay::DashState { telemetry: m.clone(), time, steering: angle, blink_ms };
-                let signature = state.signature(d.metric);
-                if dash.as_ref().map(|(s, _)| s) != Some(&signature) {
+                let state = super::overlay::DashState { telemetry: m.cloned(), time, steering: angle, blink_ms, mobile_signals };
+                let signature = state.signature(d.metric, d.style);
+                if layout.dashboard.is_some() && dash.as_ref().map(|(s, _)| s) != Some(&signature) {
                     let picture = match (d.style, layout.dashboard) {
-                        (super::overlay::DashStyle::TeslaMobile, Some(r)) => super::tesla_mobile::paint_data(p, r.w as u32, r.h as u32, &state, d.metric, !d.bar_on_top(), (d.sizes.label, d.sizes.value)),
+                        (super::overlay::DashStyle::TeslaMobile, Some(r)) => super::tesla_mobile::paint_data(p, r.w as u32, r.h as u32, &state, d.metric, (d.sizes.label, d.sizes.value)),
                         _ => d.paint(p, &state, layout.grid.0),
                     };
                     if capture.is_some() {
@@ -1237,6 +1258,35 @@ mod tests {
         if let Some(path) = std::env::var_os("SENTRY_DUMP_OVERLAY") {
             ::image::GrayImage::from_raw(w as u32, h as u32, f.clone()).unwrap().save(path).unwrap();
         }
+        let mut mobile_req = req.clone();
+        mobile_req.dashboard.as_mut().unwrap().style = super::super::overlay::DashStyle::TeslaMobile;
+        let plan_with_data = plan(&mobile_req).unwrap();
+        assert!(plan_with_data.layout.dashboard.is_some());
+        assert!(plan_with_data.mobile_telemetry.as_ref().unwrap().has_data());
+        // Detect SEI near the end even when a time-lapse samples past it.
+        let late = dir.join("late.mp4");
+        crate::export::testing::clip_with_telemetry(&late, w, h, n, |_, _, _| [235, 235, 235, 255], |k| {
+            (k == 30).then_some(crate::sei::SeiMetadata::default())
+        });
+        mobile_req.segments[0].files.insert(Camera::Front, late);
+        mobile_req.speed = 64.0;
+        let late_plan = plan(&mobile_req).unwrap();
+        assert!(late_plan.layout.dashboard.is_some());
+        mobile_req.end.secs = 0.5;
+        let no_data_plan = plan(&mobile_req).unwrap();
+        assert!(no_data_plan.layout.dashboard.is_none());
+        assert!(no_data_plan.layout.date_bar.is_some());
+        assert_eq!((no_data_plan.width, no_data_plan.height), (640, 494));
+        // A no-SEI export retains the date strip above the cameras.
+        mobile_req.speed = 1.0;
+        assert!(matches!(run(&mobile_req, &Arc::new(AtomicBool::new(false)), |_| {}).unwrap(), Outcome::Done { .. }));
+        let file = std::fs::File::open(&mobile_req.output).unwrap();
+        let track = crate::mp4::read_video_track(&file).unwrap();
+        assert_eq!((track.width, track.height), (640, 494));
+        let output = decode_all(&mobile_req.output);
+        let frame = &output[0];
+        assert!(frame[..640 * 14].iter().any(|&v| v > 100), "date strip contains text");
+        assert!(frame[640 * 493..].iter().all(|&v| v > 150), "cameras reach the bottom");
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -1293,7 +1343,7 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let (w, h, n) = (320usize, 240usize, 18usize);
         let flat = |v: u8| move |_: usize, _: usize, _: usize| [v, v, v, 255];
-        crate::export::testing::clip(&dir.join("f.mp4"), w, h, n, flat(60));
+        crate::export::testing::clip_with_telemetry(&dir.join("f.mp4"), w, h, n, flat(60), |_| Some(crate::sei::SeiMetadata::default()));
         crate::export::testing::clip(&dir.join("b.mp4"), w, h, n, flat(200));
         let out = dir.join("out.mp4");
         let mut tiles = grid(&[Camera::Front, Camera::Back]);
