@@ -1,6 +1,6 @@
 # Building and developing Sentry Studio
 
-You need [Rust](https://rustup.rs) 1.88 or newer.
+You need [Rust](https://rustup.rs) 1.90 or newer.
 
 ```bash
 cargo build --release
