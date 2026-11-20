@@ -2251,6 +2251,11 @@ https://github.com/madsmtm/objc2
 Copyright (c) the objc2-quartz-core authors
 Used under Apache-2.0; the crate is published without a licence file, so its terms are the standard text in "Standard licence texts: Apache-2.0", above.
 
+objc2-uniform-type-identifiers 0.3.2 (Zlib OR Apache-2.0 OR MIT)
+https://github.com/madsmtm/objc2
+Copyright (c) the objc2-uniform-type-identifiers authors
+Used under Apache-2.0; the crate is published without a licence file, so its terms are the standard text in "Standard licence texts: Apache-2.0", above.
+
 objc2-video-toolbox 0.3.2 (Zlib OR Apache-2.0 OR MIT)
 https://github.com/madsmtm/objc2
 Copyright (c) the objc2-video-toolbox authors
@@ -2323,7 +2328,7 @@ polling 3.11.0 (Apache-2.0 OR MIT)
 https://github.com/smol-rs/polling
 MIT: the standard text in "Standard licence texts: MIT", above.
 
-pollster 0.4.0 (Apache-2.0/MIT)
+pollster 1.0.1 (Apache-2.0/MIT)
 https://github.com/zesterer/pollster
 Copyright (c) 2020-2021 Joshua Barretto
 MIT: the standard text in "Standard licence texts: MIT", above.
@@ -2420,7 +2425,7 @@ https://github.com/linebender/resvg
 Copyright 2017 the Resvg Authors
 MIT: the standard text in "Standard licence texts: MIT", above.
 
-rfd 0.17.2 (MIT)
+rfd 0.18.0 (MIT)
 https://github.com/PolyMeilex/rfd
 Copyright (c) 2022 Bartłomiej Maryńczak
 MIT: the standard text in "Standard licence texts: MIT", above.
