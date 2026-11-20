@@ -8,6 +8,7 @@ mod share_ui;
 pub use share_ui::{ShareMsg, ShareUi};
 
 use crate::export::encode::{Format, Support};
+use crate::export::fsd::{self, SelfDriving};
 use crate::export::job::{self, Position, Quality, Tile};
 use crate::export::layout::{Layout, Overlays, Rect};
 use crate::export::overlay::{Corner, DashSize, DashSizes, DashStyle, Dashboard, MapTiles, Minimap, Timestamp, Watermark};
@@ -161,6 +162,15 @@ pub enum ExportMsg {
     MapCorner(usize),
     Watermark(bool),
     WatermarkCorner(usize),
+    /// The Self-Driving view, its speed and gear, and the front camera's
+    /// horizon and centre (shares of its height and width) and angle
+    /// (degrees), or all three back to the footage's usual.
+    SelfDriving(bool),
+    SelfDrivingSpeed(bool),
+    Horizon(f32),
+    Center(f32),
+    CameraAngle(f32),
+    ResetCamera,
     Format(Format),
     Formats([Support; 3]),
     Preview(Arc<Result<job::Preview, String>>),
@@ -275,6 +285,14 @@ pub struct Export {
     pub watermark: bool,
     pub wm_corner: Corner,
     pub wm_free: Option<(f32, f32)>,
+    /// The Self-Driving view on the front camera (see export::fsd): on,
+    /// with the speed and gear, and the camera's horizon, centre and
+    /// angle where they were set (None: the footage's usual).
+    pub self_driving: bool,
+    pub sd_speed: bool,
+    pub sd_horizon: Option<f32>,
+    pub sd_center: Option<f32>,
+    pub sd_angle: Option<f32>,
     /// Sharing the finished export, and the list of shared clips.
     pub share: ShareUi,
     /// The editor's folded sections (bits of Fold).
@@ -350,6 +368,11 @@ impl Default for Export {
             watermark: true,
             wm_corner: Corner::BottomRight,
             wm_free: None,
+            self_driving: false,
+            sd_speed: true,
+            sd_horizon: None,
+            sd_center: None,
+            sd_angle: None,
             share: ShareUi::default(),
             folded: 0,
             at: None,
@@ -577,6 +600,7 @@ impl App {
             dashboard: self.export_dashboard(),
             minimap: self.export_minimap(),
             watermark: self.export_watermark(),
+            self_driving: self.export_self_driving(),
             blur_zones: self.export.zones.clone(),
             output: output.clone(),
         })
@@ -616,6 +640,12 @@ impl App {
     fn export_watermark(&self) -> Option<Watermark> {
         let e = &self.export;
         e.watermark.then_some(Watermark { corner: e.wm_corner, free: e.wm_free, share: e.wm_share })
+    }
+
+    /// The Self-Driving view as set up (None when it's off).
+    fn export_self_driving(&self) -> Option<SelfDriving> {
+        let e = &self.export;
+        e.self_driving.then_some(SelfDriving { hud: e.sd_speed, metric: self.settings.metric, h24: self.settings.time_24h, horizon: e.sd_horizon, center: e.sd_center, fov: e.sd_angle })
     }
 
     /// The minimap as set up (None when it's off).
@@ -779,6 +809,12 @@ impl App {
                 | ExportMsg::Skip(_)
                 | ExportMsg::Watermark(_)
                 | ExportMsg::WatermarkCorner(_)
+                | ExportMsg::SelfDriving(_)
+                | ExportMsg::SelfDrivingSpeed(_)
+                | ExportMsg::Horizon(_)
+                | ExportMsg::Center(_)
+                | ExportMsg::CameraAngle(_)
+                | ExportMsg::ResetCamera
                 | ExportMsg::SaveZone
                 | ExportMsg::RemoveZone(_)
                 | ExportMsg::RestoreZones
@@ -920,6 +956,11 @@ impl App {
                     self.export.watermark = self.settings.export_watermark;
                     self.export.wm_corner = Corner::from_key(&self.settings.export_watermark_position).unwrap_or(Corner::BottomRight);
                     self.export.wm_free = self.settings.export_watermark_free;
+                    self.export.self_driving = self.settings.export_self_driving;
+                    self.export.sd_speed = self.settings.export_self_driving_hud;
+                    self.export.sd_horizon = self.settings.export_self_driving_horizon.map(|x| x as f32);
+                    self.export.sd_center = self.settings.export_self_driving_center.map(|x| x as f32);
+                    self.export.sd_angle = self.settings.export_self_driving_angle.map(|x| x as f32);
                     self.export.map_free = self.settings.export_map_free;
                     self.export.ts_free = self.settings.export_timestamp_free;
                     self.export.ts_scale = self.settings.export_timestamp_scale.map_or(1.0, |x| x as f32);
@@ -1132,6 +1173,41 @@ impl App {
                     self.export.wm_free = None;
                 }
             }
+            ExportMsg::SelfDriving(on) => {
+                if !self.export.running() {
+                    self.export.self_driving = on;
+                }
+            }
+            ExportMsg::SelfDrivingSpeed(on) => {
+                if !self.export.running() {
+                    self.export.sd_speed = on;
+                }
+            }
+            ExportMsg::Horizon(share) => {
+                let (lo, hi) = SelfDriving::HORIZONS;
+                if !self.export.running() {
+                    self.export.sd_horizon = Some(share.clamp(lo, hi));
+                }
+            }
+            ExportMsg::Center(share) => {
+                let (lo, hi) = SelfDriving::CENTERS;
+                if !self.export.running() {
+                    self.export.sd_center = Some(share.clamp(lo, hi));
+                }
+            }
+            ExportMsg::CameraAngle(degrees) => {
+                let (lo, hi) = SelfDriving::FOVS;
+                if !self.export.running() {
+                    self.export.sd_angle = Some(degrees.clamp(lo, hi));
+                }
+            }
+            ExportMsg::ResetCamera => {
+                if !self.export.running() {
+                    self.export.sd_horizon = None;
+                    self.export.sd_center = None;
+                    self.export.sd_angle = None;
+                }
+            }
             ExportMsg::DragDone => {
                 self.export.drag_wait = true;
             }
@@ -1289,6 +1365,11 @@ impl App {
                 self.settings.export_watermark = self.export.watermark;
                 self.settings.export_watermark_position = self.export.wm_corner.key().to_string();
                 self.settings.export_watermark_free = self.export.wm_free;
+                self.settings.export_self_driving = self.export.self_driving;
+                self.settings.export_self_driving_hud = self.export.sd_speed;
+                self.settings.export_self_driving_horizon = self.export.sd_horizon.map(|x| (x as f64 * 1000.0).round() / 1000.0);
+                self.settings.export_self_driving_center = self.export.sd_center.map(|x| (x as f64 * 1000.0).round() / 1000.0);
+                self.settings.export_self_driving_angle = self.export.sd_angle.map(|x| x.round() as f64);
                 self.settings.export_map_free = self.export.map_free;
                 self.settings.export_timestamp_free = self.export.ts_free;
                 self.settings.export_timestamp_scale = Some(self.export.ts_scale as f64);
@@ -1687,6 +1768,27 @@ impl App {
         }
         let telemetry = self.front_telemetry();
         let wall = self.player.wall_clock();
+        // The Self-Driving view on the front camera, under the rest: the
+        // path from what's playing (once the clip's telemetry has been
+        // read) and the speed and gear.
+        if let (Some(view), Some(item)) = (self.export_self_driving(), find(Dragged::Camera(Camera::Front))) {
+            let r = of(item);
+            let lens = view.lens(self.export.front_size.unwrap_or((r.width as u32, r.height as u32)));
+            let (segment, secs) = self.player.locate_at(self.player.position());
+            let ahead = telemetry.and_then(|_| fsd::ahead_soon(self.player.segments(), segment, secs, lens.nearest((r.width, r.height))));
+            let accel = ahead.as_ref().map_or(0.0, |a| a.accel);
+            let run = self.epoch.elapsed().as_secs_f32() * fsd::CHEVRON_RATE;
+            if let Some(ribbon) = telemetry.zip(ahead).and_then(|(m, a)| fsd::Ribbon::new(m, a, run)) {
+                let top = fsd::ribbon_top(lens, r.height);
+                let road = iced::Rectangle::new(iced::Point::new(r.x, r.y + top), iced::Size::new(r.width, (r.height - top).max(1.0)));
+                layers = place(layers, road, fsd::ribbon_view(ribbon, lens, (r.width, r.height)));
+            }
+            if let Some(t) = wall.filter(|_| view.hud) {
+                let hud = fsd::Hud::new(&view, telemetry, accel, t, self.epoch.elapsed().as_millis() % 700);
+                let strip = iced::Rectangle::new(r.position(), iced::Size::new(r.width, fsd::hud_height(r.height).min(r.height)));
+                layers = place(layers, strip, fsd::hud_view(hud, r.height));
+            }
+        }
         // Tesla Mobile's bars, where they are.
         if let Some(d) = dashboard.filter(|d| d.style == DashStyle::TeslaMobile) {
             if let Some(item) = find(Dragged::DateBar) {
@@ -2037,6 +2139,48 @@ impl App {
             overlays = overlays.push(size_row("ui.export.valueSize", "ui.export.valueSizeDesc", e.dash_sizes.value, ExportMsg::ValueSize));
             if e.dash_style == DashStyle::TeslaMobile {
                 overlays = overlays.push(size_row("ui.export.dateBarSize", "ui.export.dateBarSizeDesc", e.dash_sizes.date, ExportMsg::DateSize));
+            }
+        }
+        // The Self-Driving view: the path on the road in the front camera.
+        overlays = overlays.push(labelled(
+            t("ui.export.selfDriving"),
+            t("ui.export.selfDrivingDesc"),
+            toggler(e.self_driving).size(22).on_toggle_maybe((!busy).then_some(|b| wrap(ExportMsg::SelfDriving(b)))).style(theme::toggle).into(),
+        ));
+        if e.self_driving {
+            if !chosen.contains(&Camera::Front) {
+                overlays = overlays.push(sub(info(t("ui.export.selfDrivingNeedsFront").to_string(), theme::WARNING)));
+            }
+            overlays = overlays.push(sub(labelled(
+                t("ui.export.selfDrivingSpeed"),
+                t("ui.export.selfDrivingSpeedDesc"),
+                toggler(e.sd_speed).size(22).on_toggle_maybe((!busy).then_some(|b| wrap(ExportMsg::SelfDrivingSpeed(b)))).style(theme::toggle).into(),
+            )));
+            // The front camera: where its horizon is, where straight ahead
+            // is in it, and how wide it sees (the footage's usual until moved).
+            let footage = e.front_size.unwrap_or((2896, 1876));
+            let horizon = e.sd_horizon.unwrap_or_else(|| SelfDriving::usual_horizon(footage));
+            let center = e.sd_center.unwrap_or(0.5);
+            let angle = e.sd_angle.unwrap_or_else(|| SelfDriving::usual_fov(footage));
+            let slide = |label: &'static str, desc: &'static str, value: f32, shown: String, (lo, hi): (f32, f32), step: f32, set: fn(f32) -> ExportMsg| {
+                sub(column![
+                    row![
+                        text(t(label)).size(12).font(theme::medium(theme::INTER)),
+                        space().width(Length::Fill),
+                        text(shown).size(11).font(theme::MONO).color(theme::TEXT_SECONDARY),
+                    ]
+                    .align_y(Alignment::Center),
+                    iced::widget::slider(lo..=hi, value, move |v| wrap(set(v))).step(step).style(theme::settings_slider),
+                    text(t(desc)).size(10).color(theme::TEXT_MUTED),
+                ]
+                .spacing(6)
+                .into())
+            };
+            overlays = overlays.push(slide("ui.export.selfDrivingHorizon", "ui.export.selfDrivingHorizonDesc", horizon, format!("{:.0}%", horizon * 100.0), SelfDriving::HORIZONS, 0.005, ExportMsg::Horizon));
+            overlays = overlays.push(slide("ui.export.selfDrivingCenter", "ui.export.selfDrivingCenterDesc", center, format!("{:.1}%", center * 100.0), SelfDriving::CENTERS, 0.002, ExportMsg::Center));
+            overlays = overlays.push(slide("ui.export.selfDrivingAngle", "ui.export.selfDrivingAngleDesc", angle, format!("{angle:.0}°"), SelfDriving::FOVS, 1.0, ExportMsg::CameraAngle));
+            if e.sd_horizon.is_some() || e.sd_center.is_some() || e.sd_angle.is_some() {
+                overlays = overlays.push(sub(secondary(t("ui.settings.reset"), (!busy).then_some(wrap(ExportMsg::ResetCamera)))));
             }
         }
         overlays = overlays.push(labelled(
@@ -2826,10 +2970,35 @@ mod tests {
             if std::env::var_os("SENTRY_DIALOG_TESLA").is_some() {
                 app.export.dash_style = crate::export::overlay::DashStyle::TeslaMobile;
             }
+            // SENTRY_DIALOG_SELF_DRIVING: the Self-Driving view instead of
+            // the dashboard, with the preview that many seconds in.
+            let self_driving = std::env::var("SENTRY_DIALOG_SELF_DRIVING").ok();
+            if self_driving.is_some() {
+                app.export.self_driving = true;
+                app.export.dashboard = false;
+                // The footage's own size, as the dialog reads it: the
+                // path is laid through the camera it is from.
+                let front = app.player.segments().iter().find_map(|s| s.files.get(&super::Camera::Front)).and_then(|p| std::fs::File::open(p).ok()).and_then(|f| crate::mp4::read_video_track(&f).ok());
+                app.export.front_size = front.map(|t| (t.width, t.height));
+            }
+            let secs = self_driving.and_then(|s| s.parse().ok()).unwrap_or(10.0);
             let (start, end) = app.export_range().unwrap();
             let request = app.export_request(start, end, std::path::PathBuf::new()).unwrap();
-            let p = crate::export::job::preview(&request, super::Position { segment: 0, secs: 10.0 }, super::PREVIEW_WIDTH, true).unwrap();
+            let p = crate::export::job::preview(&request, super::Position { segment: 0, secs }, super::PREVIEW_WIDTH, true).unwrap();
             app.export.preview = Some(Ok(super::Shown::from_preview(&p)));
+            // Playing: the player run from there for a moment, so the
+            // live overlays have telemetry (and the path's has been read).
+            if std::env::var_os("SENTRY_DIALOG_PLAYING").is_some() {
+                app.player.seek(secs);
+                app.player.set_playing(true);
+                app.export.playing = true;
+                let until = std::time::Instant::now() + std::time::Duration::from_millis(1500);
+                while std::time::Instant::now() < until {
+                    app.player.tick();
+                    let _ = app.export_dialog();
+                    std::thread::sleep(std::time::Duration::from_millis(8));
+                }
+            }
         }
         // SENTRY_DIALOG_PLAYING: the editor playing (live overlays; the
         // video itself is a shader, which this painter leaves out).

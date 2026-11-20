@@ -154,6 +154,18 @@ pub struct Settings {
     pub export_dash_scale: Option<f64>,
     pub export_map_scale: Option<f64>,
     pub export_watermark_scale: Option<f64>,
+    /// The export's Self-Driving view (`exportSelfDriving`, off by default;
+    /// see export::fsd), its speed and gear (`exportSelfDrivingSpeed`, on by
+    /// default), and the front camera's horizon and angle when they were
+    /// set in the editor (`exportSelfDrivingHorizon`,
+    /// `exportSelfDrivingCenter`: shares of the picture's height from its
+    /// top and width from its left; `exportSelfDrivingAngle`: degrees; null
+    /// for the footage's usual). New in this version.
+    pub export_self_driving: bool,
+    pub export_self_driving_hud: bool,
+    pub export_self_driving_horizon: Option<f64>,
+    pub export_self_driving_center: Option<f64>,
+    pub export_self_driving_angle: Option<f64>,
     /// The last export's blur zones (`exportLastBlurZones`: camera and
     /// coordinates, as earlier versions saved them), offered again.
     pub export_blur_zones: Vec<crate::export::blur::BlurZone>,
@@ -233,6 +245,11 @@ impl Default for Settings {
             export_dash_scale: None,
             export_map_scale: None,
             export_watermark_scale: None,
+            export_self_driving: false,
+            export_self_driving_hud: true,
+            export_self_driving_horizon: None,
+            export_self_driving_center: None,
+            export_self_driving_angle: None,
             export_blur_zones: Vec::new(),
             clips_collapsed: false,
             default_folder_bookmark: None,
@@ -576,6 +593,11 @@ pub fn to_json(s: &Settings) -> Value {
     v["exportDashboardValueScale"] = serde_json::json!(s.export_dash_value_scale);
     v["exportDashboardDateLabelScale"] = serde_json::json!(s.export_dash_date_label_scale);
     v["exportDashboardDateValueScale"] = serde_json::json!(s.export_dash_date_value_scale);
+    v["exportSelfDriving"] = serde_json::json!(s.export_self_driving);
+    v["exportSelfDrivingSpeed"] = serde_json::json!(s.export_self_driving_hud);
+    v["exportSelfDrivingHorizon"] = scale(s.export_self_driving_horizon);
+    v["exportSelfDrivingCenter"] = scale(s.export_self_driving_center);
+    v["exportSelfDrivingAngle"] = scale(s.export_self_driving_angle);
     v
 }
 
@@ -713,6 +735,23 @@ fn apply(s: &mut Settings, v: &Value) {
     }
     if v.get("exportMinimapFree").is_some() {
         s.export_map_free = free_pair(v.get("exportMinimapFree"));
+    }
+    if let Some(b) = v.get("exportSelfDriving").and_then(Value::as_bool) {
+        s.export_self_driving = b;
+    }
+    if let Some(b) = v.get("exportSelfDrivingSpeed").and_then(Value::as_bool) {
+        s.export_self_driving_hud = b;
+    }
+    // The camera's horizon, centre and angle: what the editor's sliders reach.
+    let within = |k: &str, (lo, hi): (f32, f32)| v.get(k).and_then(Value::as_f64).filter(|x| (lo as f64..=hi as f64).contains(x));
+    if v.get("exportSelfDrivingHorizon").is_some() {
+        s.export_self_driving_horizon = within("exportSelfDrivingHorizon", crate::export::fsd::SelfDriving::HORIZONS);
+    }
+    if v.get("exportSelfDrivingCenter").is_some() {
+        s.export_self_driving_center = within("exportSelfDrivingCenter", crate::export::fsd::SelfDriving::CENTERS);
+    }
+    if v.get("exportSelfDrivingAngle").is_some() {
+        s.export_self_driving_angle = within("exportSelfDrivingAngle", crate::export::fsd::SelfDriving::FOVS);
     }
     if let Some(b) = v.get("exportIncludeMinimap").and_then(Value::as_bool) {
         s.export_minimap = b;
@@ -895,6 +934,26 @@ mod tests {
         let mut third = Settings { export_timestamp_free: Some((0.5, 0.5)), ..Default::default() };
         apply(&mut third, &to_json(&again));
         assert_eq!(third.export_timestamp_free, None);
+    }
+
+    /// The Self-Driving view: off with its speed and gear on until chosen,
+    /// its camera's horizon and angle kept only where the sliders reach.
+    #[test]
+    fn self_driving_view_round_trips() {
+        let mut s = Settings::default();
+        assert_eq!((s.export_self_driving, s.export_self_driving_hud, s.export_self_driving_horizon, s.export_self_driving_angle), (false, true, None, None));
+        apply(&mut s, &serde_json::json!({ "exportSelfDriving": true, "exportSelfDrivingSpeed": false, "exportSelfDrivingHorizon": 0.46, "exportSelfDrivingCenter": 0.478, "exportSelfDrivingAngle": 300.0 }));
+        assert_eq!((s.export_self_driving, s.export_self_driving_hud, s.export_self_driving_horizon, s.export_self_driving_angle), (true, false, Some(0.46), None));
+        assert_eq!(s.export_self_driving_center, Some(0.478));
+        s.export_self_driving_angle = Some(52.0);
+        let mut again = Settings::default();
+        apply(&mut again, &to_json(&s));
+        assert_eq!((again.export_self_driving, again.export_self_driving_hud, again.export_self_driving_horizon, again.export_self_driving_angle), (true, false, Some(0.46), Some(52.0)));
+        assert_eq!(again.export_self_driving_center, Some(0.478));
+        // Reset in the editor: saved as null, read back as the usual.
+        s.export_self_driving_horizon = None;
+        apply(&mut again, &to_json(&s));
+        assert_eq!(again.export_self_driving_horizon, None);
     }
 
     use super::*;

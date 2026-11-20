@@ -108,6 +108,9 @@ pub struct Request {
     pub minimap: Option<super::overlay::Minimap>,
     /// The Sentry Six watermark.
     pub watermark: Option<super::overlay::Watermark>,
+    /// The Self-Driving view on the front camera (see export::fsd); left
+    /// out when the front camera isn't in the export.
+    pub self_driving: Option<super::fsd::SelfDriving>,
     /// Blur zones (Privacy); zones on cameras not in the export are ignored.
     pub blur_zones: Vec<super::blur::BlurZone>,
     pub output: PathBuf,
@@ -547,6 +550,16 @@ pub fn preview(req: &Request, at: Position, max_width: u32, with_pieces: bool) -
     Ok(Preview { width: w, height: h, shown, rgba, base, pieces, sheet: plan.layout.frame, grid: plan.layout.grid })
 }
 
+/// The Self-Driving view in an export: as set up, the front camera it is
+/// seen through, and that camera's place and size in the frame.
+struct SelfDrivingAt {
+    view: super::fsd::SelfDriving,
+    lens: super::fsd::Lens,
+    x: f32,
+    y: f32,
+    size: (u32, u32),
+}
+
 /// True when finished, false when cancelled; `warnings` gets what was
 /// left out. `capture`: draw only frame k into the buffer (BGRA), for a
 /// preview.
@@ -642,15 +655,27 @@ fn encode_all(
     // earlier versions did (looked for at the start of each minute and in
     // the middle of the range).
     let mut dashboard = req.dashboard;
-    if capture.is_none() && dashboard.is_some_and(|d| d.style == super::overlay::DashStyle::Compact) {
+    // The Self-Driving view: over the front camera, where that is in the
+    // frame, through the camera its footage is from.
+    let mut self_driving = req.self_driving.zip(req.tiles.iter().position(|t| t.camera == Camera::Front)).map(|(view, i)| {
+        let (x, y, w, h) = rects[i];
+        let size = ((w as u32).max(1), (h as u32).max(1));
+        let footage = req.segments.iter().find_map(|s| s.files.get(&Camera::Front)).and_then(|p| track_of(p)).map(|t| (t.width, t.height));
+        SelfDrivingAt { view, lens: view.lens(footage.unwrap_or(size)), x, y, size }
+    });
+    let compact = dashboard.is_some_and(|d| d.style == super::overlay::DashStyle::Compact);
+    if capture.is_none() && (compact || self_driving.is_some()) {
         let mut probe = super::source::Telemetry::new();
         let mut seen = std::collections::HashSet::new();
         let mut points: Vec<(usize, f64)> = plan.frames.iter().copied().filter(|(s, _)| seen.insert(*s)).collect();
         points.push(plan.frames[plan.frames.len() / 2]);
         if !points.into_iter().any(|(s, t)| probe.at(&req.segments, s, t).is_some()) {
-            log::warn!("export: no telemetry in this range; exporting without the dashboard");
+            log::warn!("export: no telemetry in this range; exporting without the dashboard and the Self-Driving view");
             warnings.push("ui.notifications.noTelemetryData");
-            dashboard = None;
+            if compact {
+                dashboard = None;
+            }
+            self_driving = None;
         }
     }
     // Each camera's mask: its blur zones, and the glass under the
@@ -693,7 +718,7 @@ fn encode_all(
         log::info!("export: blur zones or glass on {} camera(s)", masks.iter().filter(|m| m.is_some()).count());
     }
     // Overlays: drawn again only when what they show changes.
-    let wants_overlays = req.timestamp.is_some() || dashboard.is_some() || req.minimap.is_some() || req.watermark.is_some();
+    let wants_overlays = req.timestamp.is_some() || dashboard.is_some() || req.minimap.is_some() || req.watermark.is_some() || self_driving.is_some();
     let mut painter = if wants_overlays { super::overlay::Painter::new() } else { None };
     if wants_overlays && painter.is_none() {
         log::warn!("export: no software renderer for the overlays; exporting without them");
@@ -720,20 +745,30 @@ fn encode_all(
     let mut dash: Option<(String, super::compose::Overlay)> = None;
     let mut date_bar: Option<(String, super::compose::Overlay)> = None;
     // The dashboard's telemetry, read ahead on its own thread (a sample's
-    // first few KB each frame: round trips on a network share).
-    let telemetry = (dashboard.is_some() || req.minimap.is_some()).then(|| {
-        let (tx, rx) = mpsc::sync_channel::<Option<crate::sei::SeiMetadata>>(256);
+    // first few KB each frame: round trips on a network share), and with
+    // the Self-Driving view the path from the car at each frame.
+    let telemetry = (dashboard.is_some() || req.minimap.is_some() || self_driving.is_some()).then(|| {
+        let (tx, rx) = mpsc::sync_channel::<(Option<crate::sei::SeiMetadata>, Option<super::fsd::Ahead>)>(256);
         let (frames, segments, cancel) = (frames.clone(), segments.clone(), cancel.clone());
+        // How near the road is at the bottom of the front camera's picture.
+        let near = self_driving.as_ref().map(|sd| sd.lens.nearest((sd.size.0 as f32, sd.size.1 as f32)));
         let _ = std::thread::Builder::new().name("export-telemetry".into()).spawn(move || {
             let mut reader = super::source::Telemetry::new();
             for &(segment, t) in frames.iter() {
-                if cancel.load(Ordering::Relaxed) || tx.send(reader.at(&segments, segment, t)).is_err() {
+                let m = reader.at(&segments, segment, t);
+                let ahead = near.filter(|_| m.is_some()).and_then(|near| super::fsd::ahead_at(&segments, segment, t, near));
+                if cancel.load(Ordering::Relaxed) || tx.send((m, ahead)).is_err() {
                     return;
                 }
             }
         });
         rx
     });
+    // The Self-Driving view's path and corners as last drawn, and how far
+    // the chevrons have run.
+    let mut path: (Option<super::fsd::Ribbon>, Option<super::compose::Overlay>) = (None, None);
+    let mut corners: Option<(super::fsd::Hud, super::compose::Overlay)> = None;
+    let mut chevrons = 0.0f32;
     // The wheel eases towards the telemetry's angle and the blinkers flash
     // from when they come on, frame by frame, as earlier versions did.
     let mut steering: Option<f32> = None;
@@ -812,11 +847,45 @@ fn encode_all(
                 stamp = Some((wall, compositor.overlay(&picture, old)));
             }
         }
-        let m = match telemetry.as_ref() {
+        let (m, ahead) = match telemetry.as_ref() {
             Some(rx) => rx.recv().map_err(|_| anyhow!("the telemetry reader stopped"))?,
-            None => None,
+            None => (None, None),
         };
         let car = m.as_ref().and_then(crate::map::car);
+        // The blinkers flash from when they come on.
+        let mut blink_ms = 0;
+        for (i, on) in [m.as_ref().is_some_and(|m| m.blinker_on_left), m.as_ref().is_some_and(|m| m.blinker_on_right)].into_iter().enumerate() {
+            blink_from[i] = if on { Some(blink_from[i].unwrap_or(k)) } else { None };
+            if let Some(from) = blink_from[i] {
+                blink_ms = ((k - from) as u128 * 1000 / FPS as u128) % 700;
+            }
+        }
+        // The Self-Driving view: the path drawn again when it changes
+        // (every frame while the car moves), the corners when what they
+        // show does.
+        if let (Some(sd), Some(p)) = (self_driving.as_ref(), painter.as_mut()) {
+            let accel = ahead.as_ref().map_or(0.0, |a| a.accel);
+            let ribbon = m.as_ref().zip(ahead).and_then(|(m, a)| super::fsd::Ribbon::new(m, a, chevrons));
+            if ribbon.as_ref().is_some_and(|r| r.slowing > 0.0) {
+                chevrons = (chevrons + super::fsd::CHEVRON_RATE / FPS as f32).fract();
+            }
+            if ribbon != path.0 {
+                if let Some(r) = ribbon.as_ref() {
+                    let picture = super::fsd::paint_ribbon(p, r, sd.lens, sd.size);
+                    path.1 = Some(compositor.overlay(&picture, path.1.take()));
+                }
+                path.0 = ribbon;
+            }
+            if sd.view.hud {
+                let (segment, secs) = frames[k];
+                let hud = super::fsd::Hud::new(&sd.view, m.as_ref(), accel, req.segments[segment].start + secs.floor() as i64, blink_ms);
+                if corners.as_ref().map(|(shown, _)| shown) != Some(&hud) {
+                    let picture = super::fsd::paint_hud(p, &hud, sd.size);
+                    let old = corners.take().map(|(_, o)| o);
+                    corners = Some((hud, compositor.overlay(&picture, old)));
+                }
+            }
+        }
         if let Some(d) = dashboard {
             if let Some(p) = painter.as_mut() {
                 let (segment, secs) = frames[k];
@@ -824,13 +893,6 @@ fn encode_all(
                 let target = m.as_ref().map(|m| m.steering_wheel_angle as f32).unwrap_or(0.0);
                 let angle = steering.map_or(target, |a| a + (target - a) * ease);
                 steering = Some(angle);
-                let mut blink_ms = 0;
-                for (i, on) in [m.as_ref().is_some_and(|m| m.blinker_on_left), m.as_ref().is_some_and(|m| m.blinker_on_right)].into_iter().enumerate() {
-                    blink_from[i] = if on { Some(blink_from[i].unwrap_or(k)) } else { None };
-                    if let Some(from) = blink_from[i] {
-                        blink_ms = ((k - from) as u128 * 1000 / FPS as u128) % 700;
-                    }
-                }
                 // The compact style shows the date with the time (Tesla Mobile has a
                 // date bar of its own).
                 let time = match d.style {
@@ -866,6 +928,18 @@ fn encode_all(
         let mut overlays = Vec::new();
         // Which overlays the editor moves (left out of a preview's base).
         let mut kinds: Vec<Option<(PieceKind, f32, f32)>> = Vec::new();
+        // The Self-Driving view under the rest; it stays on its camera (in
+        // a preview it is part of the camera's piece).
+        if let Some(sd) = self_driving.as_ref() {
+            if let (Some(_), Some(o)) = (path.0.as_ref(), path.1.as_ref()) {
+                overlays.push((o, sd.x, sd.y + super::fsd::ribbon_top(sd.lens, sd.size.1 as f32)));
+                kinds.push(None);
+            }
+            if let Some((_, o)) = corners.as_ref() {
+                overlays.push((o, sd.x, sd.y));
+                kinds.push(None);
+            }
+        }
         if let (Some((_, o)), Some(r)) = (stamp.as_ref(), layout.timestamp) {
             let (x, y) = at(r);
             overlays.push((o, x, y));
@@ -1099,6 +1173,7 @@ mod tests {
             dashboard: None,
             minimap: None,
             watermark: None,
+            self_driving: None,
             blur_zones: Vec::new(),
             output: out.clone(),
         };
@@ -1166,6 +1241,7 @@ mod tests {
                 dashboard: None,
                 minimap: None,
             watermark: None,
+                self_driving: None,
                 blur_zones: Vec::new(),
                 output: out.clone(),
             };
@@ -1223,6 +1299,7 @@ mod tests {
             }),
             minimap: None,
             watermark: None,
+            self_driving: None,
             blur_zones: Vec::new(),
             output: out.clone(),
         };
@@ -1276,6 +1353,7 @@ mod tests {
                 free: None,
             }),
             watermark: None,
+            self_driving: None,
             blur_zones: Vec::new(),
             output: out.clone(),
         };
@@ -1329,6 +1407,7 @@ mod tests {
             dashboard: Some(dashboard),
             minimap: None,
             watermark: None,
+            self_driving: None,
             blur_zones: Vec::new(),
             output: out.clone(),
         };
