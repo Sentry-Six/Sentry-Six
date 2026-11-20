@@ -91,9 +91,6 @@ pub struct Shown {
     /// one is dragged, so it moves without the preview being drawn again.
     pub base: Option<iced::widget::image::Handle>,
     pub pieces: Vec<(Dragged, iced::widget::image::Handle)>,
-    route: Arc<[crate::map::RoutePoint]>,
-    route_range: (Position, Position),
-    route_source: Option<PathBuf>,
 }
 
 impl Shown {
@@ -105,9 +102,6 @@ impl Shown {
             full: (p.width, p.height),
             sheet: p.sheet,
             grid: p.grid,
-            route: p.route.clone(),
-            route_range: p.route_range,
-            route_source: p.route_source.clone(),
             base: (!p.base.is_empty()).then(|| handle(p.shown.0, p.shown.1, &p.base)),
             pieces: p
                 .pieces
@@ -1720,14 +1714,7 @@ impl App {
         if let Some(item) = find(Dragged::Map) {
             let r = of(item);
             let car = telemetry.and_then(crate::map::car);
-            let route = self.export.preview.as_ref().and_then(|p| p.as_ref().ok())
-                .filter(|preview| {
-                    let Some(range) = self.export_range() else { return false };
-                    let source = self.player.segments().get(range.0.segment)
-                        .and_then(|seg| crate::sync::reference(&seg.files));
-                    preview.route_range == range && preview.route_source.as_ref() == source
-                })
-                .map_or(&[][..], |preview| preview.route.as_ref());
+            let route = self.map_route().0;
             let center = car.map(|(lat, lon, _)| (lat, lon)).or_else(|| route.get(route.len() / 2).map(|p| (p.0 as f64, p.1 as f64)));
             if let Some(center) = center {
                 let side = r.width;
