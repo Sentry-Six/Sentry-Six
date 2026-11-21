@@ -485,7 +485,6 @@ pub fn export_check(dir: &std::path::Path, quality: Option<&str>, speed: Option<
             self_driving: std::env::var("SENTRY_EXPORT_SELF_DRIVING").ok().map(|v| crate::export::fsd::SelfDriving {
                 hud: v != "path",
                 metric: false,
-                h24: false,
                 horizon: std::env::var("SENTRY_EXPORT_HORIZON").ok().and_then(|v| v.parse().ok()),
                 center: std::env::var("SENTRY_EXPORT_CENTER").ok().and_then(|v| v.parse().ok()),
                 fov: std::env::var("SENTRY_EXPORT_FOV").ok().and_then(|v| v.parse().ok()),

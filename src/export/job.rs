@@ -764,10 +764,10 @@ fn encode_all(
         });
         rx
     });
-    // The Self-Driving view's path and corners as last drawn, and how far
+    // The Self-Driving view's path and readout as last drawn, and how far
     // the chevrons have run.
     let mut path: (Option<super::fsd::Ribbon>, Option<super::compose::Overlay>) = (None, None);
-    let mut corners: Option<(super::fsd::Hud, super::compose::Overlay)> = None;
+    let mut readout: Option<(super::fsd::Hud, super::compose::Overlay)> = None;
     let mut chevrons = 0.0f32;
     // The wheel eases towards the telemetry's angle and the blinkers flash
     // from when they come on, frame by frame, as earlier versions did.
@@ -861,8 +861,8 @@ fn encode_all(
             }
         }
         // The Self-Driving view: the path drawn again when it changes
-        // (every frame while the car moves), the corners when what they
-        // show does.
+        // (every frame while the car moves), the readout when what it
+        // shows does.
         if let (Some(sd), Some(p)) = (self_driving.as_ref(), painter.as_mut()) {
             let accel = ahead.as_ref().map_or(0.0, |a| a.accel);
             let ribbon = m.as_ref().zip(ahead).and_then(|(m, a)| super::fsd::Ribbon::new(m, a, chevrons));
@@ -877,12 +877,11 @@ fn encode_all(
                 path.0 = ribbon;
             }
             if sd.view.hud {
-                let (segment, secs) = frames[k];
-                let hud = super::fsd::Hud::new(&sd.view, m.as_ref(), accel, req.segments[segment].start + secs.floor() as i64, blink_ms);
-                if corners.as_ref().map(|(shown, _)| shown) != Some(&hud) {
+                let hud = super::fsd::Hud::new(&sd.view, m.as_ref(), accel, blink_ms);
+                if readout.as_ref().map(|(shown, _)| shown) != Some(&hud) {
                     let picture = super::fsd::paint_hud(p, &hud, sd.size);
-                    let old = corners.take().map(|(_, o)| o);
-                    corners = Some((hud, compositor.overlay(&picture, old)));
+                    let old = readout.take().map(|(_, o)| o);
+                    readout = Some((hud, compositor.overlay(&picture, old)));
                 }
             }
         }
@@ -935,7 +934,7 @@ fn encode_all(
                 overlays.push((o, sd.x, sd.y + super::fsd::ribbon_top(sd.lens, sd.size.1 as f32)));
                 kinds.push(None);
             }
-            if let Some((_, o)) = corners.as_ref() {
+            if let Some((_, o)) = readout.as_ref() {
                 overlays.push((o, sd.x, sd.y));
                 kinds.push(None);
             }
