@@ -1,6 +1,6 @@
 //! The Self-Driving view: the car's path drawn on the road in the front
 //! camera, as Tesla's Self-Driving display draws it, with the speed, gear
-//! and Autopilot state in the camera's top corners.
+//! and Autopilot state in the camera's top left corner.
 //!
 //! The car records no planned path, so this one is made from the front
 //! clip's telemetry, laid on the road as the front camera sees it. Near
@@ -20,7 +20,7 @@
 //! little.
 
 use super::overlay::{Painter, Picture};
-use crate::library::{Camera, LocalSecs, Segment};
+use crate::library::{Camera, Segment};
 use crate::sei::SeiMetadata;
 use iced::widget::canvas::{self, Frame, Path, Text};
 use iced::{mouse, Color, Point, Rectangle, Renderer, Size, Theme};
@@ -31,10 +31,9 @@ use std::sync::{Arc, Mutex, OnceLock};
 /// The Self-Driving view as set up.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SelfDriving {
-    /// The speed, gear, Autopilot state and time in the camera's top corners.
+    /// The speed, gear and Autopilot state in the camera's top left corner.
     pub hud: bool,
     pub metric: bool,
-    pub h24: bool,
     /// Where the road meets the sky in the front camera, as a share of its
     /// height from the top; None: the usual place for the footage.
     pub horizon: Option<f32>,
@@ -753,15 +752,13 @@ pub fn paint_ribbon(painter: &mut Painter, ribbon: &Ribbon, lens: Lens, camera: 
 // Speed, gear and Autopilot state
 // ---------------------------------------------------------------------------
 
-/// What the camera's top corners show in one frame.
+/// What the camera's top left corner shows in one frame.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Hud {
     /// Gear, speed (in the unit shown) and Autopilot state; None without
-    /// telemetry (parked): only the time is shown.
+    /// telemetry (parked): nothing is shown.
     pub driving: Option<(i32, u32, i32)>,
     pub metric: bool,
-    /// "4:18 pm".
-    pub time: String,
     /// The bar at the left: how hard the car speeds up (to 16) or slows
     /// (to -16).
     pub power: i8,
@@ -770,22 +767,10 @@ pub struct Hud {
     pub blink_right: Option<bool>,
 }
 
-/// "4:18 pm", or "16:18".
-pub fn clock(secs_of_day: i64, h24: bool) -> String {
-    let t = secs_of_day.rem_euclid(86400);
-    let (h, m) = (t / 3600, t / 60 % 60);
-    if h24 {
-        format!("{h:02}:{m:02}")
-    } else {
-        format!("{}:{m:02} {}", if h % 12 == 0 { 12 } else { h % 12 }, if h >= 12 { "pm" } else { "am" })
-    }
-}
-
 impl Hud {
-    /// The corners for a frame recorded at `wall` with telemetry `m`, its
-    /// speed changing by `accel` m/s²; `blink_ms`: milliseconds into the
-    /// blinkers' 700 ms.
-    pub fn new(view: &SelfDriving, m: Option<&SeiMetadata>, accel: f32, wall: LocalSecs, blink_ms: u128) -> Hud {
+    /// The readout for a frame with telemetry `m`, its speed changing by
+    /// `accel` m/s²; `blink_ms`: milliseconds into the blinkers' 700 ms.
+    pub fn new(view: &SelfDriving, m: Option<&SeiMetadata>, accel: f32, blink_ms: u128) -> Hud {
         let lit = blink_ms < 400;
         Hud {
             driving: m.map(|m| {
@@ -793,7 +778,6 @@ impl Hud {
                 (m.gear_state, if view.metric { mps * 3.6 } else { mps * 2.236_936_292_054_402 }.round() as u32, m.autopilot_state)
             }),
             metric: view.metric,
-            time: clock(wall, view.h24),
             // Full at 3 m/s² (a firm stop, or a quick start).
             power: if m.is_some() { ((accel / 3.0).clamp(-1.0, 1.0) * 16.0).round() as i8 } else { 0 },
             blink_left: m.filter(|m| m.blinker_on_left).map(|_| lit),
@@ -805,13 +789,14 @@ impl Hud {
 const HUD_BLUE: Color = Color { r: 0x5c as f32 / 255.0, g: 0xb0 as f32 / 255.0, b: 1.0, a: 1.0 };
 const HUD_GREEN: Color = Color { r: 0x2f as f32 / 255.0, g: 0xe0 as f32 / 255.0, b: 0x62 as f32 / 255.0, a: 1.0 };
 
-/// The corners' height in a camera `height` high.
+/// The readout's height in a camera `height` high.
 pub fn hud_height(height: f32) -> f32 {
     (height * 150.0 / 720.0).ceil().clamp(1.0, height.max(1.0))
 }
 
-/// The corners' drawing, across the camera's top. Everything is sized from
-/// the camera's height, as on a 720 px high picture.
+/// The readout's drawing: in the camera's top left corner, on a little
+/// shade across its top. Everything is sized from the camera's height, as
+/// on a 720 px high picture.
 struct HudView {
     hud: Hud,
     /// The camera's height in the canvas's pixels.
@@ -822,8 +807,9 @@ impl<M> canvas::Program<M> for HudView {
     type State = ();
 
     fn draw(&self, _: &(), renderer: &Renderer, _: &Theme, b: Rectangle, _: mouse::Cursor) -> Vec<canvas::Geometry> {
-        use iced::widget::text::Alignment::{Left, Right};
+        use iced::widget::text::Alignment::Left;
         let mut f = Frame::new(renderer, b.size());
+        let Some((gear, speed, autopilot)) = self.hud.driving else { return vec![f.into_geometry()] };
         let u = self.height / 720.0;
         let white = |a: f32| Color { a, ..Color::WHITE };
         // A little shade along the top, for white type on a bright sky.
@@ -836,8 +822,6 @@ impl<M> canvas::Program<M> for HudView {
             }
         };
         let inter = crate::theme::INTER;
-        write(&mut f, self.hud.time.clone(), b.width - 14.0 * u, 18.0 * u, 13.5 * u, white(0.94), crate::theme::medium(inter), Right);
-        let Some((gear, speed, autopilot)) = self.hud.driving else { return vec![f.into_geometry()] };
         let engaged = matches!(autopilot, 1 | 2);
         // The bar: up from its middle while the car speeds up, down in
         // green while it slows.
@@ -879,13 +863,13 @@ impl<M> canvas::Program<M> for HudView {
     }
 }
 
-/// The corners, filling what it's given: the camera's width, `hud_height`
+/// The readout, filling what it's given: the camera's width, `hud_height`
 /// high, for a camera `height` high (the editor while it plays).
 pub fn hud_view<'a, M: 'a>(hud: Hud, height: f32) -> iced::Element<'a, M> {
     iced::widget::canvas(HudView { hud, height }).width(iced::Length::Fill).height(iced::Length::Fill).into()
 }
 
-/// The corners' picture for a camera `camera` big in the export: across
+/// The readout's picture for a camera `camera` big in the export: across
 /// its top, `hud_height` high.
 pub fn paint_hud(painter: &mut Painter, hud: &Hud, camera: (u32, u32)) -> Picture {
     let size = Size::new(camera.0.max(1), hud_height(camera.1 as f32) as u32);
@@ -1123,7 +1107,7 @@ mod tests {
 
     #[test]
     fn the_path_lies_on_the_road() {
-        let view = SelfDriving { hud: true, metric: false, h24: false, horizon: None, center: None, fov: None };
+        let view = SelfDriving { hud: true, metric: false, horizon: None, center: None, fov: None };
         let lens = view.lens((1280, 960));
         assert!((lens.horizon - 0.5).abs() < 1e-6 && (lens.focal - 1.3737).abs() < 0.01, "{lens:?}");
         let mut p = Painter::new().unwrap();
@@ -1173,7 +1157,7 @@ mod tests {
     /// the bend went long before the outside).
     #[test]
     fn it_fades_evenly_across_its_far_end() {
-        let lens = SelfDriving { hud: false, metric: false, h24: false, horizon: None, center: None, fov: None }.lens((1280, 960));
+        let lens = SelfDriving { hud: false, metric: false, horizon: None, center: None, fov: None }.lens((1280, 960));
         // A bend to the right, 120 m round and 30 m long.
         let round = 120.0f32;
         let bend: Vec<(f32, f32)> = (0..=120).map(|k| k as f32 * 0.25 / round).map(|a| (round * (1.0 - a.cos()), round * a.sin())).collect();
@@ -1209,26 +1193,24 @@ mod tests {
     }
 
     #[test]
-    fn the_corners_show_speed_gear_and_time() {
-        let view = SelfDriving { hud: true, metric: false, h24: false, horizon: None, center: None, fov: None };
+    fn the_corner_shows_speed_and_gear() {
+        let view = SelfDriving { hud: true, metric: false, horizon: None, center: None, fov: None };
         let m = SeiMetadata { gear_state: 1, vehicle_speed_mps: 28.61, autopilot_state: 1, blinker_on_right: true, ..Default::default() };
-        let wall = crate::library::parse_stamp("2026-11-07_16-18-40").unwrap();
-        let hud = Hud::new(&view, Some(&m), -1.5, wall, 100);
-        assert_eq!(hud, Hud { driving: Some((1, 64, 1)), metric: false, time: "4:18 pm".into(), power: -8, blink_left: None, blink_right: Some(true) });
-        assert_eq!((clock(0, false), clock(13 * 3600 + 5 * 60, true), clock(12 * 3600, false)), ("12:00 am".to_string(), "13:05".to_string(), "12:00 pm".to_string()));
-        assert_eq!(Hud::new(&SelfDriving { metric: true, ..view }, Some(&m), 0.0, wall, 500).driving, Some((1, 103, 1)));
+        let hud = Hud::new(&view, Some(&m), -1.5, 100);
+        assert_eq!(hud, Hud { driving: Some((1, 64, 1)), metric: false, power: -8, blink_left: None, blink_right: Some(true) });
+        assert_eq!(Hud::new(&SelfDriving { metric: true, ..view }, Some(&m), 0.0, 500).driving, Some((1, 103, 1)));
         let mut p = Painter::new().unwrap();
         let pic = paint_hud(&mut p, &hud, (1280, 960));
         assert_eq!((pic.width, pic.height), (1280, 200));
-        // White type where the speed is, the time at the right, nothing
-        // under the shade in the middle.
+        // White type where the speed is, and nowhere else across the
+        // top: nothing at the right (the time was there once, and was
+        // taken out: the timestamp and the dashboard show it).
         let white = |x0: u32, x1: u32, y0: u32, y1: u32| (y0..y1).flat_map(|y| (x0..x1).map(move |x| (x, y))).filter(|(x, y)| pic.rgba[((y * 1280 + x) * 4) as usize] > 230 && alpha(&pic, *x, *y) > 230).count();
         assert!(white(24, 150, 55, 115) > 1500, "{}", white(24, 150, 55, 115));
-        assert!(white(1180, 1270, 12, 36) > 30, "{}", white(1180, 1270, 12, 36));
-        assert_eq!(white(500, 800, 100, 200), 0);
-        // Parked (no telemetry): only the time.
-        let parked = paint_hud(&mut p, &Hud::new(&view, None, 0.0, wall, 0), (1280, 960));
-        assert!((55..115).all(|y| (24..150).all(|x| parked.rgba[((y * 1280 + x) * 4) as usize] < 200)));
+        assert_eq!((white(400, 1280, 0, 200), white(1100, 1280, 0, 60)), (0, 0));
+        // Parked (no telemetry): nothing at all.
+        let parked = paint_hud(&mut p, &Hud::new(&view, None, 0.0, 0), (1280, 960));
+        assert!(parked.rgba.chunks(4).all(|px| px[3] == 0));
         if let Some(path) = std::env::var_os("SENTRY_DUMP_HUD") {
             dump(&pic, path.as_ref());
         }

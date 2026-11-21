@@ -645,7 +645,7 @@ impl App {
     /// The Self-Driving view as set up (None when it's off).
     fn export_self_driving(&self) -> Option<SelfDriving> {
         let e = &self.export;
-        e.self_driving.then_some(SelfDriving { hud: e.sd_speed, metric: self.settings.metric, h24: self.settings.time_24h, horizon: e.sd_horizon, center: e.sd_center, fov: e.sd_angle })
+        e.self_driving.then_some(SelfDriving { hud: e.sd_speed, metric: self.settings.metric, horizon: e.sd_horizon, center: e.sd_center, fov: e.sd_angle })
     }
 
     /// The minimap as set up (None when it's off).
@@ -1783,8 +1783,8 @@ impl App {
                 let road = iced::Rectangle::new(iced::Point::new(r.x, r.y + top), iced::Size::new(r.width, (r.height - top).max(1.0)));
                 layers = place(layers, road, fsd::ribbon_view(ribbon, lens, (r.width, r.height)));
             }
-            if let Some(t) = wall.filter(|_| view.hud) {
-                let hud = fsd::Hud::new(&view, telemetry, accel, t, self.epoch.elapsed().as_millis() % 700);
+            if view.hud {
+                let hud = fsd::Hud::new(&view, telemetry, accel, self.epoch.elapsed().as_millis() % 700);
                 let strip = iced::Rectangle::new(r.position(), iced::Size::new(r.width, fsd::hud_height(r.height).min(r.height)));
                 layers = place(layers, strip, fsd::hud_view(hud, r.height));
             }
