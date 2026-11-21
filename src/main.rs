@@ -1459,10 +1459,26 @@ impl App {
                                 other => other,
                             };
                         }
-                        self.collections.retain(|c| c.dir != dir);
+                        // A date goes with its last clip, as it would on a rescan.
+                        self.days = forget_folder(&mut self.collections, &dir);
+                        self.footage_days = self.days.iter().cloned().collect();
+                        self.relayout_drives();
                         self.hovered_clip = None;
                         log::info!("an event's folder was deleted");
-                        return self.notify(i18n::t("ui.clipBrowser.deleteSuccess").to_string(), false);
+                        let toast = self.notify(i18n::t("ui.clipBrowser.deleteSuccess").to_string(), false);
+                        if self.day.as_ref().is_none_or(|d| self.days.contains(d)) {
+                            return toast;
+                        }
+                        // The date shown is gone: on to the newest one left.
+                        if let Some(day) = self.days.first().cloned() {
+                            return Task::batch([toast, Task::done(Message::PickDay(day))]);
+                        }
+                        self.day = None;
+                        self.items.clear();
+                        self.selected = None;
+                        self.player.load(Vec::new(), 0.0);
+                        self.export.clear_markers();
+                        return toast;
                     }
                     Err(e) => return self.notify(format!("{}: {e}", i18n::t("ui.clipBrowser.deleteFailed")), true),
                 }
@@ -3282,6 +3298,13 @@ fn deletable_folder(item: &ClipItem) -> Option<PathBuf> {
     (ok && dir.is_dir()).then(|| dir.clone())
 }
 
+/// Takes a deleted folder out of the library, and gives the days that still
+/// have footage (newest first).
+fn forget_folder(collections: &mut Vec<Collection>, dir: &std::path::Path) -> Vec<String> {
+    collections.retain(|c| c.dir != dir);
+    library::days(collections)
+}
+
 /// Moves a folder to the Trash / Recycle Bin, or deletes it outright
 /// where there is none (network shares).
 fn delete_folder(dir: &std::path::Path) -> Result<(), (PathBuf, String)> {
@@ -3363,5 +3386,29 @@ mod tests {
         assert_eq!(deletable_folder(&item(Kind::Saved, root.clone())), None);
         assert_eq!(deletable_folder(&item(Kind::Saved, root.join("SavedClips/missing"))), None);
         std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn a_date_goes_with_its_last_clip() {
+        let folder = |kind, name: &str| Collection { kind, name: name.into(), dir: PathBuf::from(name), date_filter: None };
+        let mut collections = vec![
+            folder(Kind::Recent, "2026-01-14"),
+            folder(Kind::Saved, "2026-01-14_10-46-52"),
+            folder(Kind::Sentry, "2026-01-15_11-00-00"),
+            folder(Kind::Saved, "2026-01-16_08-00-00"),
+            folder(Kind::Sentry, "2026-01-16_09-30-00"),
+        ];
+        // One of two events that day: the date stays.
+        let days = forget_folder(&mut collections, std::path::Path::new("2026-01-16_08-00-00"));
+        assert_eq!(days, ["2026-01-16", "2026-01-15", "2026-01-14"]);
+        // The last one: the date goes.
+        let days = forget_folder(&mut collections, std::path::Path::new("2026-01-16_09-30-00"));
+        assert_eq!(days, ["2026-01-15", "2026-01-14"]);
+        let days = forget_folder(&mut collections, std::path::Path::new("2026-01-15_11-00-00"));
+        assert_eq!(days, ["2026-01-14"]);
+        // Recent Clips are still there for that date.
+        let days = forget_folder(&mut collections, std::path::Path::new("2026-01-14_10-46-52"));
+        assert_eq!(days, ["2026-01-14"]);
+        assert_eq!(collections.len(), 1);
     }
 }

@@ -6,7 +6,7 @@ description = "Sentry Studio: synced six-camera Tesla dashcam playback"
 authors = ["Sentry-Six"]
 license = "MIT"
 edition = "2021"
-rust-version = "1.88"
+rust-version = "1.90"
 publish = false
 
 [[bin]]
@@ -29,7 +29,7 @@ ureq = "3"
 regex = "1"
 image = { version = "0.25", default-features = false, features = ["png", "webp"] }
 bytemuck = "1"
-rfd = "0.17"
+rfd = "0.18"
 # Deleting a clip moves it to the Trash / Recycle Bin first.
 trash = "5"
 # Update downloads (SHA-512) and the install ID (SHA-256).
